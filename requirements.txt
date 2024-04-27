@@ -1,0 +1,5 @@
+httpx
+python_dateutil
+pytz
+Requests
+xbox-webapi
