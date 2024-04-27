@@ -359,7 +359,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
     status_ts = 0
     status_old_ts = 0
     status_online_start_ts = 0
-    lastonline=""
+    lastonline=0
     lastonline_ts = 0
     status = ""
     xuid = 0
@@ -456,6 +456,16 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                 if 'device_type' in dir(last_seen_class):
                     if last_seen_class.device_type:
                         platform=last_seen_class.device_type
+                        if ("scarlett" or "anaconda" or "starkville" or "lockhart" or "edith") in str(platform).lower():
+                            platform="Xbox One Series X/S"
+                        elif ("scorpio" or "edmonton") in str(platform).lower():
+                            platform="Xbox One X/S"
+                        elif "durango" in str(platform).lower():
+                            platform="Xbox One"
+                        elif "xenon" in str(platform).lower():
+                            platform="Xbox 360"                            
+                        elif "windows" in str(platform).lower(): # WindowsOneCore
+                            platform="Windows"
                 if 'timestamp' in dir(last_seen_class):
                     if last_seen_class.timestamp:
                         lastonline=last_seen_class.timestamp                                           
@@ -472,7 +482,9 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
             lastonline_dt=convert_utc_str_to_tz_datetime(str(lastonline),LOCAL_TIMEZONE)
             lastonline_ts=int(lastonline_dt.timestamp())
             lastonline_str=get_date_from_ts(int(lastonline_ts))
-        else:
+        elif not lastonline and status=="offline":
+            lastonline_str="not available"
+        elif status!="offline":
             lastonline_str=get_cur_ts()
 
         status_old_ts = int(time.time())
