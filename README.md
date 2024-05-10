@@ -93,9 +93,17 @@ Copy the contents from 'Value' column to **MS_APP_CLIENT_SECRET_VALUE** variable
 
 After performing authentication the token will be saved into a file, type its location and name in **MS_AUTH_TOKENS_FILE** (or use default *xbox_tokens.json* - it will be saved in your currently working dir).
 
+### Timezone
+
+You can specify your local time zone so the tool converts Xbox API timestamps to your time:
+
+```
+LOCAL_TIMEZONE='Europe/Warsaw'
+```
+
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient).
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
 
 ### Other settings
 
@@ -194,7 +202,7 @@ List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
-| USR1 | Toggle email notifications when user gets online or offline |
+| USR1 | Toggle email notifications when user gets online or offline (-a) |
 | TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
 
@@ -210,7 +218,7 @@ pkill -f -USR1 "python3 ./xbox_monitor.py misiektoja"
 
 Check other supported parameters using **-h**.
 
-You can of course combine all the parameters mentioned earlier together.
+You can combine all the parameters mentioned earlier.
 
 ## Colouring log output with GRC
 
