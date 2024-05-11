@@ -68,7 +68,7 @@ Log in to [Azure AD](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApp
 - For redirect URL select *"Web"* type and put: *http://localhost/auth/callback*
 
 <p align="center">
-   <img src="./assets/xbox_monitor_azure_ad_app1.png" alt="xbox_monitor_azure_ad_app1" width="80%"/>
+   <img src="./assets/xbox_monitor_azure_ad_app1.png" alt="xbox_monitor_azure_ad_app1" width="90%"/>
 </p>
 
 Then copy value of *'Application (client) ID'* to **MS_APP_CLIENT_ID** variable.
@@ -76,19 +76,19 @@ Then copy value of *'Application (client) ID'* to **MS_APP_CLIENT_ID** variable.
 Then next to *'Client credentials'* click *'Add a certificate or secret'*.
 
 <p align="center">
-   <img src="./assets/xbox_monitor_azure_ad_app2.png" alt="xbox_monitor_azure_ad_app2" width="80%"/>
+   <img src="./assets/xbox_monitor_azure_ad_app2.png" alt="xbox_monitor_azure_ad_app2" width="90%"/>
 </p>
 
 Add a new client secret with long expiration date (like 2 years) and some description (e.g. *xbox_monitor_secret*).
 
 <p align="center">
-   <img src="./assets/xbox_monitor_azure_ad_app3.png" alt="xbox_monitor_azure_ad_app3" width="50%"/>
+   <img src="./assets/xbox_monitor_azure_ad_app3.png" alt="xbox_monitor_azure_ad_app3" width="60%"/>
 </p>
 
 Copy the contents from 'Value' column to **MS_APP_CLIENT_SECRET_VALUE** variable.
 
 <p align="center">
-   <img src="./assets/xbox_monitor_azure_ad_app4.png" alt="xbox_monitor_azure_ad_app4" width="90%"/>
+   <img src="./assets/xbox_monitor_azure_ad_app4.png" alt="xbox_monitor_azure_ad_app4" width="100%"/>
 </p>
 
 After performing authentication the token will be saved into a file, type its location and name in **MS_AUTH_TOKENS_FILE** (or use default *xbox_tokens.json* - it will be saved in your currently working dir).
@@ -138,7 +138,7 @@ The first time the tool is run it will perform OAuth2 authentication using data 
 It will generate a URL you need to paste in your web browser and authorize the tool.
 
 <p align="center">
-   <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="80%"/>
+   <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="90%"/>
 </p>
 
 The request in your web browser will be redirected to localhost, you will get error it cannot connect, ignore it and just copy the part after *'?code='* in callback URL and paste in the tool.
