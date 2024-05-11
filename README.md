@@ -12,7 +12,7 @@ xbox_monitor is a Python script which allows for real-time monitoring of Xbox Li
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="70%"/>
+   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="80%"/>
 </p>
 
 ## Change Log
@@ -138,7 +138,7 @@ The first time the tool is run it will perform OAuth2 authentication using data 
 It will generate a URL you need to paste in your web browser and authorize the tool.
 
 <p align="center">
-   <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="70%"/>
+   <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="80%"/>
 </p>
 
 The request in your web browser will be redirected to localhost, you will get error it cannot connect, ignore it and just copy the part after *'?code='* in callback URL and paste in the tool.
@@ -174,7 +174,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/xbox_monitor_email_notifications.png" alt="xbox_monitor_email_notifications" width="60%"/>
+   <img src="./assets/xbox_monitor_email_notifications.png" alt="xbox_monitor_email_notifications" width="80%"/>
 </p>
 
 ### Saving activity to the CSV file
