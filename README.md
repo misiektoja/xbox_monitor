@@ -155,7 +155,7 @@ You can monitor multiple Xbox Live players by spawning multiple copies of the sc
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
 
-The tool automatically saves its output to *xbox_monitor_gamertag.log* file (can be changed in the settings or disabled with -d).
+The tool automatically saves its output to *xbox_monitor_gamertag.log* file (can be changed in the settings or disabled with **-d** parameter).
 
 The tool also saves the timestamp and last status (after every change) to *xbox_gamertag_last_status.json* file, so the last status is available after the restart of the tool.
 
@@ -187,14 +187,13 @@ If you want to save the activity of the Xbox Live user, use **-b** parameter wit
 
 ### Check intervals
 
-If you want to change the check interval when the user is online to 30 seconds (**-k**) and when is offline to 2 mins - 120 seconds (**-c**):
+If you want to change the check interval when the user is online to 30 seconds use **-k** parameter and when the user is offline to 2 mins (120 seconds) use **-c** parameter:
 
 ```sh
 ./xbox_monitor.py misiektoja -k 30 -c 120
 ```
 
 ### Controlling the script via signals
-
 
 The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
 
