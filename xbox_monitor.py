@@ -654,7 +654,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
         if bio:
             print(f"Bio:\t\t\t\t{bio}")
 
-        print("Status:\t\t\t\t" + str(status).upper())
+        print("\nStatus:\t\t\t\t" + str(status).upper())
 
         if platform:
             print("Platform:\t\t\t" + str(platform)) 
