@@ -12,7 +12,7 @@ xbox_monitor is a Python script which allows for real-time monitoring of Xbox Li
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="80%"/>
+   <img src="./assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="90%"/>
 </p>
 
 ## Change Log
@@ -183,7 +183,7 @@ If you want to be informed when user starts, stops or changes the played game th
 ./xbox_monitor.py misiektoja -g
 ```
 
-If you also want to be informed about any user status changes (online/away/offline) use **-s** parameter (away status seems to be reported only by Xbox App on Android devices):
+If you also want to be informed about any user status changes (online/away/offline) use **-s** parameter (note: away status seems to be reported only by Xbox App on Android devices):
 
 ```sh
 ./xbox_monitor.py misiektoja -s
