@@ -482,7 +482,7 @@ def xbox_process_presence_class(presence,platform_short=True):
             if 'titles' in dir(devices_class[0]):                
                 titles_class=devices_class[0].titles
                 for title in titles_class:
-                    if title.name not in ("Home","Xbox App") and title.placement!="Background":
+                    if title.name not in ("Online","Home","Xbox App") and title.placement!="Background":
                         game_name=title.name
                         break
 
@@ -723,13 +723,14 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
 
             change=False
             act_inact_flag=False
-            platform_str=""
-            if platform:
-                platform_str=f" ({platform})"
 
             # Player status changed
             if status != status_old:
                 status_ts=int(time.time())
+
+                platform_str=""
+                if platform:
+                    platform_str=f" ({platform})"
 
                 try:
                     last_status_to_save=[]
@@ -781,6 +782,10 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
             # Player started/stopped/changed the game        
             if game_name != game_name_old: 
                 game_ts = int(time.time())
+
+                platform_str=""
+                if platform:
+                    platform_str=f" ({platform})"
 
                 # User changed the game
                 if game_name_old and game_name:
