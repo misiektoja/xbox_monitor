@@ -4,10 +4,10 @@ xbox_monitor is a Python script which allows for real-time monitoring of Xbox Li
 
 ## Features
 
-- Real-time monitoring of Xbox Live users activity (including detection when user gets online/offline)
-- Basics statistics for user activity (how long in different states)
-- Email notifications for different events (player gets online/offline, errors)
-- Saving all activity with timestamps to the CSV file
+- Real-time tracking of Xbox Live users gaming activity (including detection when user gets online/offline or played games)
+- Basics statistics for user activity (how long in different states, how long played game etc.)
+- Email notifications for different events (player gets online/away/offline, starts/finishes/changes game, errors)
+- Saving all user activity with timestamps to the CSV file
 - Built-in OAuth2 authentication
 - Possibility to control the running copy of the script via signals
 
@@ -71,7 +71,7 @@ Log in to [Azure AD](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApp
    <img src="./assets/xbox_monitor_azure_ad_app1.png" alt="xbox_monitor_azure_ad_app1" width="90%"/>
 </p>
 
-Then copy value of *'Application (client) ID'* to **MS_APP_CLIENT_ID** variable.
+Then copy value of *'Application (client) ID'* to **MS_APP_CLIENT_ID** variable (or use **-u** parameter).
 
 Then next to *'Client credentials'* click *'Add a certificate or secret'*.
 
@@ -85,7 +85,7 @@ Add a new client secret with long expiration date (like 2 years) and some descri
    <img src="./assets/xbox_monitor_azure_ad_app3.png" alt="xbox_monitor_azure_ad_app3" width="60%"/>
 </p>
 
-Copy the contents from 'Value' column to **MS_APP_CLIENT_SECRET_VALUE** variable.
+Copy the contents from 'Value' column to **MS_APP_CLIENT_SECRET** variable (or use **-w** parameter).
 
 <p align="center">
    <img src="./assets/xbox_monitor_azure_ad_app4.png" alt="xbox_monitor_azure_ad_app4" width="100%"/>
@@ -95,7 +95,7 @@ After performing authentication the token will be saved into a file, type its lo
 
 ### Timezone
 
-You can specify your local time zone so the tool converts Xbox API timestamps to your time:
+It is recommended to specify your local time zone so the tool converts Xbox API timestamps to your time:
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
@@ -133,7 +133,13 @@ To monitor specific user activity, just type the player's Xbox Live gamertag (**
 ./xbox_monitor.py misiektoja
 ```
 
-The first time the tool is run it will perform OAuth2 authentication using data provided in **MS_APP_CLIENT_ID** and **MS_APP_CLIENT_SECRET_VALUE** variables.
+If you have not changed **MS_APP_CLIENT_ID** & **MS_APP_CLIENT_SECRET** variables in the *[xbox_monitor.py](xbox_monitor.py)* file, you can use **-u** and **-w** parameters:
+
+```sh
+./xbox_monitor.py misiektoja -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+```
+
+The first time the tool is run it will perform OAuth2 authentication using the data you provided.
 
 It will generate a URL you need to paste in your web browser and authorize the tool.
 
@@ -155,9 +161,9 @@ You can monitor multiple Xbox Live players by spawning multiple copies of the sc
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
 
-The tool automatically saves its output to *xbox_monitor_gamertag.log* file (can be changed in the settings or disabled with **-d** parameter).
+The tool automatically saves its output to *xbox_monitor_{gamertag}.log* file (can be changed in the settings or disabled with **-d** parameter).
 
-The tool also saves the timestamp and last status (after every change) to *xbox_gamertag_last_status.json* file, so the last status is available after the restart of the tool.
+The tool also saves the timestamp and last status (after every change) to *xbox_{gamertag}_last_status.json* file, so the last status is available after the restart of the tool.
 
 ## How to use other features
 
@@ -171,6 +177,18 @@ If you want to get email notifications once the user gets online or offline use 
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
 
+If you want to be informed when user starts, stops or changes the played game then use **-g** parameter:
+
+```sh
+./xbox_monitor.py misiektoja -g
+```
+
+If you also want to be informed about any user status changes (online/away/offline) use **-s** parameter:
+
+```sh
+./xbox_monitor.py misiektoja -s
+```
+
 Example email:
 
 <p align="center">
@@ -179,7 +197,7 @@ Example email:
 
 ### Saving activity to the CSV file
 
-If you want to save the activity of the Xbox Live user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all activities of the Xbox Live user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./xbox_monitor.py misiektoja -b xbox_misiektoja.csv
@@ -187,7 +205,7 @@ If you want to save the activity of the Xbox Live user, use **-b** parameter wit
 
 ### Check intervals
 
-If you want to change the check interval when the user is online to 30 seconds use **-k** parameter and when the user is offline to 2 mins (120 seconds) use **-c** parameter:
+If you want to change the check interval when the user is online or away to 30 seconds use **-k** parameter and when the user is offline to 2 mins (120 seconds) use **-c** parameter:
 
 ```sh
 ./xbox_monitor.py misiektoja -k 30 -c 120
@@ -202,6 +220,8 @@ List of supported signals:
 | Signal | Description |
 | ----------- | ----------- |
 | USR1 | Toggle email notifications when user gets online or offline (-a) |
+| USR2 | Toggle email notifications when user starts/stops/changes the game (-g) |
+| CONT | Toggle email notifications for all user status changes (online/away/offline) (-s) |
 | TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
 
