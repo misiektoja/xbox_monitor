@@ -183,7 +183,7 @@ If you want to be informed when user starts, stops or changes the played game th
 ./xbox_monitor.py misiektoja -g
 ```
 
-If you also want to be informed about any user status changes (online/away/offline) use **-s** parameter:
+If you also want to be informed about any user status changes (online/away/offline) use **-s** parameter (away status seems to be reported only by Xbox App on Android devices):
 
 ```sh
 ./xbox_monitor.py misiektoja -s
