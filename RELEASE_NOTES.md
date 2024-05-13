@@ -8,7 +8,7 @@ This is a high-level summary of the most important changes.
 
 - Support for detecting games played by users (player starts/stops or changes the played game)
 - Support for detecting status changes reported by Xbox app on mobile devices (Android & iOS/iPadOS)
-- Support for Away status on Android devices (Xbox consoles and iOS devices do not report it)
+- Support for Away status on Android devices (Xbox consoles, Windows and iOS devices do not report it)
 - Information about played games added to email notifications and CSV file 
 - Possibility to define MS_APP_CLIENT_ID via command line argument (-u / --ms_app_client_id)
 - Possibility to define MS_APP_CLIENT_SECRET via command line argument (-w / --ms_app_client_secret)
