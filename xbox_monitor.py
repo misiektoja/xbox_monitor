@@ -642,15 +642,15 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                         status_online_start_ts=last_status_ts
                         status_ts_old=last_status_ts
                 
-        try:
-            if last_status_ts>0 and status!=last_status:
-                last_status_to_save=[]
-                last_status_to_save.append(status_ts_old)
-                last_status_to_save.append(status)
+        if last_status_ts>0 and status!=last_status:
+            last_status_to_save=[]
+            last_status_to_save.append(status_ts_old)
+            last_status_to_save.append(status)
+            try:
                 with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
-                    json.dump(last_status_to_save, f, indent=2)                    
-        except Exception as e:
-            print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
+                    json.dump(last_status_to_save, f, indent=2)
+            except Exception as e:
+                print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
 
         print(f"\nXbox user gamertag:\t\t{xbox_gamertag}")
         print(f"Xbox XUID:\t\t\t{xuid}")
@@ -678,17 +678,17 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
         except Exception as e:
             print(f"* Cannot write CSV entry - {e}")
 
-        try:
-            if last_status_ts==0:
-                if lastonline_ts and status=="offline":
-                    status_ts_old=lastonline_ts
-                last_status_to_save=[]
-                last_status_to_save.append(status_ts_old)
-                last_status_to_save.append(status)
+        if last_status_ts==0:
+            if lastonline_ts and status=="offline":
+                status_ts_old=lastonline_ts
+            last_status_to_save=[]
+            last_status_to_save.append(status_ts_old)
+            last_status_to_save.append(status)
+            try:
                 with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
-        except Exception as e:
-            print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
+            except Exception as e:
+                print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
 
         if status_ts_old!=status_ts_old_bck:
             if status=="offline":
@@ -742,10 +742,10 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                 if platform:
                     platform_str=f" ({platform})"
 
+                last_status_to_save=[]
+                last_status_to_save.append(status_ts)
+                last_status_to_save.append(status)
                 try:
-                    last_status_to_save=[]
-                    last_status_to_save.append(status_ts)
-                    last_status_to_save.append(status)
                     with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                         json.dump(last_status_to_save, f, indent=2)
                 except Exception as e:
