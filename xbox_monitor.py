@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.1
+v1.2
 
 Script implementing real-time monitoring of Xbox Live players activity:
 https://github.com/misiektoja/xbox_monitor/
@@ -15,7 +15,7 @@ pytz
 requests
 """
 
-VERSION=1.1
+VERSION=1.2
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -33,9 +33,6 @@ MS_APP_CLIENT_ID="your_ms_application_client_id"
 # Copy the contents from 'Value' column to MS_APP_CLIENT_SECRET below (or use -w parameter)
 MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
 
-# After performing authentication the token will be saved into a file, type its location and name below
-MS_AUTH_TOKENS_FILE="xbox_tokens.json"
-
 # SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
 SMTP_HOST="your_smtp_server_ssl"
 SMTP_PORT=587
@@ -51,14 +48,17 @@ SENDER_EMAIL="your_sender_email"
 #SENDER_EMAIL="your_sender_email"
 RECEIVER_EMAIL="your_receiver_email"
 
-# How often do we perform checks for player activity when user is offline; in seconds
+# How often do we perform checks for player activity when user is offline, you can also use -c parameter; in seconds
 XBOX_CHECK_INTERVAL=300 # 5 min
 
-# How often do we perform checks for player activity when user is online; in seconds
+# How often do we perform checks for player activity when user is online, you can also use -k parameter; in seconds
 XBOX_ACTIVE_CHECK_INTERVAL=90 # 1,5 min
 
 # Specify your local time zone so we convert Xbox API timestamps to your time
 LOCAL_TIMEZONE='Europe/Warsaw'
+
+# After performing authentication the token will be saved into a file, type its location and name below
+MS_AUTH_TOKENS_FILE="xbox_tokens.json"
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL=21600 # 6 hours
@@ -105,6 +105,7 @@ from email.mime.text import MIMEText
 import argparse
 import csv
 import pytz
+import platform
 import re
 import ipaddress
 import asyncio
@@ -118,7 +119,7 @@ from xbox.webapi.common.signed_session import SignedSession
 class Logger(object):
     def __init__(self, filename):
         self.terminal=sys.stdout
-        self.logfile=open(filename, "a", buffering=1)
+        self.logfile=open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         self.terminal.write(message)
@@ -301,7 +302,7 @@ def send_email(subject,body,body_html,use_ssl):
 # Function to write CSV entry
 def write_csv_entry(csv_file_name, timestamp, status, gamename):
     try:
-        csv_file=open(csv_file_name, 'a', newline='', buffering=1)
+        csv_file=open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
         csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename})
         csv_file.close()
@@ -509,7 +510,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
 
     try:
         if csv_file_name:
-            csv_file=open(csv_file_name, 'a', newline='', buffering=1)
+            csv_file=open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
             csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
@@ -606,7 +607,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
 
         if os.path.isfile(xbox_last_status_file):
             try:
-                with open(xbox_last_status_file, 'r') as f:
+                with open(xbox_last_status_file, 'r', encoding="utf-8") as f:
                     last_status_read=json.load(f)
             except Exception as e:
                 print(f"* Cannot load last status from '{xbox_last_status_file}' file - {e}")
@@ -640,7 +641,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                 last_status_to_save=[]
                 last_status_to_save.append(status_ts_old)
                 last_status_to_save.append(status)
-                with open(xbox_last_status_file, 'w') as f:
+                with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)                    
         except Exception as e:
             print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
@@ -677,7 +678,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
             last_status_to_save=[]
             last_status_to_save.append(status_ts_old)
             last_status_to_save.append(status)
-            with open(xbox_last_status_file, 'w') as f:
+            with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)   
 
         if status_ts_old!=status_ts_old_bck:
@@ -736,7 +737,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                     last_status_to_save=[]
                     last_status_to_save.append(status_ts)
                     last_status_to_save.append(status)
-                    with open(xbox_last_status_file, 'w') as f:
+                    with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
                         json.dump(last_status_to_save, f, indent=2)
                 except Exception as e:
                     print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
@@ -850,14 +851,17 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        os.system('clear')
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
     except:
         print("* Cannot clear the screen contents")
 
     print(f"Xbox Monitoring Tool v{VERSION}\n")
 
     parser=argparse.ArgumentParser("xbox_monitor")
-    parser.add_argument("xbox_gamertag", nargs="?", default="misiektoja", help="User's Xbox gamertag", type=str)
+    parser.add_argument("XBOX_GAMERTAG", nargs="?", help="User's Xbox gamertag", type=str)
     parser.add_argument("-u", "--ms_app_client_id", help="Microsoft Azure application client ID to override the value defined within the script (MS_APP_CLIENT_ID)", type=str)
     parser.add_argument("-w", "--ms_app_client_secret", help="Microsoft Azure application client secret to override the value defined within the script (MS_APP_CLIENT_SECRET)", type=str)    
     parser.add_argument("-a","--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
@@ -870,10 +874,13 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'xbox_monitor_user.log' file", action='store_true')
     args=parser.parse_args()
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    if not args.XBOX_GAMERTAG:
+        print("* Error: XBOX_GAMERTAG needs to be defined !")
+        sys.exit(1)
 
     if args.ms_app_client_id:
         MS_APP_CLIENT_ID=args.ms_app_client_id
@@ -882,11 +889,11 @@ if __name__ == "__main__":
         MS_APP_CLIENT_SECRET=args.ms_app_client_secret
 
     if not MS_APP_CLIENT_ID or MS_APP_CLIENT_ID=="your_ms_application_client_id":
-        print("* MS_APP_CLIENT_ID (-u / --ms_app_client_id) value is empty or incorrect\n")
+        print("* Error: MS_APP_CLIENT_ID (-u / --ms_app_client_id) value is empty or incorrect")
         sys.exit(1)
 
     if not MS_APP_CLIENT_SECRET or MS_APP_CLIENT_SECRET=="your_ms_application_secret_value":
-        print("* MS_APP_CLIENT_SECRET (-w / --ms_app_client_secret) value is empty or incorrect\n")
+        print("* Error: MS_APP_CLIENT_SECRET (-w / --ms_app_client_secret) value is empty or incorrect")
         sys.exit(1)
 
     if args.check_interval:
@@ -896,11 +903,16 @@ if __name__ == "__main__":
     if args.active_check_interval:
         XBOX_ACTIVE_CHECK_INTERVAL=args.active_check_interval
 
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
+
     if args.csv_file:
         csv_enabled=True
         csv_exists=os.path.isfile(args.csv_file)
         try:
-            csv_file=open(args.csv_file, 'a', newline='', buffering=1)
+            csv_file=open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
             print(f"\n* Error, CSV file cannot be opened for writing - {e}")
             sys.exit(1)
@@ -911,7 +923,7 @@ if __name__ == "__main__":
         csv_exists=False
 
     if not args.disable_logging:
-        xbox_logfile=f"{xbox_logfile}_{args.xbox_gamertag}.log"
+        xbox_logfile=f"{xbox_logfile}_{args.XBOX_GAMERTAG}.log"
         sys.stdout=Logger(xbox_logfile)
 
     active_inactive_notification=args.active_inactive_notification
@@ -926,18 +938,19 @@ if __name__ == "__main__":
     else:
         print(f"* CSV logging enabled:\t\t{csv_enabled}")    
 
-    out=f"\nMonitoring user with Xbox gamertag {args.xbox_gamertag}"
+    out=f"\nMonitoring user with Xbox gamertag {args.XBOX_GAMERTAG}"
     print(out)
     print("-" * len(out))
 
-    signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
-    signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
-    signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
-    signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
-    signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
+    # We define signal handlers only for Linux & MacOS since Windows has limited number of signals supported
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
+        signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
+        signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
+        signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
+        signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
 
-    asyncio.run(xbox_monitor_user(args.xbox_gamertag,args.error_notification,args.csv_file,csv_exists))
+    asyncio.run(xbox_monitor_user(args.XBOX_GAMERTAG,args.error_notification,args.csv_file,csv_exists))
 
     sys.stdout=stdout_bck
     sys.exit(0)
-
