@@ -678,14 +678,17 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
         except Exception as e:
             print(f"* Cannot write CSV entry - {e}")
 
-        if last_status_ts==0:
-            if lastonline_ts and status=="offline":
-                status_ts_old=lastonline_ts
-            last_status_to_save=[]
-            last_status_to_save.append(status_ts_old)
-            last_status_to_save.append(status)
-            with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)   
+        try:
+            if last_status_ts==0:
+                if lastonline_ts and status=="offline":
+                    status_ts_old=lastonline_ts
+                last_status_to_save=[]
+                last_status_to_save.append(status_ts_old)
+                last_status_to_save.append(status)
+                with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
+                    json.dump(last_status_to_save, f, indent=2)
+        except Exception as e:
+            print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
 
         if status_ts_old!=status_ts_old_bck:
             if status=="offline":
