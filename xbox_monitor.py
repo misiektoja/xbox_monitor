@@ -12,6 +12,7 @@ xbox-webapi
 httpx
 python-dateutil
 pytz
+tzlocal
 requests
 """
 
@@ -54,8 +55,9 @@ XBOX_CHECK_INTERVAL=300 # 5 min
 # How often do we perform checks for player activity when user is online, you can also use -k parameter; in seconds
 XBOX_ACTIVE_CHECK_INTERVAL=90 # 1,5 min
 
-# Specify your local time zone so we convert Xbox API timestamps to your time
-LOCAL_TIMEZONE='Europe/Warsaw'
+# Specify your local time zone so we convert Xbox API timestamps to your time (for example: 'Europe/Warsaw')
+# If you leave it as 'Auto' we will try to automatically detect the local timezone
+LOCAL_TIMEZONE='Auto'
 
 # After performing authentication the token will be saved into a file, type its location and name below
 MS_AUTH_TOKENS_FILE="xbox_tokens.json"
@@ -105,6 +107,10 @@ from email.mime.text import MIMEText
 import argparse
 import csv
 import pytz
+try:
+    from tzlocal import get_localzone
+except ImportError:
+    pass
 import platform
 import re
 import ipaddress
@@ -878,6 +884,18 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    local_tz=None
+    if LOCAL_TIMEZONE=="Auto":
+        try:
+            local_tz = get_localzone()
+        except NameError:
+            pass
+        if local_tz:
+            LOCAL_TIMEZONE=str(local_tz)
+        else:
+            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            sys.exit(1)
+
     if not args.XBOX_GAMERTAG:
         print("* Error: XBOX_GAMERTAG needs to be defined !")
         sys.exit(1)
@@ -936,7 +954,8 @@ if __name__ == "__main__":
     if csv_enabled:
         print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
     else:
-        print(f"* CSV logging enabled:\t\t{csv_enabled}")    
+        print(f"* CSV logging enabled:\t\t{csv_enabled}")
+    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
     out=f"\nMonitoring user with Xbox gamertag {args.XBOX_GAMERTAG}"
     print(out)
