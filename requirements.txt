@@ -2,4 +2,5 @@ httpx
 python_dateutil
 pytz
 Requests
+tzlocal
 xbox-webapi
