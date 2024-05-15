@@ -2,6 +2,15 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.2 (15 May 2024)
+
+**Features and Improvements**:
+
+- Improvements for running the code in Python under Windows
+- Automatic detection of local timezone if you set LOCAL_TIMEZONE variable to 'Auto' (it is default now); requires tzlocal pip module
+- Information about time zone is displayed in the start screen now
+- Better checking for wrong command line arguments
+
 # Changes in 1.1 (13 May 2024)
 
 **Features and Improvements**:
