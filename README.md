@@ -29,16 +29,19 @@ The script requires Python 3.x.
 
 It uses [xbox-webapi](https://github.com/OpenXbox/xbox-webapi-python) library, also requests, pytz, httpx and python-dateutil.
 
-It has been tested succesfully on Linux (Raspberry Pi Bullseye & Bookworm based on Debian) and Mac OS (Ventura & Sonoma). 
+It has been tested succesfully on:
+- macOS (Ventura & Sonoma)
+- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Windows (10 & 11)
 
-Should work on any other Linux OS and Windows with Python.
+It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
 Install the required Python packages:
 
 ```sh
-python3 -m pip install requests python-dateutil pytz httpx xbox-webapi
+python3 -m pip install requests python-dateutil pytz tzlocal httpx xbox-webapi
 ```
 
 Or from requirements.txt:
@@ -49,7 +52,7 @@ pip3 install -r requirements.txt
 
 Copy the *[xbox_monitor.py](xbox_monitor.py)* file to the desired location. 
 
-You might want to add executable rights if on Linux or MacOS:
+You might want to add executable rights if on Linux/Unix/macOS:
 
 ```sh
 chmod a+x xbox_monitor.py
@@ -95,11 +98,15 @@ After performing authentication the token will be saved into a file, type its lo
 
 ### Timezone
 
-It is recommended to specify your local time zone so the tool converts Xbox API timestamps to your time:
+The tool will try to automatically detect your local time zone so it can convert Xbox API timestamps to your time. 
+
+In case you want to specify your timezone manually then change **LOCAL_TIMEZONE** variable from *'Auto'* to specific location, e.g.
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
 ```
+
+In such case it is not needed to install *tzlocal* pip module.
 
 ### SMTP settings
 
@@ -147,7 +154,7 @@ It will generate a URL you need to paste in your web browser and authorize the t
    <img src="./assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="90%"/>
 </p>
 
-The request in your web browser will be redirected to localhost, you will get error it cannot connect, ignore it and just copy the part after *'?code='* in callback URL and paste in the tool.
+The request in your web browser will be redirected to localhost, you will get an error that it cannot connect, ignore it and just copy the part after *'?code='* in callback URL and paste in the tool.
 
 <p align="center">
    <img src="./assets/xbox_monitor_oauth2.png" alt="xbox_monitor_oauth2" width="70%"/>
@@ -197,7 +204,7 @@ Example email:
 
 ### Saving activity to the CSV file
 
-If you want to save all activities of the Xbox Live user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all reported activities of the Xbox Live user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./xbox_monitor.py misiektoja -b xbox_misiektoja.csv
@@ -211,7 +218,7 @@ If you want to change the check interval when the user is online or away to 30 s
 ./xbox_monitor.py misiektoja -k 30 -c 120
 ```
 
-### Controlling the script via signals
+### Controlling the script via signals (only macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
 
@@ -232,6 +239,8 @@ I personally use **pkill** tool, so for example to toggle email notifications wh
 ```sh
 pkill -f -USR1 "python3 ./xbox_monitor.py misiektoja"
 ```
+
+As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
 ### Other
 
