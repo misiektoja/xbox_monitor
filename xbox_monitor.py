@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.2
+v1.3
 
 Script implementing real-time monitoring of Xbox Live players activity:
 https://github.com/misiektoja/xbox_monitor/
@@ -16,7 +16,7 @@ tzlocal
 requests
 """
 
-VERSION=1.2
+VERSION=1.3
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -72,7 +72,7 @@ CHECK_INTERNET_URL='http://www.google.com/'
 CHECK_INTERNET_TIMEOUT=5
 
 # The name of the .log file; the tool by default will output its messages to xbox_monitor_gamertag.log file
-xbox_logfile="xbox_monitor"
+XBOX_LOGFILE="xbox_monitor"
 
 # Value used by signal handlers increasing/decreasing the check for player activity when user is online; in seconds
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE=30 # 30 seconds
@@ -146,7 +146,7 @@ def signal_handler(sig, frame):
 def check_internet():
     url=CHECK_INTERNET_URL
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
+        _=req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
         print("OK")
         return True
     except Exception as e:
@@ -156,7 +156,7 @@ def check_internet():
 
 # Function to convert absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
-    intervals = (
+    intervals=(
         ('years', 31556952), # approximation
         ('months', 2629746), # approximation
         ('weeks', 604800),  # 60 * 60 * 24 * 7
@@ -256,8 +256,8 @@ def send_email(subject,body,body_html,use_ssl):
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-            print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
-            return 1
+        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        return 1
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
         print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
@@ -511,8 +511,8 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
     title_name=""
     game_name=""
     platform=""
-    game_ts = 0
-    game_ts_old = 0    
+    game_ts=0
+    game_ts_old=0    
 
     try:
         if csv_file_name:
@@ -670,7 +670,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
             print(f"Title name:\t\t\t{title_name}")
         if status!="offline" and game_name:
             print(f"\nUser is currently in-game:\t{game_name}")
-            game_ts_old = int(time.time())
+            game_ts_old=int(time.time())
 
         try: 
             if csv_file_name and (status!=last_status):
@@ -718,7 +718,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                     sleep_interval=XBOX_ACTIVE_CHECK_INTERVAL
                 else:
                     sleep_interval=XBOX_CHECK_INTERVAL          
-                print(f"Error getting presence, retrying in {display_time(sleep_interval)}, error - {e}")
+                print(f"Error getting presence, retrying in {display_time(sleep_interval)} - {e}")
                 if 'validation' in str(e) or 'auth' in str(e) or 'token' in str(e):
                     print("* Xbox auth key might not be valid anymore!")
                     if error_notification and not email_sent:
@@ -791,7 +791,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
 
             # Player started/stopped/changed the game        
             if game_name != game_name_old: 
-                game_ts = int(time.time())
+                game_ts=int(time.time())
 
                 platform_str=""
                 if platform:
@@ -825,7 +825,7 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject,m_body,"",SMTP_SSL)
 
-                game_ts_old = game_ts
+                game_ts_old=game_ts
                        
             if change:
                 alive_counter=0
@@ -878,8 +878,8 @@ if __name__ == "__main__":
     parser.add_argument("-s","--status_notification", help="Send email notification for all player status changes (online/away/offline)", action='store_true')    
     parser.add_argument("-e","--error_notification", help="Disable sending email notifications in case of errors like oauth issues", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks if user is offline, in seconds", type=int)
-    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is not offline, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write all status changes to CSV file", type=str, metavar="CSV_FILENAME")    
+    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is NOT offline, in seconds", type=int)
+    parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")    
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'xbox_monitor_user.log' file", action='store_true')
     args=parser.parse_args()
 
@@ -890,7 +890,7 @@ if __name__ == "__main__":
     local_tz=None
     if LOCAL_TIMEZONE=="Auto":
         try:
-            local_tz = get_localzone()
+            local_tz=get_localzone()
         except NameError:
             pass
         if local_tz:
@@ -935,7 +935,7 @@ if __name__ == "__main__":
         try:
             csv_file=open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
-            print(f"\n* Error, CSV file cannot be opened for writing - {e}")
+            print(f"* Error: CSV file cannot be opened for writing - {e}")
             sys.exit(1)
         csv_file.close()
     else:
@@ -944,8 +944,8 @@ if __name__ == "__main__":
         csv_exists=False
 
     if not args.disable_logging:
-        xbox_logfile=f"{xbox_logfile}_{args.XBOX_GAMERTAG}.log"
-        sys.stdout=Logger(xbox_logfile)
+        XBOX_LOGFILE=f"{XBOX_LOGFILE}_{args.XBOX_GAMERTAG}.log"
+        sys.stdout=Logger(XBOX_LOGFILE)
 
     active_inactive_notification=args.active_inactive_notification
     game_change_notification=args.game_change_notification
