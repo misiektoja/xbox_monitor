@@ -166,7 +166,7 @@ The tool will run infinitely and monitor the player until the script is interrup
 
 You can monitor multiple Xbox Live players by spawning multiple copies of the script. 
 
-It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
+It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
 The tool automatically saves its output to *xbox_monitor_{gamertag}.log* file (can be changed in the settings or disabled with **-d** parameter).
 
