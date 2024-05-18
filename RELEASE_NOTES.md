@@ -2,6 +2,13 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.3 (19 May 2024)
+
+**Features and Improvements**:
+
+- Information when user is in-game during status changes (console + emails)
+- pep8 style convention corrections
+
 # Changes in 1.2 (15 May 2024)
 
 **Features and Improvements**:
