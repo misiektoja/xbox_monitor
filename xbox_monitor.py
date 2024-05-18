@@ -777,9 +777,14 @@ async def xbox_monitor_user(xbox_gamertag,error_notification,csv_file_name,csv_e
                     status_online_start_ts=0
                     act_inact_flag=True
 
+                user_in_game=""
+                if status!="offline" and game_name:            
+                    print(f"User is currently in-game: {game_name}{platform_str}")
+                    user_in_game=f"\n\nUser is currently in-game: {game_name}{platform_str}"
+
                 change=True
 
-                m_body=f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts),int(status_ts_old))}{m_body_was_since}{get_cur_ts("\n\nTimestamp: ")}"
+                m_body=f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts),int(status_ts_old))}{m_body_was_since}{user_in_game}{get_cur_ts("\n\nTimestamp: ")}"
                 if platform:
                     platform_str=f"{platform}, "
                 m_subject=f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"                    
@@ -964,7 +969,7 @@ if __name__ == "__main__":
     print(out)
     print("-" * len(out))
 
-    # We define signal handlers only for Linux & MacOS since Windows has limited number of signals supported
+    # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
         signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
         signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
