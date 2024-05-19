@@ -700,7 +700,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
             if csv_file_name and (status != last_status):
                 write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), status, game_name)
         except Exception as e:
-            print(f"* Cannot write CSV entry - {e}")
+            print(f"* Error: cannot write CSV entry - {e}")
 
         if last_status_ts == 0:
             if lastonline_ts and status == "offline":
@@ -863,7 +863,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     if csv_file_name:
                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), status, game_name)
                 except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                    print(f"* Error: cannot write CSV entry - {e}")
 
                 print_cur_ts("Timestamp:\t\t\t")
 
