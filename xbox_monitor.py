@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.3
+v1.4
 
 Script implementing real-time monitoring of Xbox Live players activity:
 https://github.com/misiektoja/xbox_monitor/
@@ -16,7 +16,7 @@ tzlocal
 requests
 """
 
-VERSION = 1.3
+VERSION = 1.4
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -58,6 +58,9 @@ XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 # Specify your local time zone so we convert Xbox API timestamps to your time (for example: 'Europe/Warsaw')
 # If you leave it as 'Auto' we will try to automatically detect the local timezone
 LOCAL_TIMEZONE = 'Auto'
+
+# If user gets offline and online again (for example due to rebooting the console) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption)
+OFFLINE_INTERRUPT = 420  # 7 mins
 
 # After performing authentication the token will be saved into a file, type its location and name below
 MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
@@ -350,23 +353,44 @@ def print_cur_ts(ts_str=""):
     print("---------------------------------------------------------------------------------------------------------")
 
 
-# Function to return the timestamp in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %Y, %H:%M:%S")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp in human readable format (short version); eg. Sun 21 Apr 15:08
+# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
 def get_short_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %H:%M")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
 
 
-# Function to return the timestamp in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
     if show_seconds:
         out_strf = "%H:%M:%S"
     else:
         out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts).strftime(out_strf)))
+    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
 # Function to return the range between two timestamps; eg. Sun 21 Apr 14:09 - 14:15
@@ -526,6 +550,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
     status_ts = 0
     status_ts_old = 0
     status_online_start_ts = 0
+    status_online_start_ts_old = 0
     lastonline_ts = 0
     status = ""
     xuid = 0
@@ -537,6 +562,9 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
     platform = ""
     game_ts = 0
     game_ts_old = 0
+    game_total_ts = 0
+    games_number = 0
+    game_total_after_offline_counted = False
 
     try:
         if csv_file_name:
@@ -629,6 +657,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
 
         if status and status != "offline":
             status_online_start_ts = status_ts_old
+            status_online_start_ts_old = status_online_start_ts
 
         xbox_last_status_file = f"xbox_{xbox_gamertag}_last_status.json"
         last_status_read = []
@@ -664,6 +693,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                         status_ts_old = last_status_ts
                     if status and status != "offline" and status == last_status:
                         status_online_start_ts = last_status_ts
+                        status_online_start_ts_old = status_online_start_ts
                         status_ts_old = last_status_ts
 
         if last_status_ts > 0 and status != last_status:
@@ -695,6 +725,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
         if status != "offline" and game_name:
             print(f"\nUser is currently in-game:\t{game_name}")
             game_ts_old = int(time.time())
+            games_number += 1
 
         try:
             if csv_file_name and (status != last_status):
@@ -758,9 +789,11 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
             change = False
             act_inact_flag = False
 
+            status_ts = int(time.time())
+            game_ts = int(time.time())
+
             # Player status changed
             if status != status_old:
-                status_ts = int(time.time())
 
                 platform_str = ""
                 if platform:
@@ -782,11 +815,23 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
                 m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
 
+                m_body_short_offline_msg = ""
+
                 # Player got online
                 if status_old == "offline" and status and status != "offline":
                     print(f"*** User got ACTIVE ! (was offline since {get_date_from_ts(status_ts_old)})")
-                    status_online_start_ts = status_ts
+                    game_total_after_offline_counted = False
+                    if (status_ts - status_ts_old) > OFFLINE_INTERRUPT or not status_online_start_ts_old:
+                        status_online_start_ts = status_ts
+                        game_total_ts = 0
+                        games_number = 0
+                    elif (status_ts - status_ts_old) <= OFFLINE_INTERRUPT and status_online_start_ts_old > 0:
+                        status_online_start_ts = status_online_start_ts_old
+                        m_body_short_offline_msg = f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
+                        print(f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}")
                     act_inact_flag = True
+
+                m_body_played_games = ""
 
                 # Player got offline
                 if status_old and status_old != "offline" and status == "offline":
@@ -797,18 +842,25 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                         m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
                     else:
                         online_since_msg = ""
+                    if games_number > 0:
+                        if game_name_old and not game_name:
+                            game_total_ts += (int(time.time()) - int(game_ts_old))
+                            game_total_after_offline_counted = True
+                        m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
+                        print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
                     print(f"*** User got OFFLINE ! {online_since_msg}")
+                    status_online_start_ts_old = status_online_start_ts
                     status_online_start_ts = 0
                     act_inact_flag = True
 
-                user_in_game = ""
+                m_body_user_in_game = ""
                 if status != "offline" and game_name:
                     print(f"User is currently in-game: {game_name}{platform_str}")
-                    user_in_game = f"\n\nUser is currently in-game: {game_name}{platform_str}"
+                    m_body_user_in_game = f"\n\nUser is currently in-game: {game_name}{platform_str}"
 
                 change = True
 
-                m_body = f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{user_in_game}{get_cur_ts("\n\nTimestamp: ")}"
+                m_body = f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts("\n\nTimestamp: ")}"
                 if platform:
                     platform_str = f"{platform}, "
                 m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
@@ -817,10 +869,10 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 status_ts_old = status_ts
+                print_cur_ts("Timestamp:\t\t\t")
 
             # Player started/stopped/changed the game
             if game_name != game_name_old:
-                game_ts = int(time.time())
 
                 platform_str = ""
                 if platform:
@@ -830,6 +882,8 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 if game_name_old and game_name:
                     print(f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}")
                     print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                    game_total_ts += (int(game_ts) - int(game_ts_old))
+                    games_number += 1                    
                     m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
                     if platform:
                         platform_str = f"{platform}, "
@@ -838,6 +892,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 # User started playing new game
                 elif not game_name_old and game_name:
                     print(f"Xbox user {xbox_gamertag} started playing '{game_name}'{platform_str}")
+                    games_number += 1
                     m_subject = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}"
                     m_body = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}{get_cur_ts("\n\nTimestamp: ")}"
 
@@ -845,6 +900,8 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 elif game_name_old and not game_name:
                     print(f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}")
                     print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                    if not game_total_after_offline_counted:
+                        game_total_ts += (int(game_ts) - int(game_ts_old))
                     m_subject = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
                     m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
 
@@ -855,6 +912,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
                 game_ts_old = game_ts
+                print_cur_ts("Timestamp:\t\t\t")
 
             if change:
                 alive_counter = 0
@@ -864,8 +922,6 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), status, game_name)
                 except Exception as e:
                     print(f"* Error: cannot write CSV entry - {e}")
-
-                print_cur_ts("Timestamp:\t\t\t")
 
             status_old = status
             game_name_old = game_name
