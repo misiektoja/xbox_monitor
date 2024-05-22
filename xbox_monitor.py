@@ -59,7 +59,7 @@ XBOX_ACTIVE_CHECK_INTERVAL = 90  # 1,5 min
 # If you leave it as 'Auto' we will try to automatically detect the local timezone
 LOCAL_TIMEZONE = 'Auto'
 
-# If user gets offline and online again (for example due to rebooting the console) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption)
+# If user gets offline and online again (for example due to rebooting the console) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption) + we also keep stats from the previous session (like total time and number of played games)
 OFFLINE_INTERRUPT = 420  # 7 mins
 
 # After performing authentication the token will be saved into a file, type its location and name below
@@ -736,6 +736,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
 
         if title_name and status == "offline":
             print(f"Title name:\t\t\t{title_name}")
+
         if status != "offline" and game_name:
             print(f"\nUser is currently in-game:\t{game_name}")
             game_ts_old = int(time.time())
@@ -858,7 +859,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                         online_since_msg = ""
                     if games_number > 0:
                         if game_name_old and not game_name:
-                            game_total_ts += (int(time.time()) - int(game_ts_old))
+                            game_total_ts += (int(game_ts) - int(game_ts_old))
                             game_total_after_offline_counted = True
                         m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
                         print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
