@@ -5,7 +5,7 @@ xbox_monitor is a Python script which allows for real-time monitoring of Xbox Li
 ## Features
 
 - Real-time tracking of Xbox Live users gaming activity (including detection when user gets online/offline or played games)
-- Basics statistics for user activity (how long in different states, how long played game etc.)
+- Basics statistics for user activity (how long in different states, how long played game, overall time and number of played games in the session etc.)
 - Email notifications for different events (player gets online/away/offline, starts/finishes/changes game, errors)
 - Saving all user activity with timestamps to the CSV file
 - Built-in OAuth2 authentication
@@ -108,6 +108,10 @@ LOCAL_TIMEZONE='Europe/Warsaw'
 
 In such case it is not needed to install *tzlocal* pip module.
 
+### User privacy settings
+
+In order to monitor Xbox user activity, proper privacy settings need to be enabled on the monitored user account, i.e. in [Xbox profile privacy & online safety settings](https://account.xbox.com/Settings), the value in section *'Others can see if you're online'* (and preferably also *'Others can see your Xbox profile details'*) should be set to *'Friends'* (if you are friends) or to *'Everyone'*. 
+
 ### SMTP settings
 
 If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
@@ -168,7 +172,7 @@ You can monitor multiple Xbox Live players by spawning multiple copies of the sc
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
-The tool automatically saves its output to *xbox_monitor_{gamertag}.log* file (can be changed in the settings or disabled with **-d** parameter).
+The tool automatically saves its output to *xbox_monitor_{gamertag}.log* file (can be changed in the settings via **XBOX_LOGFILE** variable or disabled completely with **-d** parameter).
 
 The tool also saves the timestamp and last status (after every change) to *xbox_{gamertag}_last_status.json* file, so the last status is available after the restart of the tool.
 
