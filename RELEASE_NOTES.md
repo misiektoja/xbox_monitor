@@ -46,7 +46,7 @@ This is a high-level summary of the most important changes.
 - In case of getting an exception in main loop we will send the error email notification only once (until the issue is resolved)
 - Exception handling for function converting the timezone
 
-**Bugfixes**:
+**Bug fixes**:
 
 - Handling situations when JSON file storing info about the last status gets corrupted or when there are issuing saving the state
 
