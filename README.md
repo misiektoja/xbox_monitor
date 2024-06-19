@@ -1,13 +1,13 @@
 # xbox_monitor
 
-xbox_monitor is a Python script which allows for real-time monitoring of Xbox Live players activity. 
+xbox_monitor is a Python tool which allows for real-time monitoring of Xbox Live players activities. 
 
 ## Features
 
 - Real-time tracking of Xbox Live users gaming activity (including detection when user gets online/offline or played games)
 - Basics statistics for user activity (how long in different states, how long played game, overall time and number of played games in the session etc.)
 - Email notifications for different events (player gets online/away/offline, starts/finishes/changes game, errors)
-- Saving all user activity with timestamps to the CSV file
+- Saving all user activities with timestamps to the CSV file
 - Built-in OAuth2 authentication
 - Possibility to control the running copy of the script via signals
 
@@ -25,20 +25,25 @@ I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at
 
 ## Requirements
 
-The script requires Python 3.x.
+The tool requires Python 3.8 or higher.
 
 It uses [xbox-webapi](https://github.com/OpenXbox/xbox-webapi-python) library, also requests, pytz, tzlocal, httpx and python-dateutil.
 
 It has been tested successfully on:
 - macOS (Ventura & Sonoma)
-- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Linux:
+   - Raspberry Pi Bullseye & Bookworm
+   - Ubuntu 24
+   - Kali Linux 2024
 - Windows (10 & 11)
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
-Install the required Python packages:
+Download and install Python environment if you have not done it yet: [Python](https://www.python.org/downloads/)
+
+Then install the required Python packages:
 
 ```sh
 python3 -m pip install requests python-dateutil pytz tzlocal httpx xbox-webapi
@@ -114,7 +119,13 @@ In order to monitor Xbox user activity, proper privacy settings need to be enabl
 
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[xbox_monitor.py](xbox_monitor.py)* file. If you leave the default settings then no notifications will be sent.
+
+You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+
+```sh
+./xbox_monitor.py -z
+```
 
 ### Other settings
 
