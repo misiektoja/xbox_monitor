@@ -98,6 +98,11 @@ nl_ch = "\n"
 
 
 import sys
+
+if sys.version_info < (3, 8):
+    print("* Error: Python version 3.8 or higher required !")
+    sys.exit(1)
+
 import time
 import string
 import json
@@ -658,7 +663,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
         # Construct the Xbox API client from AuthenticationManager instance
         xbl_client = XboxLiveClient(auth_mgr)
 
-        # Get profile for user with specified gamertag to grab some details like XUID
+        # Get profile for user with specified gamer tag to grab some details like XUID
         try:
             profile = await xbl_client.profile.get_profile_by_gamertag(xbox_gamertag)
         except Exception as e:
@@ -932,7 +937,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     print(f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}")
                     print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}")
                     game_total_ts += (int(game_ts) - int(game_ts_old))
-                    games_number += 1                    
+                    games_number += 1
                     m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     if platform:
                         platform_str = f"{platform}, "
