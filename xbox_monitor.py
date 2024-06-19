@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.4
+v1.5
 
-Script implementing real-time monitoring of Xbox Live players activity:
+Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
 
 Python pip3 requirements:
@@ -16,7 +16,7 @@ tzlocal
 requests
 """
 
-VERSION = 1.4
+VERSION = 1.5
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -92,6 +92,9 @@ csvfieldnames = ['Date', 'Status', 'Game name']
 active_inactive_notification = False
 game_change_notification = False
 status_notification = False
+
+# to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
+nl_ch = "\n"
 
 
 import sys
@@ -198,6 +201,9 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
     if type(timestamp1) is int:
         dt1 = datetime.fromtimestamp(int(ts1))
+    elif type(timestamp1) is float:
+        ts1 = int(round(ts1))
+        dt1 = datetime.fromtimestamp(ts1)
     elif type(timestamp1) is datetime:
         dt1 = timestamp1
         ts1 = int(round(dt1.timestamp()))
@@ -206,6 +212,9 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
     if type(timestamp2) is int:
         dt2 = datetime.fromtimestamp(int(ts2))
+    elif type(timestamp2) is float:
+        ts2 = int(round(ts2))
+        dt2 = datetime.fromtimestamp(ts2)
     elif type(timestamp2) is datetime:
         dt2 = timestamp2
         ts2 = int(round(dt2.timestamp()))
@@ -344,7 +353,7 @@ def convert_utc_str_to_tz_datetime(utc_string, timezone):
 
 # Function to return the timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f"{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}")
+    return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Function to print the current timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
@@ -359,22 +368,41 @@ def get_date_from_ts(ts):
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
+    return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
-def get_short_date_from_ts(ts):
+# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Sun 21 Apr 15:08
+# Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
+# Sun 21 Apr (if show_hour == False)
+def get_short_date_from_ts(ts, show_year=False, show_hour=True):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
+    if show_hour:
+        hour_strftime = " %H:%M"
+    else:
+        hour_strftime = ""
+
+    if show_year and int(datetime.fromtimestamp(ts_new).strftime("%Y")) != int(datetime.now().strftime("%Y")):
+        if show_hour:
+            hour_prefix = ","
+        else:
+            hour_prefix = ""
+        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}')
+    else:
+        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}')
 
 
 # Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
@@ -383,6 +411,8 @@ def get_hour_min_from_ts(ts, show_seconds=False):
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
         ts_new = ts
+    elif type(ts) is float:
+        ts_new = int(round(ts))
     else:
         return ""
 
@@ -399,6 +429,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
         ts1_new = int(round(ts1.timestamp()))
     elif type(ts1) is int:
         ts1_new = ts1
+    elif type(ts1) is float:
+        ts1_new = int(round(ts1))
     else:
         return ""
 
@@ -406,6 +438,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
         ts2_new = int(round(ts2.timestamp()))
     elif type(ts2) is int:
         ts2_new = ts2
+    elif type(ts2) is float:
+        ts2_new = int(round(ts2))
     else:
         return ""
 
@@ -720,7 +754,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
             except Exception as e:
                 print(f"* Cannot save last status to '{xbox_last_status_file}' file - {e}")
 
-        print(f"\nXbox user gamertag:\t\t{xbox_gamertag}")
+        print(f"\nXbox user gamer tag:\t\t{xbox_gamertag}")
         print(f"Xbox XUID:\t\t\t{xuid}")
         if realname:
             print(f"Real name:\t\t\t{realname}")
@@ -793,7 +827,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     print("* Xbox auth key might not be valid anymore!")
                     if error_notification and not email_sent:
                         m_subject = f"xbox_monitor: Xbox auth key error! (user: {xbox_gamertag})"
-                        m_body = f"Xbox auth key might not be valid anymore: {e}{get_cur_ts("\n\nTimestamp: ")}"
+                        m_body = f"Xbox auth key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                         send_email(m_subject, m_body, "", SMTP_SSL)
                         email_sent = True
@@ -875,7 +909,7 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
 
                 change = True
 
-                m_body = f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts("\n\nTimestamp: ")}"
+                m_body = f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                 if platform:
                     platform_str = f"{platform}, "
                 m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
@@ -896,10 +930,10 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                 # User changed the game
                 if game_name_old and game_name:
                     print(f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}")
-                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}")
                     game_total_ts += (int(game_ts) - int(game_ts_old))
                     games_number += 1                    
-                    m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
+                    m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     if platform:
                         platform_str = f"{platform}, "
                     m_subject = f"Xbox user {xbox_gamertag} changed game to '{game_name}' ({platform_str}after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
@@ -909,16 +943,16 @@ async def xbox_monitor_user(xbox_gamertag, error_notification, csv_file_name, cs
                     print(f"Xbox user {xbox_gamertag} started playing '{game_name}'{platform_str}")
                     games_number += 1
                     m_subject = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}"
-                    m_body = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}{get_cur_ts("\n\nTimestamp: ")}"
+                    m_body = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
 
                 # User stopped playing the game
                 elif game_name_old and not game_name:
                     print(f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}")
-                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                    print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}")
                     if not game_total_after_offline_counted:
                         game_total_ts += (int(game_ts) - int(game_ts_old))
                     m_subject = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
-                    m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
+                    m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
 
                 change = True
 
@@ -970,7 +1004,7 @@ if __name__ == "__main__":
     print(f"Xbox Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser("xbox_monitor")
-    parser.add_argument("XBOX_GAMERTAG", nargs="?", help="User's Xbox gamertag", type=str)
+    parser.add_argument("XBOX_GAMERTAG", nargs="?", help="User's Xbox gamer tag", type=str)
     parser.add_argument("-u", "--ms_app_client_id", help="Microsoft Azure application client ID to override the value defined within the script (MS_APP_CLIENT_ID)", type=str)
     parser.add_argument("-w", "--ms_app_client_secret", help="Microsoft Azure application client secret to override the value defined within the script (MS_APP_CLIENT_SECRET)", type=str)
     parser.add_argument("-a", "--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
@@ -1063,7 +1097,7 @@ if __name__ == "__main__":
         print(f"* CSV logging enabled:\t\t{csv_enabled}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
 
-    out = f"\nMonitoring user with Xbox gamertag {args.XBOX_GAMERTAG}"
+    out = f"\nMonitoring user with Xbox gamer tag {args.XBOX_GAMERTAG}"
     print(out)
     print("-" * len(out))
 
