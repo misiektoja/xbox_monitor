@@ -2,13 +2,16 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 1.9 (TBD)
+# Changes in 1.9 (02 Mar 2026)
 
 - **IMPROVE:** Switched from **xbox-webapi-python** to **[python-xbox](https://github.com/tr4nt0r/python-xbox)** to ensure better long-term stability and active maintenance (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **NEW:** Added **activity detection fallback for appear-offline users** - when a user's profile is set to "Appear Offline", the tool now uses **title history** to still detect and report gaming activity
 - **NEW:** Implemented **debug mode** (`--debug` flag or `DEBUG_MODE` config option) - provides full technical logging for authentication, presence tracking and activity detection
 - **IMPROVE:** Enhanced `--generate-config` to support writing directly to a file (e.g. `xbox_monitor --generate-config xbox_monitor.conf`). This avoids UTF-16 encoding issues on **Windows PowerShell**
 - **IMPROVE:** Expanded tabs to spaces in output log files to ensure consistent alignment across different viewers
 - **IMPROVE:** Enhanced friends list fetching logic to use fixed python-xbox library
+- **IMPROVE:** **Game name** is now included in **title history** activity notifications
+- **IMPROVE:** Implemented **automatic re-authentication** when OAuth token refresh fails, improving long-term monitoring reliability
 
 # Changes in 1.8 (06 Jan 2026)
 
