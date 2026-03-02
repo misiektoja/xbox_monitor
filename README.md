@@ -27,6 +27,7 @@ pip install xbox_monitor
 - **Real-time tracking** of Xbox Live users' gaming activity (including detection when a user gets online or offline and played games)
 - **Basic statistics for user activity** (how long in different states, how long a game is played, overall time and number of played games in the session etc.)
 - **Detailed user information** display mode providing comprehensive Xbox profile insights, including **XUID**, **online status** and **last online date**, **platform information**, **account tier** (Game Pass Core/Ultimate or Free), **gamerscore**, **real name**, **location**, **friends count** and optionally **friends list** with activity details, **recently played games** with **last played date** and **total play time**, and **recently earned achievements**
+- **Activity detection for appear-offline users** - uses title history to detect and report gaming activity even when the monitored user's profile is set to "Appear Offline"
 - **Email notifications** for different events (player gets online, away or offline and starts, finishes or changes a game, errors)
 - **Saving all user activities** with timestamps to a **CSV file**
 - **Built-in OAuth2 authentication** with manual authorization support
@@ -58,6 +59,7 @@ pip install xbox_monitor
    * [Email Notifications](#email-notifications)
    * [CSV Export](#csv-export)
    * [Check Intervals](#check-intervals)
+   * [Debug Mode](#debug-mode)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
 6. [Change Log](#change-log)
@@ -95,7 +97,7 @@ Download the *[xbox_monitor.py](https://raw.githubusercontent.com/misiektoja/xbo
 Install dependencies via pip:
 
 ```sh
-pip install xbox-webapi requests python-dateutil httpx pytz tzlocal python-dotenv
+pip install python-xbox requests python-dateutil httpx pytz tzlocal python-dotenv
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/requirements.txt)*:
@@ -446,6 +448,17 @@ xbox_monitor <xbox_gamer_tag> -k 30 -c 120
 
 * `XBOX_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online or away (seconds)
 * `XBOX_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+<a id="debug-mode"></a>
+### Debug Mode
+
+To enable full technical logging for authentication, presence tracking and activity detection, use the `--debug` flag:
+
+```sh
+xbox_monitor <xbox_gamer_tag> --debug
+```
+
+Alternatively, set `DEBUG_MODE` to `True` in your configuration file for persistent debug logging.
 
 <a id="signal-controls-macoslinuxunix"></a>
 ### Signal Controls (macOS/Linux/Unix)
