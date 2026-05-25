@@ -194,7 +194,7 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if XBOX_CHECK_INTERVAL > 0 else 0
+LIVENESS_CHECK_COUNTER = 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name']
@@ -288,9 +288,11 @@ def signal_handler(sig, frame):
 
 
 # Checks internet connectivity
-def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
+def check_internet(url=None, timeout=None):
+    check_url = CHECK_INTERNET_URL if url is None else url
+    check_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     try:
-        _ = req.get(url, timeout=timeout)
+        _ = req.get(check_url, timeout=check_timeout)
         return True
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{e}")
@@ -1504,6 +1506,47 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
+# Parses a command-line interval value as a positive integer
+def positive_interval_arg(value):
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("must be an integer greater than 0") from e
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be an integer greater than 0")
+    return parsed
+
+
+# Coerces a timer setting to an integer with optional zero support
+def normalize_timer_setting(name, value, allow_zero=False):
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{name} must be an integer") from e
+    if parsed < 0 or (parsed == 0 and not allow_zero):
+        if allow_zero:
+            raise ValueError(f"{name} must be 0 or greater")
+        raise ValueError(f"{name} must be greater than 0")
+    return parsed
+
+
+# Validates the finalized connectivity timeout value
+def validate_connectivity_timer():
+    global CHECK_INTERNET_TIMEOUT
+    CHECK_INTERNET_TIMEOUT = normalize_timer_setting("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT)
+
+
+# Validates finalized monitor timer values and refreshes the liveness counter
+def validate_monitor_timers():
+    global LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, XBOX_CHECK_INTERVAL
+    XBOX_CHECK_INTERVAL = normalize_timer_setting("XBOX_CHECK_INTERVAL", XBOX_CHECK_INTERVAL)
+    XBOX_ACTIVE_CHECK_INTERVAL = normalize_timer_setting("XBOX_ACTIVE_CHECK_INTERVAL", XBOX_ACTIVE_CHECK_INTERVAL)
+    LIVENESS_CHECK_INTERVAL = normalize_timer_setting("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, allow_zero=True)
+    LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+
+
 # Main function that monitors activity of the specified Xbox user
 async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, games_count=10):
 
@@ -1995,7 +2038,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -2173,14 +2216,14 @@ def main():
         "-c", "--check-interval",
         dest="check_interval",
         metavar="SECONDS",
-        type=int,
+        type=positive_interval_arg,
         help="Polling interval when user is offline"
     )
     times.add_argument(
         "-k", "--active-interval",
         dest="active_interval",
         metavar="SECONDS",
-        type=int,
+        type=positive_interval_arg,
         help="Polling interval when user is online"
     )
 
@@ -2263,6 +2306,12 @@ def main():
             if val is not None:
                 globals()[secret] = val
 
+    try:
+        validate_connectivity_timer()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
         if get_localzone is not None:
@@ -2322,12 +2371,17 @@ def main():
         asyncio.run(get_user_info(args.xbox_gamertag, client=None, show_friends=args.show_friends, show_recent_achievements=args.show_recent_achievements, show_recent_games=True, achievements_count=args.achievements_count, games_count=args.games_count))
         sys.exit(0)
 
-    if args.check_interval:
+    if args.check_interval is not None:
         XBOX_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if XBOX_CHECK_INTERVAL > 0 else 0
 
-    if args.active_interval:
+    if args.active_interval is not None:
         XBOX_ACTIVE_CHECK_INTERVAL = args.active_interval
+
+    try:
+        validate_monitor_timers()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
 
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
