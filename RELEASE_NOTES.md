@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.1 (26 May 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Recalculate the liveness counter after config and CLI overrides are applied
+- **BUGFIX:** Make connectivity checks use the finalized URL and timeout settings
+- **BUGFIX:** Validate polling intervals before the monitor starts to avoid tight retry loops
+
 # Changes in 1.9 (02 Mar 2026)
 
 - **IMPROVE:** Switched from **xbox-webapi-python** to **[python-xbox](https://github.com/tr4nt0r/python-xbox)** to ensure better long-term stability and active maintenance (thanks [@tomballgithub](https://github.com/tomballgithub))
