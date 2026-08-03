@@ -381,6 +381,8 @@ You can monitor multiple Xbox Live players by running multiple instances of the 
 
 The tool automatically saves its output to `xbox_monitor_<gamer_tag>.log` file. It can be changed in the settings via `XBOX_LOGFILE` configuration option or disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
+Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
+
 The tool also saves the timestamp and last status (after every change) to `xbox_<gamer_tag>_last_status.json` file, so the last status is available after the restart of the tool.
 
 <a id="email-notifications"></a>
