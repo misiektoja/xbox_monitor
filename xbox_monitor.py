@@ -194,6 +194,9 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
+# Version incremented when SIGHUP reloads Xbox application credentials
+XBOX_AUTH_REFRESH_VERSION = 0
+
 LIVENESS_CHECK_COUNTER = 0
 
 stdout_bck = None
@@ -820,6 +823,7 @@ def decrease_active_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
+    global XBOX_AUTH_REFRESH_VERSION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -842,13 +846,18 @@ def reload_secrets_signal_handler(sig, frame):
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+    auth_credentials_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"):
+                    auth_credentials_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
+    if auth_credentials_changed:
+        XBOX_AUTH_REFRESH_VERSION += 1
 
     print_cur_ts("Timestamp:\t\t\t")
 
@@ -1610,6 +1619,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Construct the Xbox API client from AuthenticationManager instance
         xbl_client = XboxLiveClient(auth_mgr)
+        auth_refresh_version = XBOX_AUTH_REFRESH_VERSION
 
         await get_user_info(xbox_gamertag, client=xbl_client, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=achievements_count, games_count=games_count)
 
@@ -1773,6 +1783,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         # Main loop
         while True:
             try:
+                if auth_refresh_version != XBOX_AUTH_REFRESH_VERSION:
+                    auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
+                    await authenticate_and_refresh_tokens(auth_mgr)
+                    xbl_client = XboxLiveClient(auth_mgr)
+                    auth_refresh_version = XBOX_AUTH_REFRESH_VERSION
+                    print("* Xbox authentication client recreated after credential reload")
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
                 if lastonline_ts > 0:
