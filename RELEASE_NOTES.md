@@ -4,16 +4,16 @@ This is a high-level summary of the most important changes.
 
 # Changes in 1.9.2 (TBD)
 
-Version **1.9.2** improves startup recovery and log portability while refreshing credentials safely.
+Version **1.9.2** applies refreshed Xbox credentials without a restart, gives clearer timezone recovery guidance and lets saved logs use portable separators.
 
 **Features and improvements**:
 
-- **IMPROVE:** Improved the error message when timezone auto-detection fails to hint about the missing optional `tzlocal` library and how to install it
-- **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
+- **IMPROVE:** **Clear timezone recovery** - When automatic detection fails, the startup error now identifies the optional `tzlocal` dependency, shows how to install it and explains that `LOCAL_TIMEZONE` can be set manually
+- **IMPROVE:** **Portable log separators** - The new `ASCII_LOG_SEPARATORS` setting controls whether separator-only lines saved to log files use ASCII hyphens. `"Auto"` enables them on Windows by default, `"On"` enables them on every operating system and `"Off"` preserves Unicode separators. Terminal separators remain Unicode and log files remain UTF-8
 
 **Bug fixes**:
 
-- **BUGFIX:** Made `SIGHUP` recreate the Xbox authentication client after application credential rotation
+- **BUGFIX:** **Live Xbox credential reloads** - After `SIGHUP` loads a changed Microsoft application client ID or secret, the monitor reauthenticates and recreates the Xbox client before the next presence check so the new credentials take effect without a restart
 
 # Changes in 1.9.1 (26 May 2026)
 
