@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.2 (TBD)
+
+**Bug fixes**:
+
+- **BUGFIX:** Made `SIGHUP` recreate the Xbox authentication client after application credential rotation
+
 # Changes in 1.9.1 (26 May 2026)
 
 **Bug fixes**:
