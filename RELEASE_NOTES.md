@@ -4,9 +4,12 @@ This is a high-level summary of the most important changes.
 
 # Changes in 1.9.2 (TBD)
 
+Version **1.9.2** improves startup recovery and log portability while refreshing credentials safely.
+
 **Features and improvements**:
 
 - **IMPROVE:** Improved the error message when timezone auto-detection fails to hint about the missing optional `tzlocal` library and how to install it
+- **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
 
 **Bug fixes**:
 
