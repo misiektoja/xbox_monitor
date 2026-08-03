@@ -4,6 +4,10 @@ This is a high-level summary of the most important changes.
 
 # Changes in 1.9.2 (TBD)
 
+**Features and improvements**:
+
+- **IMPROVE:** Improved the error message when timezone auto-detection fails to hint about the missing optional `tzlocal` library and how to install it
+
 **Bug fixes**:
 
 - **BUGFIX:** Made `SIGHUP` recreate the Xbox authentication client after application credential rotation
