@@ -36,6 +36,7 @@ regexes = [
     '''(?i)^github_pat_private$''',
     '''(?i)^lastfm-key$''',
     '''(?i)^lastfm-secret$''',
+    '''(?i)^new-client-secret$''',
     '''(?i)^new-github-token$''',
     '''(?i)^new-refresh-token$''',
     '''(?i)^spotify-secret$''',
