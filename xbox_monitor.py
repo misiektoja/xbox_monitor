@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.1
+v1.9.2
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
