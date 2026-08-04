@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.2
+v1.9.3
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2485,7 +2485,7 @@ def main():
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* ASCII log separators:\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
+    print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Xbox token cache file:\t{MS_AUTH_TOKENS_FILE or 'None'}")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
