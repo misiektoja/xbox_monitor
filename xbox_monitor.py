@@ -135,6 +135,12 @@ XBOX_LOGFILE = "xbox_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# Controls conversion of separator-only log lines to ASCII:
+#   "Auto" - enable on Windows only (default)
+#   "On"   - enable on every operating system
+#   "Off"  - preserve Unicode separators in logs
+ASCII_LOG_SEPARATORS = "Auto"
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -181,6 +187,7 @@ CSV_FILE = ""
 DOTENV_FILE = ""
 XBOX_LOGFILE = ""
 DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
@@ -193,6 +200,9 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
+
+# Version incremented when SIGHUP reloads Xbox application credentials
+XBOX_AUTH_REFRESH_VERSION = 0
 
 LIVENESS_CHECK_COUNTER = 0
 
@@ -260,6 +270,21 @@ import shutil
 from pathlib import Path
 
 
+# Reports whether separator-only log lines should use ASCII on this system
+def ascii_log_separators_enabled():
+    mode = str(ASCII_LOG_SEPARATORS).strip().lower()
+    if mode not in {"auto", "on", "off"}:
+        raise ValueError("ASCII_LOG_SEPARATORS must be 'Auto', 'On' or 'Off'")
+    return mode == "on" or (mode == "auto" and platform.system() == "Windows")
+
+
+# Converts Unicode-only horizontal separator lines to ASCII when configured
+def normalize_log_separators(message):
+    if not ascii_log_separators_enabled():
+        return message
+    return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
@@ -272,7 +297,7 @@ class Logger(object):
             STDOUT_AT_START_OF_LINE = message.endswith('\n')
         self.terminal.write(message)
         # Expand tabs for file output (stdout remains untouched)
-        self.logfile.write(message.expandtabs(8))
+        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
         self.terminal.flush()
         self.logfile.flush()
 
@@ -820,6 +845,7 @@ def decrease_active_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
+    global XBOX_AUTH_REFRESH_VERSION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -842,13 +868,18 @@ def reload_secrets_signal_handler(sig, frame):
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+    auth_credentials_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"):
+                    auth_credentials_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
+    if auth_credentials_changed:
+        XBOX_AUTH_REFRESH_VERSION += 1
 
     print_cur_ts("Timestamp:\t\t\t")
 
@@ -1610,6 +1641,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Construct the Xbox API client from AuthenticationManager instance
         xbl_client = XboxLiveClient(auth_mgr)
+        auth_refresh_version = XBOX_AUTH_REFRESH_VERSION
 
         await get_user_info(xbox_gamertag, client=xbl_client, show_friends=False, show_recent_achievements=False, show_recent_games=False, achievements_count=achievements_count, games_count=games_count)
 
@@ -1773,6 +1805,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         # Main loop
         while True:
             try:
+                if auth_refresh_version != XBOX_AUTH_REFRESH_VERSION:
+                    auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
+                    await authenticate_and_refresh_tokens(auth_mgr)
+                    xbl_client = XboxLiveClient(auth_mgr)
+                    auth_refresh_version = XBOX_AUTH_REFRESH_VERSION
+                    print("* Xbox authentication client recreated after credential reload")
                 presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                 status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence)
                 if lastonline_ts > 0:
@@ -2322,7 +2360,9 @@ def main():
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
-            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            print("* Error: Cannot detect local timezone.")
+            print("* Hint: This can happen if the optional 'tzlocal' library is missing. Install it with: pip install tzlocal")
+            print("* Or set LOCAL_TIMEZONE to your local timezone manually.")
             sys.exit(1)
     else:
         if not is_valid_timezone(LOCAL_TIMEZONE):
@@ -2397,6 +2437,12 @@ def main():
             print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
+    try:
+        ascii_log_separators_enabled()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
     if args.debug_mode is not None:
@@ -2439,6 +2485,7 @@ def main():
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* ASCII log separators:\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Xbox token cache file:\t{MS_AUTH_TOKENS_FILE or 'None'}")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
