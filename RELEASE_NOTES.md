@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.3 (04 Aug 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed indentation of ASCII log separators in summary screen
+
 # Changes in 1.9.2 (04 Aug 2026)
 
 Version **1.9.2** applies refreshed Xbox credentials without a restart, gives clearer timezone recovery guidance and lets saved logs use portable separators.
