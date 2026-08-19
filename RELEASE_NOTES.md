@@ -2,6 +2,16 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.4 (TBD)
+
+Version **1.9.4** keeps the tool running through slow or unstable connections to Xbox Live and the Microsoft sign-in endpoint instead of aborting at startup.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Resilient Xbox authentication** - A slow response from the Microsoft sign-in endpoint no longer aborts the tool with a Python traceback. Requests to Xbox Live and to the sign-in endpoint now use a 30 second timeout instead of the 5 second default of the underlying HTTP library, and a token refresh that fails with a network timeout or a temporary server-side error (HTTP 429 or 5xx) is retried up to three times with an exponentially growing delay. Tune this with the new `XBOX_API_TIMEOUT`, `TOKEN_REFRESH_RETRIES` and `TOKEN_REFRESH_RETRY_DELAY` settings
+- **BUGFIX:** **No spurious re-authorization prompts** - A temporary Microsoft server-side error no longer asks you to repeat the interactive OAuth flow. Only an expired or revoked refresh token starts re-authorization
+- **BUGFIX:** **Readable authentication errors** - When authentication ultimately fails, the tool now reports the reason and exits cleanly instead of printing a raw traceback or an empty error message
+
 # Changes in 1.9.3 (04 Aug 2026)
 
 **Bug fixes**:
