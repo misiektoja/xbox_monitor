@@ -59,6 +59,7 @@ pip install xbox_monitor
    * [Email Notifications](#email-notifications)
    * [CSV Export](#csv-export)
    * [Check Intervals](#check-intervals)
+   * [Network Timeouts and Retries](#network-timeouts-and-retries)
    * [Debug Mode](#debug-mode)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
@@ -450,6 +451,19 @@ xbox_monitor <xbox_gamer_tag> -k 30 -c 120
 
 * `XBOX_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online or away (seconds)
 * `XBOX_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+<a id="network-timeouts-and-retries"></a>
+### Network Timeouts and Retries
+
+Requests to Xbox Live and to the Microsoft sign-in endpoint use a 30 second timeout, and a token refresh that fails because of a network timeout or a temporary server-side error (HTTP 429 or 5xx) is retried up to three times with an exponentially growing delay.
+
+On a slow or unstable connection you can raise the timeout and the number of attempts via the configuration file:
+
+* `XBOX_API_TIMEOUT`: timeout for Xbox Live and Microsoft authentication API requests (seconds, default 30)
+* `TOKEN_REFRESH_RETRIES`: how many token refresh attempts to make before giving up (default 3, set to 1 to disable retrying)
+* `TOKEN_REFRESH_RETRY_DELAY`: delay before the first retry, doubled after every failed attempt (seconds, default 5)
+
+An expired or revoked refresh token is a credential problem rather than a network problem, so it is reported immediately and starts the interactive re-authorization flow instead of being retried.
 
 <a id="debug-mode"></a>
 ### Debug Mode
