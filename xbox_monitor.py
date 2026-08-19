@@ -114,6 +114,19 @@ CHECK_INTERNET_URL = 'https://user.auth.xboxlive.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
+# Timeout for Xbox Live and Microsoft authentication API requests; in seconds
+# The underlying HTTP library defaults to 5 seconds which is too aggressive for the
+# Microsoft token endpoint and can abort the tool with a read timeout
+XBOX_API_TIMEOUT = 30
+
+# How many attempts to make when a token refresh fails with a network timeout or a
+# temporary server-side error; set to 1 to disable retrying
+TOKEN_REFRESH_RETRIES = 3
+
+# Delay before the first token refresh retry; in seconds
+# The delay doubles after every failed attempt
+TOKEN_REFRESH_RETRY_DELAY = 5
+
 # After authentication, the access token will be saved to the following file
 MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
 
@@ -182,6 +195,9 @@ OFFLINE_INTERRUPT = 0
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
+XBOX_API_TIMEOUT = 0
+TOKEN_REFRESH_RETRIES = 0
+TOKEN_REFRESH_RETRY_DELAY = 0
 MS_AUTH_TOKENS_FILE = ""
 CSV_FILE = ""
 DOTENV_FILE = ""
@@ -254,6 +270,7 @@ import platform
 import re
 import ipaddress
 import asyncio
+import httpx
 from httpx import HTTPStatusError
 try:
     from pythonxbox.api.client import XboxLiveClient
@@ -349,6 +366,44 @@ def debug_print(message):
         STDOUT_AT_START_OF_LINE = True
 
 
+# Returns a printable description of an exception, including its type since some network errors carry an empty message
+def format_exception(e):
+    msg = str(e).strip()
+    return f"{type(e).__name__}: {msg}" if msg else type(e).__name__
+
+
+# Creates the Xbox HTTP session with an explicit timeout, as the library default of 5 seconds is too aggressive
+def create_signed_session():
+    session = SignedSession()
+    session.timeout = httpx.Timeout(float(XBOX_API_TIMEOUT))
+    return session
+
+
+# Reports whether an exception is a transient network or server-side failure that is worth retrying
+def is_transient_auth_error(e):
+    if isinstance(e, HTTPStatusError):
+        return e.response.status_code == 429 or e.response.status_code >= 500
+    return isinstance(e, httpx.TransportError)
+
+
+# Refreshes all tokens, retrying transient network and server-side failures with exponential backoff
+async def refresh_tokens_with_retry(auth_mgr):
+    global STDOUT_AT_START_OF_LINE
+    delay = TOKEN_REFRESH_RETRY_DELAY
+    for attempt in range(1, TOKEN_REFRESH_RETRIES + 1):
+        try:
+            await auth_mgr.refresh_tokens()
+            return
+        except Exception as e:
+            if attempt >= TOKEN_REFRESH_RETRIES or not is_transient_auth_error(e):
+                raise
+            prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
+            print(f"{prefix}* Token refresh attempt {attempt} of {TOKEN_REFRESH_RETRIES} failed ({format_exception(e)}), retrying in {display_time(delay)}")
+            STDOUT_AT_START_OF_LINE = True
+            await asyncio.sleep(delay)
+            delay *= 2
+
+
 # Starts interactive OAuth flow and stores the new OAuth token on the auth manager
 async def oauth_interactive_auth(auth_mgr):
     print("\nAuthorizing via OAuth ...")
@@ -380,13 +435,16 @@ async def authenticate_and_refresh_tokens(auth_mgr):
 
     try:
         debug_print("Refreshing tokens...")
-        await auth_mgr.refresh_tokens()
+        await refresh_tokens_with_retry(auth_mgr)
         debug_print("Tokens refreshed successfully.")
     except HTTPStatusError as e:
-        print(f"\n* Cached token refresh failed ({e}). Re-authentication is required.")
+        # Temporary server-side errors are not a credential problem, so do not force interactive re-authentication
+        if is_transient_auth_error(e):
+            raise
+        print(f"\n* Cached token refresh failed ({format_exception(e)}). Re-authentication is required.")
         await oauth_interactive_auth(auth_mgr)
         debug_print("Refreshing tokens after interactive OAuth...")
-        await auth_mgr.refresh_tokens()
+        await refresh_tokens_with_retry(auth_mgr)
         debug_print("Tokens refreshed successfully after re-authentication.")
 
     with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
@@ -1056,13 +1114,13 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     if not client:
         print_step("Authenticating with Xbox...")
         try:
-            session = SignedSession()
+            session = create_signed_session()
             auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
             await authenticate_and_refresh_tokens(auth_mgr)
 
             xbl_client = XboxLiveClient(auth_mgr)
         except Exception as e:
-            print(f"\n* Error: {e}")
+            print(f"\n* Error: Cannot authenticate with Xbox ({format_exception(e)})")
             if session:
                 await session.aclose()
             sys.exit(1)
@@ -1563,10 +1621,13 @@ def normalize_timer_setting(name, value, allow_zero=False):
     return parsed
 
 
-# Validates the finalized connectivity timeout value
+# Validates the finalized connectivity timeout and token refresh retry values
 def validate_connectivity_timer():
-    global CHECK_INTERNET_TIMEOUT
+    global CHECK_INTERNET_TIMEOUT, TOKEN_REFRESH_RETRIES, TOKEN_REFRESH_RETRY_DELAY, XBOX_API_TIMEOUT
     CHECK_INTERNET_TIMEOUT = normalize_timer_setting("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT)
+    XBOX_API_TIMEOUT = normalize_timer_setting("XBOX_API_TIMEOUT", XBOX_API_TIMEOUT)
+    TOKEN_REFRESH_RETRIES = normalize_timer_setting("TOKEN_REFRESH_RETRIES", TOKEN_REFRESH_RETRIES)
+    TOKEN_REFRESH_RETRY_DELAY = normalize_timer_setting("TOKEN_REFRESH_RETRY_DELAY", TOKEN_REFRESH_RETRY_DELAY)
 
 
 # Validates finalized monitor timer values and refreshes the liveness counter
@@ -1613,7 +1674,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         print(f"* Error: {e}")
 
     # Create a XBOX HTTP client session
-    async with SignedSession() as session:
+    async with create_signed_session() as session:
 
         # Initialize with global OAUTH config options (MS_APP_CLIENT_ID & MS_APP_CLIENT_SECRET)
         auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
@@ -1635,7 +1696,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             STDOUT_AT_START_OF_LINE = True
 
         _print_step("Authenticating with Xbox...")
-        await authenticate_and_refresh_tokens(auth_mgr)
+        try:
+            await authenticate_and_refresh_tokens(auth_mgr)
+        except Exception as e:
+            print(f"\n* Error: Cannot authenticate with Xbox ({format_exception(e)})")
+            sys.exit(1)
 
         _print_ok()
 
