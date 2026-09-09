@@ -249,7 +249,7 @@ def test_placeholder_secrets_are_not_reported_as_loaded(monkeypatch):
 
 
 # The rows shared with the sibling monitors, in the order every one of them prints
-SHARED_ROW_ORDER = ("Target", "Polling intervals", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Verbose mode", "Debug mode", "More details")
+SHARED_ROW_ORDER = ("Target", "Polling intervals", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
 
 
 # Verifies the shared rows keep the order and the label column width every sibling monitor prints
@@ -289,3 +289,11 @@ def test_the_log_flag_is_independent_of_the_view_flags():
     assert "Shown but not logged:" in stream.terminal_text()
     assert "Shown but not logged:" not in stream.log_text()
     assert "Shown and logged:" in stream.log_text()
+
+
+# Verifies the two files this tool generates sit with the other generated files rather than beside the dotenv row
+def test_the_generated_files_follow_the_csv_row(summary_rows):
+    labels = [row.label for row in summary_rows]
+
+    assert labels[labels.index("CSV output") + 1:labels.index("CSV output") + 3] == ["Status file", "Token cache"]
+    assert labels.index("Token cache") < labels.index("Terminal truncation")

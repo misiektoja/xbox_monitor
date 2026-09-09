@@ -1140,11 +1140,12 @@ def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, l
         StartupSummaryRow("Output logging", str(log_path) if log_path else "Disabled"),
         StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
         StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
-        StartupSummaryRow("Status file", resolve_status_file(xbox_gamertag) if xbox_gamertag else "None"),
-        StartupSummaryRow("Token cache", MS_AUTH_TOKENS_FILE or "None"),
         # Each optional feature earns a concise row only once it is actually switched on
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
+        StartupSummaryRow("Status file", resolve_status_file(xbox_gamertag) if xbox_gamertag else "None"),
+        StartupSummaryRow("Token cache", MS_AUTH_TOKENS_FILE or "None"),
+        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
         StartupSummaryRow("Local timezone", LOCAL_TIMEZONE),
         StartupSummaryRow("Install method", install_method_display_name()),
         StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
@@ -1152,9 +1153,9 @@ def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, l
         StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
         StartupSummaryRow("Secrets from command line", ", ".join(from_command_line) if from_command_line else "None"),
         StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
-        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
-        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
         StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
         StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
         # Points at the two modes for a reader who does not know they exist, so the full view drops it
