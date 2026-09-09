@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/github/v/release/misiektoja/xbox_monitor?style=flat-square&color=blue" alt="GitHub Release" />
   <img src="https://img.shields.io/pypi/v/xbox_monitor?style=flat-square&color=teal" alt="PyPI Version" />
   <img src="https://img.shields.io/github/stars/misiektoja/xbox_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
-  <img src="https://img.shields.io/badge/python-3.8+-blueviolet?style=flat-square" alt="Python Versions" />
+  <img src="https://img.shields.io/badge/python-3.11+-blueviolet?style=flat-square" alt="Python Versions" />
   <img src="https://img.shields.io/github/license/misiektoja/xbox_monitor?style=flat-square&color=blue" alt="License" />
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
   <img src="https://img.shields.io/github/last-commit/misiektoja/xbox_monitor?style=flat-square&color=green" alt="Last Commit" />
@@ -72,7 +72,7 @@ pip install xbox_monitor
 <a id="requirements"></a>
 ## Requirements
 
-* Python 3.8 or higher
+* Python 3.11 or higher (the `python-xbox` library requires it)
 * Libraries: [python-xbox](https://github.com/tr4nt0r/python-xbox), `requests`, `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`
 
 Tested on:
@@ -162,6 +162,8 @@ xbox_monitor --generate-config xbox_monitor.conf
 ```
 
 > **IMPORTANT**: On **Windows PowerShell**, using redirection (`>`) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to `--generate-config` to ensure UTF-8 encoding.
+
+When the named file already exists, the tool asks before replacing it and keeps the previous version as `xbox_monitor.conf.<timestamp>.bak` next to it. Outside a terminal, add `--force` to replace it without a prompt. Redirecting with `>` truncates the file before the tool starts, so that form cannot be protected.
 
 Edit the `xbox_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 

@@ -34,7 +34,7 @@ python -m ruff check xbox_monitor.py tests
 
 The default suite is offline. It never contacts Xbox Live and network calls are replaced with local test doubles. See [tests/README.md](tests/README.md) for what each test file covers.
 
-CI runs the same two checks on every push and pull request, across Python 3.9 through 3.14. The linter is pinned in the `lint` extra so a new ruff release cannot fail a build on a rule that did not exist when the change was written; the pre-commit hook pins the same version.
+CI runs the same two checks on every push and pull request, across Python 3.11 through 3.14. The linter is pinned in the `lint` extra so a new ruff release cannot fail a build on a rule that did not exist when the change was written; the pre-commit hook pins the same version.
 
 A change to the monitoring loop, authentication or Xbox Live data handling is not verified by the offline suite alone. Exercise it against a real account and say so in the pull request, without usernames or credentials.
 

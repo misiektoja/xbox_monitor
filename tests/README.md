@@ -22,14 +22,18 @@ pip install -e '.[lint]'
 python -m ruff check xbox_monitor.py tests
 ```
 
-CI runs both on every push and pull request, across Python 3.9 through 3.14,
+CI runs both on every push and pull request, across Python 3.11 through 3.14,
 and again before anything is published to PyPI.
 
 ## Layout
 
 | File | Area under test |
 | --- | --- |
+| `conftest.py` | Shared fixtures: module globals, exported secrets and signal handlers are reset between tests |
 | `test_auth_retry.py` | Transient error classification, refresh retry and give-up behavior, no interactive auth on timeout |
+| `test_cli_startup.py` | Real startup through `main()`: `--debug` precedence over the config file, secret source attribution, placeholder gates for credentials and email, install method commands, the `--generate-config` replacement guard |
+| `test_config_loading.py` | Config files are parsed as data, rejected content and retired settings |
+| `test_config_writing.py` | Timestamped backups, atomic replacement, private token cache writes and the guard on writing a generated config |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |
 | `test_repository_metadata.py` | Governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_secret_reload.py` | `SIGHUP` reload bumping the authentication refresh version |

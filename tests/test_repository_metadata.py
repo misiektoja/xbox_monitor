@@ -155,3 +155,20 @@ def test_release_archives_ship_checksums_and_provenance():
     assert "_SHA256SUMS.txt" in upload["with"]["files"]
     # Offline verifiers need the bundle as an asset, since the attestations API may be unreachable
     assert ".intoto.jsonl" in upload["with"]["files"]
+
+
+# Verifies the minimum supported Python version is declared once and matches the packaging metadata, CI and the README
+def test_the_minimum_python_version_is_declared_once():
+    import xbox_monitor as monitor
+
+    pyproject = read_asset("pyproject.toml")
+    minimum_text = monitor.MINIMUM_PYTHON_VERSION_TEXT
+
+    assert minimum_text == ".".join(str(part) for part in monitor.MINIMUM_PYTHON_VERSION)
+    assert f'requires-python = ">={minimum_text}"' in pyproject
+    assert f"Programming Language :: Python :: {minimum_text}" in pyproject
+    classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == monitor.MINIMUM_PYTHON_VERSION
+    matrix = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["test"]["strategy"]["matrix"]["python-version"]
+    assert min(tuple(int(part) for part in str(version).split(".")) for version in matrix) == monitor.MINIMUM_PYTHON_VERSION
+    assert f"Python {minimum_text} or higher" in read_asset("README.md")

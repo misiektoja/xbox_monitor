@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.4
+v2.0
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "1.9.4"
+VERSION = "2.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -217,6 +217,12 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
 
+# Where each secret's effective value came from, recorded while precedence is applied so it can be reported later
+SECRET_SOURCES = {}
+
+# Secrets that were already exported before the dotenv file was loaded, captured at startup
+EXPORTED_SECRET_KEYS = frozenset()
+
 # Version incremented when SIGHUP reloads Xbox application credentials
 XBOX_AUTH_REFRESH_VERSION = 0
 
@@ -236,8 +242,12 @@ STDOUT_AT_START_OF_LINE = True
 
 import sys
 
-if sys.version_info < (3, 8):
-    print("* Error: Python version 3.8 or higher required !")
+# Declared once so the startup gate, the packaging metadata and any later environment check cannot disagree
+MINIMUM_PYTHON_VERSION = (3, 11)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+
+if sys.version_info < MINIMUM_PYTHON_VERSION:
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
     sys.exit(1)
 
 
@@ -284,6 +294,9 @@ try:
 except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the Python-Xbox library !\n\nTo install it, run:\n    pip install python-xbox\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/tr4nt0r/python-xbox/")
 import shutil
+import shlex
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -352,6 +365,146 @@ def clear_screen(enabled=True):
             os.system('clear')
     except Exception:
         print("* Cannot clear the screen contents")
+
+
+# Returns whether this process was started from the packaged entry point or from a downloaded script
+def detect_install_method():
+    return "manual" if os.path.basename(sys.argv[0] or "").endswith(".py") else "pip"
+
+
+# Returns a readable name for one install method
+def install_method_display_name(method=None):
+    return {"pip": "PyPI install", "manual": "downloaded script"}.get(method or detect_install_method(), "unknown install")
+
+
+# Renders command arguments quoted for the shell of the host operating system
+def render_command(arguments):
+    values = [str(argument) for argument in arguments]
+    return subprocess.list2cmdline(values) if platform.system() == "Windows" else shlex.join(values)
+
+
+# Returns the bare command that starts this tool on the detected install, without arguments
+def tool_command_prefix(method=None):
+    if (method or detect_install_method()) == "manual":
+        return render_command([("python" if platform.system() == "Windows" else "python3"), Path(__file__).name])
+    return "xbox_monitor"
+
+
+# Returns a complete, copy-pasteable command line for this tool with every argument quoted for the host shell
+def tool_command(*arguments, method=None):
+    return " ".join([tool_command_prefix(method), *[render_command([argument]) for argument in arguments]])
+
+
+# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
+def read_interactively(reader, *args, **kwargs):
+    try:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        return reader(*args, **kwargs)
+    try:
+        return reader(*args, **kwargs)
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
+
+
+# Copies an existing file to a timestamped private backup before it is replaced, returning the backup path or None
+def create_timestamped_backup(destination, attempts=100):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.is_file():
+        return None
+    existing_bytes = destination_path.read_bytes()
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    for attempt in range(attempts):
+        suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
+        backup_path = destination_path.with_name(destination_path.name + suffix)
+        try:
+            # O_EXCL so a backup can never overwrite an earlier one, even under a concurrent run
+            descriptor = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as backup_file:
+                backup_file.write(existing_bytes)
+                backup_file.flush()
+                os.fsync(backup_file.fileno())
+        except Exception:
+            try:
+                os.unlink(str(backup_path))
+            except OSError:
+                pass
+            raise
+        return str(backup_path)
+    raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
+
+
+# Writes one file through a temporary file in the same directory, so a crash cannot leave a half-written file
+def write_file_atomically(destination, content, mode=None):
+    destination_path = Path(destination).expanduser()
+    if destination_path.parent != Path(""):
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if mode is not None and os.name == "posix":
+            os.chmod(str(temporary_path), mode)
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return str(destination_path)
+
+
+# Confirms replacing one existing generated config, or requires --force when there is nobody to ask
+def confirm_generated_config_replacement(destination, force=False, interactive=None, input_func=input):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.exists() or force:
+        return True
+    terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise FileExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+    try:
+        answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        answer = ""
+    return answer in {"y", "yes"}
+
+
+# Writes one generated config atomically, backing up whatever was there first
+def write_generated_config(output_file, content, force=False, interactive=None, input_func=input):
+    destination = Path(os.path.expanduser(str(output_file)))
+    if not confirm_generated_config_replacement(destination, force, interactive, input_func):
+        return None, False
+    backup_path = create_timestamped_backup(destination)
+    write_file_atomically(destination, content)
+    return backup_path, True
+
+
+# Saves the last seen status atomically, so an interrupted write cannot strand a half-written status file
+def save_last_status(status_file, status_ts, status):
+    write_file_atomically(status_file, json.dumps([status_ts, status], indent=2) + "\n")
+
+
+# Reports whether a setting holds a real value rather than being empty or one of the shipped placeholders
+def secret_is_set(value):
+    return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
+
+
+# Applies the diagnostic flags given on the command line, before and again after the config file is read
+def apply_diagnostic_cli_flags(args):
+    global DEBUG_MODE
+    if getattr(args, "debug_mode", None):
+        DEBUG_MODE = True
 
 
 # Debug print helper - only prints if DEBUG_MODE is enabled
@@ -447,8 +600,8 @@ async def authenticate_and_refresh_tokens(auth_mgr):
         await refresh_tokens_with_retry(auth_mgr)
         debug_print("Tokens refreshed successfully after re-authentication.")
 
-    with open(MS_AUTH_TOKENS_FILE, mode="w") as f:
-        f.write(auth_mgr.oauth.model_dump_json())
+    # The cache holds a refresh token, so it is private to the owner and never left half-written
+    write_file_atomically(MS_AUTH_TOKENS_FILE, auth_mgr.oauth.model_dump_json(), mode=0o600)
 
 
 # Returns a debug-friendly timestamp representation, prevents "Unix epoch" confusion when ts is 0/missing
@@ -594,7 +747,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
         return 1
 
-    if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
+    if not secret_is_set(SMTP_USER) or not secret_is_set(SMTP_PASSWORD):
         print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
         return 1
 
@@ -933,6 +1086,10 @@ def reload_secrets_signal_handler(sig, frame):
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret_is_set(val):
+                    SECRET_SOURCES[secret] = "dotenv file"
+                else:
+                    SECRET_SOURCES.pop(secret, None)
                 if secret in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"):
                     auth_credentials_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
@@ -1889,12 +2046,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         status_ts_old = last_status_ts
 
         if last_status_ts > 0 and status != last_status:
-            last_status_to_save = []
-            last_status_to_save.append(status_ts_old)
-            last_status_to_save.append(status)
             try:
-                with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
-                    json.dump(last_status_to_save, f, indent=2)
+                save_last_status(xbox_last_status_file, status_ts_old, status)
             except Exception as e:
                 print(f"\n* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
@@ -1912,12 +2065,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         if last_status_ts == 0:
             if lastonline_ts and status == "offline":
                 status_ts_old = lastonline_ts
-            last_status_to_save = []
-            last_status_to_save.append(status_ts_old)
-            last_status_to_save.append(status)
             try:
-                with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
-                    json.dump(last_status_to_save, f, indent=2)
+                save_last_status(xbox_last_status_file, status_ts_old, status)
             except Exception as e:
                 print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
@@ -2049,12 +2198,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if platform:
                     platform_str = f" ({platform})"
 
-                last_status_to_save = []
-                last_status_to_save.append(status_ts)
-                last_status_to_save.append(status)
                 try:
-                    with open(xbox_last_status_file, 'w', encoding="utf-8") as f:
-                        json.dump(last_status_to_save, f, indent=2)
+                    save_last_status(xbox_last_status_file, status_ts, status)
                 except Exception as e:
                     print(f"* Cannot save last status to '{xbox_last_status_file}' file: {e}")
 
@@ -2216,7 +2361,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE, EXPORTED_SECRET_KEYS
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -2226,12 +2371,23 @@ def main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(config_content)
+                backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
+                if not written:
+                    print("Config was not replaced. The existing file is unchanged")
+                    sys.exit(1)
                 print(f"Config written to: {output_file}")
+                if backup_path:
+                    print(f"Previous config backed up to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
+        except FileExistsError as exc:
+            print(f"* Error: {exc}")
+            print(f"* Re-run with: {tool_command('--generate-config', output_file, '--force')}")
+            sys.exit(1)
+        except OSError as exc:
+            print(f"* Error: Cannot write config file '{output_file}': {exc}")
+            sys.exit(1)
         # No filename provided - write to stdout using buffer to ensure UTF-8
         sys.stdout.buffer.write(config_content.encode("utf-8"))
         sys.stdout.buffer.flush()
@@ -2246,7 +2402,12 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    clear_screen(CLEAR_SCREEN)
+    # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
+    if "--debug" in sys.argv:
+        DEBUG_MODE = True
+    if CLEAR_SCREEN and DEBUG_MODE:
+        debug_print("Terminal screen clear skipped because debug mode is active")
+    clear_screen(CLEAR_SCREEN and not DEBUG_MODE)
 
     print(f"Xbox Monitoring Tool v{VERSION}\n")
 
@@ -2286,6 +2447,12 @@ def main():
         const=True,
         metavar="FILENAME",
         help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
+    )
+    conf.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Let --generate-config replace an existing file, after a timestamped backup"
     )
     conf.add_argument(
         "--env-file",
@@ -2434,6 +2601,10 @@ def main():
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    # Applied before the config file is read so a failing load is already visible, and again after it so a saved
+    # DEBUG_MODE = False cannot switch off what the command line asked for
+    apply_diagnostic_cli_flags(args)
+
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
@@ -2446,12 +2617,21 @@ def main():
     if cfg_path:
         if not load_config_file(cfg_path):
             sys.exit(1)
+        apply_diagnostic_cli_flags(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
     else:
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
+
+    # Which secrets were already exported has to be captured before load_dotenv copies the file's values into
+    # os.environ, because afterwards the two sources are indistinguishable
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    SECRET_SOURCES.clear()
+    for secret in SECRET_KEYS:
+        if secret_is_set(globals().get(secret)):
+            SECRET_SOURCES[secret] = "configuration file"
 
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
@@ -2482,6 +2662,14 @@ def main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
+            # A shipped placeholder is not a value, so it never counts as a source
+            if secret_is_set(val):
+                SECRET_SOURCES[secret] = "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file"
+            else:
+                SECRET_SOURCES.pop(secret, None)
+
+    for secret in SECRET_KEYS:
+        debug_print(f"Secret {secret} resolved from {SECRET_SOURCES.get(secret, 'nowhere')}")
 
     try:
         validate_connectivity_timer()
@@ -2525,16 +2713,20 @@ def main():
 
     if args.ms_app_client_id:
         MS_APP_CLIENT_ID = args.ms_app_client_id
+        if secret_is_set(MS_APP_CLIENT_ID):
+            SECRET_SOURCES["MS_APP_CLIENT_ID"] = "command line"
 
     if args.ms_app_client_secret:
         MS_APP_CLIENT_SECRET = args.ms_app_client_secret
+        if secret_is_set(MS_APP_CLIENT_SECRET):
+            SECRET_SOURCES["MS_APP_CLIENT_SECRET"] = "command line"
 
-    if not MS_APP_CLIENT_ID or MS_APP_CLIENT_ID == "your_ms_application_client_id":
-        print("* Error: MS_APP_CLIENT_ID (-u / --ms_app_client_id) value is empty or incorrect")
+    if not secret_is_set(MS_APP_CLIENT_ID):
+        print("* Error: MS_APP_CLIENT_ID (-u / --ms-app-client-id) value is empty or incorrect")
         sys.exit(1)
 
-    if not MS_APP_CLIENT_SECRET or MS_APP_CLIENT_SECRET == "your_ms_application_secret_value":
-        print("* Error: MS_APP_CLIENT_SECRET (-w / --ms_app_client_secret) value is empty or incorrect")
+    if not secret_is_set(MS_APP_CLIENT_SECRET):
+        print("* Error: MS_APP_CLIENT_SECRET (-w / --ms-app-client-secret) value is empty or incorrect")
         sys.exit(1)
 
     if not MS_AUTH_TOKENS_FILE:
@@ -2542,9 +2734,6 @@ def main():
         sys.exit(1)
     else:
         MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
-
-    if args.debug_mode is not None:
-        DEBUG_MODE = args.debug_mode
 
     if args.info_mode:
         asyncio.run(get_user_info(args.xbox_gamertag, client=None, show_friends=args.show_friends, show_recent_achievements=args.show_recent_achievements, show_recent_games=True, achievements_count=args.achievements_count, games_count=args.games_count))
@@ -2584,8 +2773,6 @@ def main():
 
     if args.disable_logging is True:
         DISABLE_LOGGING = True
-    if args.debug_mode is not None:
-        DEBUG_MODE = args.debug_mode
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(XBOX_LOGFILE))
@@ -2613,7 +2800,8 @@ def main():
     if args.notify_errors is False:
         ERROR_NOTIFICATION = False
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    # Email cannot be delivered while the mail server, the user or the password is still a shipped placeholder
+    if not (secret_is_set(SMTP_HOST) and secret_is_set(SMTP_USER) and secret_is_set(SMTP_PASSWORD)):
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
@@ -2630,6 +2818,7 @@ def main():
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Debug mode:\t\t\t{DEBUG_MODE}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
+    print(f"* Install method:\t\t{install_method_display_name()}")
 
     out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
     print(out)
