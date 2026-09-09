@@ -151,6 +151,13 @@ def test_the_report_is_printed_in_the_documented_order(xbox_session, doctor_run)
     assert notice < progress < heading < raw.index("\nSummary\n")
 
 
+# Verifies the preflight notice names both channels the delivery tests can offer, so neither is a surprise
+def test_the_preflight_notice_names_both_delivery_channels(xbox_session, doctor_run):
+    xbox_session()
+    _, raw = doctor_run(xbox_gamertag=GAMERTAG)
+    assert "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval." in raw
+
+
 # The transient progress line must not survive into the report a user reads or pastes into an issue
 def test_the_progress_line_is_cleared_before_the_report(xbox_session, doctor_run):
     xbox_session()

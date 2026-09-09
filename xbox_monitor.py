@@ -644,7 +644,7 @@ def doctor_progress_clear():
 
 # Prints the notice that has to be true before anything runs
 def render_doctor_notice():
-    print("Running preflight checks. No files will be written. Interactive email tests run only after separate approval.\n")
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
 
 
 # Checks the interpreter, the dependencies the tool needs and the ones it degrades around
