@@ -842,3 +842,37 @@ def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
     rows = lines[lines.index("[WARN] a warning row"):]
 
     assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {monitor.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
+
+
+# Verifies an approved delivery test that failed reaches the summary, so a failing run cannot report a clean one
+def test_a_failed_delivery_test_reaches_the_summary(monkeypatch):
+    terminal = FakeTerminal(True)
+    monkeypatch.setattr(monitor.sys, "stdout", terminal)
+    monkeypatch.setattr(monitor.sys, "stdin", terminal)
+    monkeypatch.setattr(monitor, "ask_yes_no", lambda question: True)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
+    report = monitor.DoctorReport(email_ready=True)
+
+    monitor.offer_doctor_delivery_tests(report)
+
+    assert [(check.section, check.status, check.label) for check in report.checks] == [(monitor.DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed")]
+    assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
+
+
+# Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
+def test_the_summary_is_rendered_after_the_delivery_tests():
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(monitor))
+    checked = 0
+    for function in [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]:
+        calls = [(call.lineno, ast.unparse(call.func)) for call in ast.walk(function) if isinstance(call, ast.Call)]
+        offers = [lineno for lineno, name in calls if name.endswith("offer_doctor_delivery_tests")]
+        summaries = [lineno for lineno, name in calls if name.endswith("render_doctor_summary")]
+        if not offers or not summaries:
+            continue
+        checked += 1
+        assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
+
+    assert checked, "no doctor entry point runs the delivery tests and then the summary"
