@@ -716,7 +716,7 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     if timezone_advice is not None:
         checks.append(make_doctor_check("Configuration", "FAIL", timezone_label, timezone_advice.detail, timezone_advice))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", timezone_label, LOCAL_TIMEZONE))
+        checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
 
     intervals = f"{display_time(XBOX_CHECK_INTERVAL)} while offline, {display_time(XBOX_ACTIVE_CHECK_INTERVAL)} while online"
     if XBOX_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
@@ -754,7 +754,7 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
             advice = classify_recovery_error(context="file.unwritable", detail=f"CSV file '{csv_path}' cannot be written")
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", "CSV history is disabled", "Set CSV_FILE or use -b to record every reported change"))
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV history is disabled"))
 
     status_path = resolve_status_file(xbox_gamertag or "<xbox_gamertag>")
     if path_is_writable(status_path):
@@ -764,7 +764,7 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
         checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
 
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "Nothing is written to a log file"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     else:
         log_path = resolve_log_path(xbox_gamertag or "<xbox_gamertag>")
         if path_is_writable(log_path):
@@ -785,7 +785,7 @@ def doctor_check_connectivity():
         debug_print("Doctor connectivity check", url=CHECK_INTERNET_URL, outcome="failed", error=f"{type(exc).__name__}: {exc}")
         advice = classify_recovery_error(exc, context="connectivity", detail=f"{CHECK_INTERNET_URL} could not be reached: {exc}")
         return [make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice)]
-    return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL} (TLS verification: {VERIFY_SSL})")]
+    return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")]
 
 
 # Loads the cached tokens and refreshes them without writing anything, which is what the real run does first
@@ -949,7 +949,7 @@ def doctor_check_email_notifications(report):
     # An error alert is on by default, so on its own it cannot make a fresh install look configured
     deliberate = ACTIVE_INACTIVE_NOTIFICATION or GAME_CHANGE_NOTIFICATION or STATUS_NOTIFICATION
     if not deliberate and not (ERROR_NOTIFICATION and problem is None):
-        return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "Use -a, -g, -s or SMTP settings with ERROR_NOTIFICATION to turn them on")]
+        return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "No SMTP connection was attempted and no email was sent")]
     if problem is not None:
         return [doctor_email_unusable_check(*problem)]
     try:
@@ -968,7 +968,7 @@ def doctor_check_webhook_notifications(report):
     deliberate = WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION or WEBHOOK_GAME_CHANGE_NOTIFICATION or WEBHOOK_STATUS_NOTIFICATION
     if not WEBHOOK_ENABLED:
         if not deliberate:
-            return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled", "Use --webhook or set WEBHOOK_ENABLED to turn them on")]
+            return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled")]
         advice = make_recovery_advice("webhook.invalid", "Webhook alerts are selected but the channel is switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the selected webhook alerts off", WEBHOOK_GUIDE_URL), False)
         return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
     if not selected:

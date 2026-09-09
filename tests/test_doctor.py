@@ -475,6 +475,7 @@ def test_a_fresh_install_reports_email_as_disabled(monkeypatch):
     checks = monitor.doctor_check_email_notifications(monitor.DoctorReport())
     assert [check.status for check in checks] == ["PASS"]
     assert checks[0].label == "Email alerts are disabled"
+    assert checks[0].detail == "No SMTP connection was attempted and no email was sent"
 
 
 # Alerts that are on but cannot be delivered are the failure mode a user never notices on their own
@@ -585,6 +586,8 @@ def test_a_fresh_install_reports_webhooks_as_disabled(monkeypatch):
     checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
     assert [check.status for check in checks] == ["PASS"]
     assert checks[0].label == "Webhook alerts are disabled"
+    # The label says everything, so the row carries no detail that only repeats it
+    assert checks[0].detail == ""
 
 
 # Alerts chosen while the channel is off would never be delivered, which nothing else in the report would say
@@ -765,3 +768,46 @@ def test_valid_intervals_and_separators_take_no_row():
 
     assert "Check intervals are set" not in labels
     assert not any(label.startswith("ASCII log separators") for label in labels)
+
+
+# Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
+def test_doctor_details_keep_to_the_agreed_shapes():
+    import ast
+    import inspect
+
+    # Renders one detail argument as text, standing in {} for the parts an f-string fills at runtime
+    def detail_text(node):
+        if isinstance(node, ast.Constant):
+            return node.value if isinstance(node.value, str) else None
+        if isinstance(node, ast.JoinedStr):
+            return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+        return None
+
+    offenders = []
+    for node in ast.walk(ast.parse(inspect.getsource(monitor))):
+        if not isinstance(node, ast.Call) or ast.unparse(node.func) not in {"make_doctor_check", "report.add"} or len(node.args) < 4:
+            continue
+        label, text = node.args[2], detail_text(node.args[3])
+        if text is None:
+            continue
+        if isinstance(label, ast.Constant) and text == label.value:
+            offenders.append(f"{node.lineno}: the detail repeats its label")
+        if text.startswith(("Use ", "Set ", "Run ")):
+            offenders.append(f"{node.lineno}: the detail gives an instruction, which belongs in the fix line")
+        if " | " in text:
+            offenders.append(f"{node.lineno}: the detail joins two values with a pipe")
+        if text.endswith("."):
+            offenders.append(f"{node.lineno}: the detail ends with a full stop")
+
+    assert not offenders, "doctor details outside the agreed shapes:\n" + "\n".join(offenders)
+
+
+# Verifies the resolved time zone is reported as a named value rather than a bare string
+def test_the_timezone_row_names_the_value(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE_STATE", "config")
+
+    checks = monitor.doctor_check_configuration()
+
+    check = next(item for item in checks if item.label == monitor.TIMEZONE_CHECK_LABELS["config"])
+    assert check.detail == "Time zone: Europe/Warsaw"
