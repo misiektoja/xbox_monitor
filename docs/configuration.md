@@ -29,6 +29,16 @@ By default the tool looks for `xbox_monitor.conf` in the current directory, then
 xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
 ```
 
+## Target Account
+
+Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on the command line always wins over the saved one, and with a saved value you can start monitoring with no arguments at all:
+
+```sh
+xbox_monitor
+```
+
+`XBOX_STATUS_FILE` and the `--status-file` flag choose where the last seen status is kept, which otherwise defaults to `xbox_<gamer_tag>_last_status.json` in the current directory.
+
 ## Time Zone
 
 By default the time zone is detected with `tzlocal`. Set it manually in `xbox_monitor.conf`:

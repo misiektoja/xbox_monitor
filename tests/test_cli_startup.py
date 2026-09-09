@@ -304,3 +304,30 @@ def test_setup_may_name_a_config_file_that_does_not_exist_yet(tmp_path, monkeypa
 
     assert raised.value.code == 0
     assert "does not exist" not in capsys.readouterr().out
+
+
+# Verifies the status file follows the setting, so a run from another directory resumes from the same file
+def test_the_status_file_setting_relocates_the_saved_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(monitor, "XBOX_STATUS_FILE", str(tmp_path / "state" / "SomeTag.json"))
+    assert monitor.resolve_status_file("SomeTag") == str(tmp_path / "state" / "SomeTag.json")
+
+
+# Verifies the default keeps the per-target name in the working directory, the behaviour earlier versions had
+def test_an_empty_status_file_setting_keeps_the_default_name(monkeypatch):
+    monkeypatch.setattr(monitor, "XBOX_STATUS_FILE", "")
+    assert monitor.resolve_status_file("SomeTag") == "xbox_SomeTag_last_status.json"
+
+
+# Verifies --status-file wins over the configured value, the precedence every other output path follows
+def test_the_status_file_flag_overrides_the_configured_path(tmp_path, monkeypatch):
+    config, env = write_startup_files(tmp_path)
+    config.write_text(config.read_text(encoding="utf-8") + f'XBOX_STATUS_FILE = "{tmp_path / "from-config.json"}"\n', encoding="utf-8")
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--doctor", "SomeTag", "--status-file", str(tmp_path / "from-flag.json"), "--config-file", str(config), "--env-file", str(env)])
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert monitor.resolve_status_file("SomeTag") == str(tmp_path / "from-flag.json")

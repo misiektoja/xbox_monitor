@@ -3,9 +3,9 @@
 ## Requirements
 
 * Python 3.11 or higher, which the `python-xbox` library requires
-* Libraries: [python-xbox](https://github.com/tr4nt0r/python-xbox), `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`
+* Libraries: [python-xbox](https://github.com/tr4nt0r/python-xbox), `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`, `wcwidth`, `colorama` (Windows only, optional)
 
-`tzlocal` and `python-dotenv` are optional. Without `tzlocal` the local time zone has to be set manually, and without `python-dotenv` secrets have to come from the environment or the command line.
+`tzlocal`, `python-dotenv` and `wcwidth` are optional. Without `tzlocal` the local time zone has to be set manually, without `python-dotenv` secrets have to come from the environment or the command line, and without `wcwidth` screen truncation is switched off.
 
 Tested on:
 
@@ -28,7 +28,7 @@ Download the [xbox_monitor.py](https://raw.githubusercontent.com/misiektoja/xbox
 Install the dependencies:
 
 ```sh
-pip install python-xbox python-dateutil httpx pytz tzlocal python-dotenv
+pip install python-xbox python-dateutil httpx pytz tzlocal python-dotenv wcwidth
 ```
 
 Alternatively, from the downloaded [requirements.txt](https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/requirements.txt):

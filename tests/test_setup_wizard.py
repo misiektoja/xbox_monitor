@@ -59,7 +59,7 @@ def run_wizard(monkeypatch, paths, answers, secrets=("client-id", "client-secret
 
 
 # The answers for a complete run that saves, declines email, declines doctor and declines the launch offer
-BASIC_ANSWERS = ["SomeTag", "", "5m", "90", "", "n", "", "", "1", "n", "n"]
+BASIC_ANSWERS = ["SomeTag", "", "5m", "90", "", "n", "", "", "", "1", "n", "n"]
 
 
 # Verifies a complete run writes the config, the secrets and the token cache, and reports each destination
@@ -78,7 +78,7 @@ def test_a_complete_run_writes_every_destination(monkeypatch, wizard_paths, caps
 
 # Verifies the durations people type reach the config as whole seconds
 def test_a_typed_duration_reaches_the_config_as_seconds(monkeypatch, wizard_paths):
-    answers = ["SomeTag", "", "1h 30m", "2m", "", "n", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "1h 30m", "2m", "", "n", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers)
     written = wizard_paths["config"].read_text(encoding="utf-8")
     assert "XBOX_CHECK_INTERVAL = 5400" in written
@@ -87,7 +87,7 @@ def test_a_typed_duration_reaches_the_config_as_seconds(monkeypatch, wizard_path
 
 # Verifies a target the user declines to persist is left out of the config but still drives the printed commands
 def test_a_target_the_user_declines_to_persist_stays_out_of_the_config(monkeypatch, wizard_paths, capsys):
-    answers = ["SomeTag", "n", "5m", "90", "", "n", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "n", "5m", "90", "", "n", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers)
     out = capsys.readouterr().out
     assert "XBOX_GAMERTAG = ''" in wizard_paths["config"].read_text(encoding="utf-8")
@@ -96,7 +96,7 @@ def test_a_target_the_user_declines_to_persist_stays_out_of_the_config(monkeypat
 
 # Verifies a gamertag copied out of a profile link is accepted and an e-mail address is rejected by name
 def test_the_target_question_accepts_a_link_and_rejects_an_email(monkeypatch, wizard_paths, capsys):
-    answers = ["someone@example.com", "https://www.xbox.com/play/user/SomeTag", "", "5m", "90", "", "n", "", "", "1", "n", "n"]
+    answers = ["someone@example.com", "https://www.xbox.com/play/user/SomeTag", "", "5m", "90", "", "n", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers)
     out = capsys.readouterr().out
     assert "e-mail address" in out
@@ -105,7 +105,7 @@ def test_the_target_question_accepts_a_link_and_rejects_an_email(monkeypatch, wi
 
 # Verifies discarding the answers leaves every destination file untouched
 def test_discarding_the_answers_writes_nothing(monkeypatch, wizard_paths, capsys):
-    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "3", "y"]
+    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "", "3", "y"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers)
     out = capsys.readouterr().out
     assert code == 1
@@ -149,7 +149,7 @@ def test_a_disabled_dotenv_is_refused_before_anything_is_asked(wizard_paths, cap
 # Verifies a failing sign-in can be escaped, and that escaping it keeps the credentials the user entered
 def test_a_failing_sign_in_can_be_escaped_without_losing_the_credentials(monkeypatch, wizard_paths, capsys):
     failing = TokenAuthorizer(error=RuntimeError("network down"))
-    answers = ["SomeTag", "", "5m", "90", "", "y", "n", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "n", "", "", "", "1", "n", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers, authorizer=failing)
     out = capsys.readouterr().out
     assert code == 0
@@ -160,7 +160,7 @@ def test_a_failing_sign_in_can_be_escaped_without_losing_the_credentials(monkeyp
 
 # Verifies the credentials question can be abandoned, which the summary then reports as incomplete
 def test_abandoning_the_credentials_is_reported_as_incomplete(monkeypatch, wizard_paths, capsys):
-    answers = ["SomeTag", "", "5m", "90", "y", "n", "", "", "1", "n"]
+    answers = ["SomeTag", "", "5m", "90", "y", "n", "", "", "", "1", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=["", ""])
     out = capsys.readouterr().out
     assert code == 0
@@ -176,7 +176,7 @@ def test_a_refused_mail_server_switches_email_off(monkeypatch, wizard_paths, cap
         raise monitor.RecoveryError(advice)
 
     monkeypatch.setattr(monitor, "smtp_sign_in", refuse)
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "", "", "", "1", "n", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "smtp-password"])
     out = capsys.readouterr().out
     assert code == 0
@@ -194,7 +194,7 @@ def test_a_retryable_mail_server_failure_keeps_the_answers(monkeypatch, wizard_p
         raise monitor.RecoveryError(advice)
 
     monkeypatch.setattr(monitor, "smtp_sign_in", refuse)
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "1", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "1", "", "", "", "1", "n", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "smtp-password"])
     out = capsys.readouterr().out
     assert code == 0
@@ -207,7 +207,7 @@ def test_a_retryable_mail_server_failure_keeps_the_answers(monkeypatch, wizard_p
 # Verifies the recommended email preset leaves the every-status alert off, since it also mails away transitions
 def test_the_recommended_email_preset_leaves_the_every_status_alert_off(monkeypatch, wizard_paths):
     monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "1", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "1", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "smtp-password"])
     written = wizard_paths["config"].read_text(encoding="utf-8")
     assert "ACTIVE_INACTIVE_NOTIFICATION = True" in written
@@ -218,7 +218,7 @@ def test_the_recommended_email_preset_leaves_the_every_status_alert_off(monkeypa
 
 # Verifies re-entering one section reverts only the keys that section owns
 def test_editing_one_section_leaves_the_other_answers_alone(monkeypatch, wizard_paths):
-    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "2", "2", "10m", "3m", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "", "2", "2", "10m", "3m", "1", "n", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers)
     written = wizard_paths["config"].read_text(encoding="utf-8")
     assert code == 0
@@ -240,7 +240,7 @@ def test_an_existing_config_is_backed_up_before_it_is_replaced(monkeypatch, wiza
 
 # Verifies a target already known from the command line is offered as the default rather than asked for again
 def test_a_target_given_on_the_command_line_is_the_offered_default(monkeypatch, wizard_paths):
-    answers = ["", "", "5m", "90", "", "n", "", "", "1", "n", "n"]
+    answers = ["", "", "5m", "90", "", "n", "", "", "", "1", "n", "n"]
     code, scripted = run_wizard(monkeypatch, wizard_paths, answers, initial_target="SomeTag")
     assert code == 0
     assert any("[SomeTag]" in prompt for prompt in scripted.prompts)
@@ -250,7 +250,7 @@ def test_a_target_given_on_the_command_line_is_the_offered_default(monkeypatch, 
 # Verifies no secret the user typed is ever echoed back to the terminal
 def test_no_entered_secret_reaches_the_screen(monkeypatch, wizard_paths, capsys):
     monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "1", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "1", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id-secret-value", "client-secret-value", "smtp-password-value"])
     out = capsys.readouterr().out
     for secret in ("client-id-secret-value", "client-secret-value", "smtp-password-value"):
@@ -273,7 +273,7 @@ def test_the_token_cache_is_written_privately(monkeypatch, wizard_paths):
 def test_the_launch_offer_needs_a_target_and_credentials(monkeypatch, wizard_paths, capsys):
     launched = []
     monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
-    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "1", "n", "y"]
+    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "", "1", "n", "y"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers)
     assert code == 0
     assert len(launched) == 1
@@ -289,7 +289,7 @@ def test_the_doctor_offer_checks_the_saved_files(monkeypatch, wizard_paths):
         return 0
 
     monkeypatch.setattr(monitor, "run_doctor", fake_doctor)
-    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "1", "y", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "n", "", "", "", "1", "y", "n"]
     run_wizard(monkeypatch, wizard_paths, answers)
     assert seen["target"] == "SomeTag"
     assert seen["config"] == str(wizard_paths["config"])
@@ -350,7 +350,7 @@ def test_declining_an_existing_config_without_an_alternative_writes_nothing(monk
 def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(monkeypatch, wizard_paths):
     wizard_paths["env"].write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
     monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "1", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "1", "", "", "", "1", "n", "n"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "typed-password"])
     written = wizard_paths["env"].read_text(encoding="utf-8")
     assert code == 0
@@ -362,7 +362,7 @@ def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(m
 def test_a_confirmed_dotenv_secret_replacement_is_written(monkeypatch, wizard_paths):
     wizard_paths["env"].write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
     monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
-    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "y", "1", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "y", "1", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "typed-password"])
     assert 'SMTP_PASSWORD="typed-password"' in wizard_paths["env"].read_text(encoding="utf-8")
 
@@ -370,7 +370,7 @@ def test_a_confirmed_dotenv_secret_replacement_is_written(monkeypatch, wizard_pa
 # Verifies credentials already in the dotenv file are noticed even when this run did not load them
 def test_credentials_in_the_dotenv_file_prompt_before_being_replaced(monkeypatch, wizard_paths):
     wizard_paths["env"].write_text('MS_APP_CLIENT_ID="stored-id"\nMS_APP_CLIENT_SECRET="stored-secret"\n', encoding="utf-8")
-    answers = ["SomeTag", "", "5m", "90", "n", "", "n", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "n", "", "n", "", "", "", "1", "n", "n"]
     code, scripted = run_wizard(monkeypatch, wizard_paths, answers)
     assert code == 0
     assert any("Replace the Microsoft application credentials already configured?" in prompt for prompt in scripted.prompts)

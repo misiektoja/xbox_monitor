@@ -12,6 +12,7 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 - **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
 - **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
 - **CSV export** of every reported activity, with **status persistence** across restarts
+- **Coloured terminal output** with a configurable theme, switched off automatically when the output is redirected
 - **Built-in OAuth2 authentication** with manual authorization support
 - **Smart session continuity**: short offline interruptions are handled and session statistics are preserved
 - **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments

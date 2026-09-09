@@ -46,6 +46,7 @@ xbox_monitor --doctor <xbox_gamer_tag>
 - **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
 - **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
 - **CSV export** of every reported activity, with **status persistence** across restarts
+- **Coloured terminal output** with a configurable theme, switched off automatically when the output is redirected
 - **Built-in OAuth2 authentication** with manual authorization support
 - **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
 
@@ -56,7 +57,7 @@ xbox_monitor --doctor <xbox_gamer_tag>
 | [Installation](https://misiektoja.github.io/xbox_monitor/installation/) | Requirements, installing from PyPI or by hand, upgrading |
 | [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) | The guided setup, Microsoft Entra application credentials, the first authorization, the privacy settings the monitored account needs |
 | [Configuration](https://misiektoja.github.io/xbox_monitor/configuration/) | Config file, time zone, SMTP, TLS verification, check intervals, storing secrets |
-| [Usage](https://misiektoja.github.io/xbox_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals |
+| [Usage](https://misiektoja.github.io/xbox_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals, terminal colours |
 | [Troubleshooting](https://misiektoja.github.io/xbox_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |
 | [Testing](https://misiektoja.github.io/xbox_monitor/testing/) | Running the offline suite, the linter and the docs build |
 | [About](https://misiektoja.github.io/xbox_monitor/about/) | Change log, contributing, security, license, support |

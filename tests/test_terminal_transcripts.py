@@ -42,7 +42,7 @@ def visible_text(raw):
 
 
 # Runs the tool on a pty, sends the given input, optionally interrupts it, and returns what the terminal showed
-def run_on_terminal(arguments, keystrokes="", interrupt_after=None, environment=None, timeout=25):
+def run_on_terminal(arguments, keystrokes="", interrupt_after=None, environment=None, timeout=25, keep_escapes=False):
     master, slave = pty.openpty()
     env = dict(os.environ, PYTHONUNBUFFERED="1", COLUMNS="100", LINES="40")
     env.update(environment or {})
@@ -75,7 +75,8 @@ def run_on_terminal(arguments, keystrokes="", interrupt_after=None, environment=
     finally:
         os.close(master)
         process.wait(timeout=10)
-    return visible_text(b"".join(captured).decode("utf-8", "replace")), process.returncode
+    text = b"".join(captured).decode("utf-8", "replace")
+    return (text if keep_escapes else visible_text(text)), process.returncode
 
 
 # Writes a config file that keeps the run offline and points every output at the temporary directory
@@ -133,9 +134,24 @@ def test_doctor_prints_one_summary_and_one_guide_link(terminal_config):
     assert "\n\n\n" not in out
 
 
-# Verifies no first-contact screen ever shows a raw escape sequence to a terminal that cannot render it
-def test_no_first_contact_screen_leaks_an_escape_sequence(terminal_config):
+# Verifies --no-color really reaches every first-contact screen, including the ones printed before the config loads
+def test_no_color_leaves_every_first_contact_screen_plain(terminal_config):
     config, env = terminal_config
-    for arguments, keystrokes in (([], "n\n"), (["--help"], ""), (["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)], "")):
-        raw, _ = run_on_terminal(arguments, keystrokes=keystrokes)
-        assert "\x1b[" not in raw
+    for arguments, keystrokes in ((["--no-color", "--config-file", str(config), "--env-file", str(env)], "n\n"), (["--help", "--no-color", "--config-file", str(config)], ""), (["--doctor", "SomeTag", "--no-color", "--config-file", str(config), "--env-file", str(env)], "")):
+        raw, _ = run_on_terminal(arguments, keystrokes=keystrokes, environment={"TERM": "xterm-256color"}, keep_escapes=True)
+        assert "\x1b" not in raw, f"{arguments} emitted an escape sequence"
+
+
+# Verifies colour actually reaches a capable terminal, since the unit tests exercise the engine rather than the wiring
+def test_a_capable_terminal_receives_colour(terminal_config):
+    config, env = terminal_config
+    raw, _ = run_on_terminal(["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)], environment={"TERM": "xterm-256color"}, keep_escapes=True)
+    assert "\x1b[" in raw
+
+
+# Verifies the only escapes sent are colour changes, so no output can move the cursor or clear the reader's screen
+def test_the_only_escapes_sent_are_colour_changes(terminal_config):
+    config, env = terminal_config
+    for arguments in (["--help", "--config-file", str(config)], ["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)]):
+        raw, _ = run_on_terminal(arguments, environment={"TERM": "xterm-256color"}, keep_escapes=True)
+        assert ANSI_PATTERN.findall(raw) and set(ANSI_PATTERN.findall(raw)) == set(re.findall(r"\x1b\[[0-9;]*m", raw)), f"{arguments} sent a non-colour escape sequence"

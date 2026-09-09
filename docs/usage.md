@@ -75,7 +75,17 @@ Output is written to `xbox_monitor_<gamer_tag>.log`. Change it with `XBOX_LOGFIL
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"`, the default, to use ASCII separator-only lines on Windows, `"On"` to use them everywhere, or `"Off"` to keep Unicode separators in logs on every system. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
-The timestamp and last status are saved to `xbox_<gamer_tag>_last_status.json` after every change, so the last status survives a restart.
+Set `TRUNCATE_CHARS` or use the `--truncate` flag to cut each screen line to a maximum width, which stops long game titles from wrapping. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. Truncation needs the optional `wcwidth` library to measure display width. If it is missing, the tool says so at startup and leaves lines untouched.
+
+Names that come from Xbox Live, such as game titles and profile text, can contain terminal control sequences. They are removed before the text reaches the screen, the log file, the CSV file or an email, so a crafted name cannot clear your screen or overwrite a line that was already printed. Error messages are also checked for your secrets before they are shown or logged.
+
+The timestamp and last status are saved after every change, so the last status survives a restart. Set `XBOX_STATUS_FILE` or use the `--status-file` flag to keep it somewhere other than `xbox_<gamer_tag>_last_status.json` in the current directory:
+
+```sh
+xbox_monitor <xbox_gamer_tag> --status-file ~/xbox/last_status.json
+```
+
+The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind.
 
 ## Email Notifications
 
@@ -143,6 +153,66 @@ pkill -USR1 -f "xbox_monitor <xbox_gamer_tag>"
 ```
 
 Windows supports a limited set of signals, so this works only on Linux, Unix and macOS.
+
+## Terminal Colours
+
+Terminal output is coloured by default. Colour switches itself off when the output is not an interactive terminal, when `TERM` is unset or `dumb`, when `NO_COLOR` is set and when the output is piped or redirected, so a log file or a piped run never contains escape sequences.
+
+Turn it off for one run:
+
+```sh
+xbox_monitor <xbox_gamer_tag> --no-color
+```
+
+Turn it off permanently in the configuration file:
+
+```python
+COLORED_OUTPUT = False
+```
+
+On Windows, install [colorama](https://pypi.org/project/colorama/) for colours in the older Command Prompt. Windows Terminal needs nothing extra.
+
+Each part of the output has a logical name, and `COLOR_THEME` in the configuration file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
+
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Delete the block or edit only the entries you want to change:
+
+```python
+COLOR_THEME = {
+    "game": "bright_magenta bold",
+    "duration": "cyan",
+}
+```
+
+| Theme key | Default | What it colours |
+| --- | --- | --- |
+| `header` | `bright_cyan` | Report and wizard headings, and the tool name in the startup banner |
+| `section` | `bright_white` | Section names and every command the tool tells you to run |
+| `username` | `bright_cyan underline` | The monitored gamertag, the detected install method and wizard menu numbers |
+| `id` | `bright_magenta` | The XUID |
+| `status_active` | `green` | An online presence, and a game that just started |
+| `status_away` | `yellow` | An away presence |
+| `status_inactive` | `red` | An inactive presence, and a game that just stopped |
+| `status_offline` | `red` | An offline presence |
+| `status_other` | `white` | A presence value the tool does not recognise |
+| `game` | `bright_yellow` | Game titles |
+| `platform` | `bright_blue` | Console names and the platform tag beside a game |
+| `achievement` | `bright_green` | Gamerscore and achievement names |
+| `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
+| `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
+| `timestamp_value` | `cyan` | The timestamp itself |
+| `info` | `cyan` | `To fix:` lines, notes, prompts and default markers |
+| `warning` | `yellow` | `* Warning:` lines and `[WARN]` rows |
+| `error` | `red` | `* Error:` lines and `[FAIL]` rows |
+| `signal` | `yellow` | `* Signal ... received` lines |
+| `email` | `bright_cyan` | Lines reporting an email being sent |
+| `date` | `magenta` | Single dates and times |
+| `date_range` | `magenta` | Date and time ranges |
+| `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
+| `boolean_false` | `red` | `False`, `Disabled` and `Off` |
+| `count_up` | `green` | A count that went up, and the `(+n)` beside it |
+| `count_down` | `red` | A count that went down, and the `(-n)` beside it |
+| `link` | `blue underline` | URLs |
 
 ## Coloring Log Output with GRC
 
