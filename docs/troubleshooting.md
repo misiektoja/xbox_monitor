@@ -17,17 +17,17 @@ The report covers six sections:
 | **Authentication** | That the application credentials are set, that the token cache is present and private, and that Xbox Live still accepts the saved tokens |
 | **Connectivity** | That the connectivity endpoint answers, using the configured URL, timeout and TLS setting |
 | **Target** | That the monitored gamertag resolves and shares its activity |
-| **Notifications** | Whether email alerts are on and, if so, whether the SMTP server accepts the configured login |
+| **Notifications** | Whether email alerts are on and, if so, whether the SMTP server accepts the configured login, and whether the webhook destination, headers and alert choices can be used |
 
 Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. A row that is not a pass carries a `To fix:` line and a link. A warning describes a working setup worth reviewing. Only a failure changes the exit code, which is 1 when anything failed and 0 otherwise, so the report can be used in a script.
 
-When both the input and the output are a terminal and the email channel passed, the report offers one real test message. Nothing is sent without a separate yes, and the result is counted in the summary.
+When both the input and the output are a terminal and a channel passed, the report offers one real test message for that channel. Nothing is sent without a separate yes, and the result is counted in the summary. The webhook check validates the settings without contacting Discord or ntfy, so nothing is published until you approve the test.
 
 Doctor never starts the interactive sign-in, because that writes a token file. A missing token cache is reported as a warning naming the command that creates one, which is `--setup` or the first monitoring run.
 
 ## Setup and Secret Commands
 
-`--setup`, `--set-ms-app-credentials` and `--set-smtp-password` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
+`--setup`, `--set-ms-app-credentials`, `--set-smtp-password` and `--set-webhook-url` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
 
 Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed, and during a secret command it reports that the dotenv file was left as it was. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring.
 
@@ -47,6 +47,9 @@ Every reported problem carries a category, a one-line summary, a `To fix:` parag
 | Xbox Live is rate limiting this application | The polling intervals are too short, or several copies share one application |
 | This process ran out of file descriptors | A local limit rather than an Xbox Live problem. Raise it with `ulimit -n` or `LimitNOFILE=` under systemd |
 | The SMTP server rejected the login | Providers such as Gmail need an app password rather than the account password |
+| The webhook settings cannot be used | A webhook setting is malformed. The message names the one to correct, then run `--send-test-webhook` |
+| The webhook service refused the delivery | The webhook was deleted or the saved URL is out of date. Create a new one and run `--set-webhook-url` |
+| The webhook service is rate limiting deliveries | Too many alerts for the destination. Enable fewer webhook alert types |
 
 While the same failure repeats, the fix paragraph is printed once and then suppressed until the category changes or a check succeeds, so the timestamps that show the tool is alive stay readable.
 
@@ -70,6 +73,6 @@ Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and li
 [DEBUG 00:03:04] Presence check: outcome=failed, error=ConnectError: connection reset by peer, recovery_code=network.unavailable, streak=1
 ```
 
-Every outbound call reports `outcome=OK` or `outcome=failed` with an `error=` field. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens and your SMTP password, and report a secret by name and source rather than by value. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
+Every outbound call reports `outcome=OK` or `outcome=failed` with an `error=` field. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL, and report a secret by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
 
 Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file.

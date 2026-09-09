@@ -16,6 +16,8 @@ xbox_monitor --setup
 
 It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it, and offers to write somewhere else instead. A secret already in the dotenv file is never replaced without asking.
 
+It covers the monitored account, the polling intervals, the application credentials, email alerts, [webhook alerts](configuration.md#webhook-settings) and the files the tool writes. Each section can be skipped and re-entered from the summary.
+
 Nothing is written until you choose **Save settings** on the summary, and Ctrl+C at any question leaves both files untouched.
 
 To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:

@@ -69,9 +69,55 @@ xbox_monitor --send-test-email
 
 Email is switched off automatically while `SMTP_HOST`, `SMTP_USER` or `SMTP_PASSWORD` is still one of the shipped placeholders, so a fresh install never looks configured when it is not.
 
+## Webhook Settings
+
+Alerts can also be delivered to a **Discord** channel or an **ntfy** topic. The webhook channel is configured and switched on separately from email, so you can send game changes to Discord while email stays off, or use both.
+
+Save the destination privately, which never puts it in your shell history:
+
+```sh
+xbox_monitor --set-webhook-url
+```
+
+For Discord this is the URL from Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL. For ntfy it is the complete topic URL, such as `https://ntfy.sh/your-private-topic`, or just the topic name when it is hosted on ntfy.sh. The service is detected from the URL, so `WEBHOOK_PROVIDER` only needs setting for a self-hosted ntfy server.
+
+The URL is checked for shape without contacting the service, because the only confirmation Discord or ntfy can give is a delivered notification. The command prints `--send-test-webhook` as the next step, which does deliver one.
+
+Then switch the channel on and choose which events it sends:
+
+```python
+WEBHOOK_ENABLED = True
+WEBHOOK_PROVIDER = "discord"                    # or "ntfy"
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = True     # user gets online or offline
+WEBHOOK_GAME_CHANGE_NOTIFICATION = True         # game starts, changes or stops
+WEBHOOK_STATUS_NOTIFICATION = False             # every status change, including away
+WEBHOOK_ERROR_NOTIFICATION = True               # monitoring errors, enabled by default
+```
+
+A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+
+Discord alerts are sent as an embed built from `WEBHOOK_TEMPLATE`, which supports the `title`, `description`, `version`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Mentions are always disabled, whatever the template says. `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` override the webhook's own display name and picture, and both are ignored by ntfy.
+
+ntfy alerts are sent as a native message with the subject as the title, so no template is involved. Use `WEBHOOK_HEADERS` to add ntfy options such as priority or tags, and `NTFY_ACCESS_TOKEN` when the topic needs authentication:
+
+```python
+WEBHOOK_HEADERS = {"Priority": "5", "Tags": "video_game"}
+```
+
+`WEBHOOK_TRANSFORMS` applies string methods to the values before they are sent, for example to strip Markdown from the body:
+
+```python
+WEBHOOK_TRANSFORMS = [
+    ("title", "upper"),
+    ("description", "replace", "**", ""),
+]
+```
+
+Which events actually fire, and how a failed delivery is retried, is covered in [Webhook Notifications](usage.md#webhook-notifications).
+
 ## TLS Verification
 
-Every outbound connection verifies the server certificate by default. Xbox Live, the Microsoft sign-in endpoint, the connectivity check and the SMTP handshake all use the same setting.
+Every outbound connection verifies the server certificate by default. Xbox Live, the Microsoft sign-in endpoint, the connectivity check, the SMTP handshake and the webhook service all use the same setting.
 
 ```ini
 VERIFY_SSL = True
@@ -106,7 +152,7 @@ An expired or revoked refresh token is a credential problem rather than a networ
 
 ## Storing Secrets
 
-Store `MS_APP_CLIENT_ID`, `MS_APP_CLIENT_SECRET` and `SMTP_PASSWORD` as environment variables or in a dotenv file rather than in the configuration file.
+Store `MS_APP_CLIENT_ID`, `MS_APP_CLIENT_SECRET`, `SMTP_PASSWORD`, `WEBHOOK_URL` and `NTFY_ACCESS_TOKEN` as environment variables or in a dotenv file rather than in the configuration file.
 
 The tool can collect them for you through a hidden prompt, check them and save them to the dotenv file. Neither value is echoed and neither ends up in the shell history:
 
@@ -116,6 +162,9 @@ xbox_monitor --set-ms-app-credentials
 
 # Asks for the SMTP password and signs in to the mail server before saving it, without sending anything
 xbox_monitor --set-smtp-password
+
+# Asks for the Discord webhook or ntfy topic URL and checks its shape before saving it, without contacting the service
+xbox_monitor --set-webhook-url
 ```
 
 Each command rewrites its assignment in the dotenv file in place, keeps every other line and comment, and asks first when the value is already set. `--setup` does the same as part of the guided run.
@@ -126,6 +175,8 @@ Export them on Linux, Unix, macOS and WSL:
 export MS_APP_CLIENT_ID="your_ms_application_client_id"
 export MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
 export SMTP_PASSWORD="your_smtp_password"
+export WEBHOOK_URL="your_webhook_url"
+export NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
 On **Windows Command Prompt** use `set`, and on **Windows PowerShell** use `$env`.
@@ -136,6 +187,8 @@ A dotenv file keeps them across sessions:
 MS_APP_CLIENT_ID="your_ms_application_client_id"
 MS_APP_CLIENT_SECRET="your_ms_application_secret_value"
 SMTP_PASSWORD="your_smtp_password"
+WEBHOOK_URL="your_webhook_url"
+NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
 By default the tool looks for a file named `.env` in the current directory and then upward from it. Point it somewhere else with `DOTENV_FILE` or `--env-file`:

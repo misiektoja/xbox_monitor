@@ -247,7 +247,7 @@ def test_setup_runs_without_a_gamertag(tmp_path, monkeypatch):
 
 
 # Verifies the commands that write a secret are reached without a gamertag, which they exist to help configure
-@pytest.mark.parametrize("flag, runner", (("--set-ms-app-credentials", "run_set_ms_app_credentials"), ("--set-smtp-password", "run_set_smtp_password")))
+@pytest.mark.parametrize("flag, runner", (("--set-ms-app-credentials", "run_set_ms_app_credentials"), ("--set-smtp-password", "run_set_smtp_password"), ("--set-webhook-url", "run_set_webhook_url")))
 def test_a_secret_command_runs_without_a_gamertag(tmp_path, monkeypatch, flag, runner):
     config, env = write_startup_files(tmp_path)
     calls = []
@@ -331,3 +331,66 @@ def test_the_status_file_flag_overrides_the_configured_path(tmp_path, monkeypatc
         monitor.main()
 
     assert monitor.resolve_status_file("SomeTag") == str(tmp_path / "from-flag.json")
+
+
+GAMERTAG = "SomeTag"
+DISCORD_URL = "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenValue"
+NTFY_URL = "https://ntfy.sh/private-topic-name"
+
+
+# Verifies the webhook flags reach the run, and that naming one alert also switches the channel on
+def test_the_webhook_flags_reach_the_run(tmp_path, monkeypatch):
+    config, env = write_startup_files(tmp_path)
+    observed = run_startup(monkeypatch, [GAMERTAG, "--webhook-url", DISCORD_URL, "--webhook-game-change", "--config-file", str(config), "--env-file", str(env)], observe=("WEBHOOK_ENABLED", "WEBHOOK_URL", "WEBHOOK_GAME_CHANGE_NOTIFICATION"))
+    assert observed["WEBHOOK_ENABLED"] is True
+    assert observed["WEBHOOK_URL"] == DISCORD_URL
+    assert observed["WEBHOOK_GAME_CHANGE_NOTIFICATION"] is True
+    assert monitor.SECRET_SOURCES["WEBHOOK_URL"] == "command line"
+
+
+# Verifies a destination that cannot be used stops the run at the flag rather than at the first delivery
+def test_an_insecure_webhook_url_is_refused_by_the_parser(tmp_path, monkeypatch, capsys):
+    config, env = write_startup_files(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", GAMERTAG, "--webhook-url", "http://discord.com/api/webhooks/1/token", "--config-file", str(config), "--env-file", str(env)])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 2
+    assert "--webhook-url needs a complete HTTPS link" in capsys.readouterr().err
+
+
+# Verifies a destination that names its own service corrects a configured provider that disagrees with it
+def test_a_recognised_destination_corrects_the_configured_provider(tmp_path, monkeypatch, capsys):
+    config, env = write_startup_files(tmp_path, 'WEBHOOK_PROVIDER = "discord"\n')
+    observed = run_startup(monkeypatch, [GAMERTAG, "--webhook-url", NTFY_URL, "--config-file", str(config), "--env-file", str(env)], observe=("WEBHOOK_PROVIDER",))
+    assert observed["WEBHOOK_PROVIDER"] == "ntfy"
+    assert "does not match the destination URL, using ntfy" in capsys.readouterr().out
+
+
+# Verifies a provider named on the command line is kept, since it was chosen deliberately for this run
+def test_a_named_provider_is_never_corrected(tmp_path, monkeypatch, capsys):
+    config, env = write_startup_files(tmp_path)
+    observed = run_startup(monkeypatch, [GAMERTAG, "--webhook-url", NTFY_URL, "--webhook-provider", "discord", "--config-file", str(config), "--env-file", str(env)], observe=("WEBHOOK_PROVIDER",))
+    assert observed["WEBHOOK_PROVIDER"] == "discord"
+    assert "does not match the destination URL" not in capsys.readouterr().out
+
+
+# Verifies the test command publishes one notification past the alert settings and exits on the result
+@pytest.mark.parametrize("result, code", ((0, 0), (1, 1)))
+def test_the_test_webhook_command_sends_one_forced_notification(tmp_path, monkeypatch, capsys, result, code):
+    config, env = write_startup_files(tmp_path)
+    sent = []
+    monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: sent.append((args, kwargs)) or result)
+    monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--send-test-webhook", "--webhook-url", DISCORD_URL, "--config-file", str(config), "--env-file", str(env)])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == code
+    assert len(sent) == 1
+    assert sent[0][1]["force"] is True
+    assert "discord.com" in capsys.readouterr().out

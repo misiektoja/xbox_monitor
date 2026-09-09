@@ -90,6 +90,108 @@ STATUS_NOTIFICATION = False
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
+# ----------------------------
+# Webhook Notifications
+# ----------------------------
+
+# Master switch for webhook notifications through Discord or ntfy
+# The event settings below select which alerts are sent
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# A recognised Discord or ntfy.sh URL corrects a mismatched value at runtime
+# Can also be set via the --webhook-provider flag
+WEBHOOK_PROVIDER = "discord"
+
+# Private destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+#
+# Provide the WEBHOOK_URL secret using one of the following methods:
+#   - Enter it privately with --set-webhook-url
+#   - Set it as an environment variable (e.g. export WEBHOOK_URL=...)
+#   - Add it to ".env" file (WEBHOOK_URL=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+#
+# The --webhook-url flag overrides it for one run, but leaves the private URL in shell history
+WEBHOOK_URL = "your_webhook_url"
+
+# Discord display name (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
+WEBHOOK_USERNAME = "Xbox Monitor"
+
+# Discord avatar URL (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
+WEBHOOK_AVATAR_URL = ""
+
+# Whether to send a webhook alert when user goes online/offline
+# Can also be enabled via the --webhook-active-inactive flag
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
+
+# Whether to send a webhook alert on game start/change/stop
+# Can also be enabled via the --webhook-game-change flag
+WEBHOOK_GAME_CHANGE_NOTIFICATION = False
+
+# Whether to send a webhook alert on all status changes (online/away/offline)
+# Can also be enabled via the --webhook-status flag
+WEBHOOK_STATUS_NOTIFICATION = False
+
+# Whether to send a webhook alert on errors
+# Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
+WEBHOOK_ERROR_NOTIFICATION = True
+
+# Optional request headers for advanced webhook integrations
+# Values support the same placeholders as WEBHOOK_TEMPLATE
+WEBHOOK_HEADERS = {}
+
+# Optional ntfy access token for Bearer authentication
+#
+# Provide the NTFY_ACCESS_TOKEN secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export NTFY_ACCESS_TOKEN=...)
+#   - Add it to ".env" file (NTFY_ACCESS_TOKEN=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+NTFY_ACCESS_TOKEN = ""
+
+# ----------------------------
+# Advanced Webhook Settings
+# ----------------------------
+
+# Discord-format webhook request payload template
+# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
+# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
+# to add ntfy options such as priority or tags
+# Supported placeholders: title, description, version, color, timestamp, username and avatar_url
+WEBHOOK_TEMPLATE = {
+    "username": "{username}",
+    "avatar_url": "{avatar_url}",
+    "allowed_mentions": {
+        "parse": [],
+    },
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "footer": {
+            "text": "Xbox Monitor v{version}",
+        },
+        "timestamp": "{timestamp}",
+    }],
+}
+
+# Optional transformations applied to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS values
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+#
+# Examples:
+#   [
+#       ("title", "upper"),
+#       ("description", "replace", "**", ""),
+#       ("description", "strip"),
+#   ]
+WEBHOOK_TRANSFORMS = []
+
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c flag
 XBOX_CHECK_INTERVAL = 300  # 5 min
@@ -253,6 +355,19 @@ ACTIVE_INACTIVE_NOTIFICATION = False
 GAME_CHANGE_NOTIFICATION = False
 STATUS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = ""
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = ""
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
+WEBHOOK_GAME_CHANGE_NOTIFICATION = False
+WEBHOOK_STATUS_NOTIFICATION = False
+WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS: dict = {}
+WEBHOOK_TEMPLATE: dict = {}
+WEBHOOK_TRANSFORMS: list = []
+NTFY_ACCESS_TOKEN = ""
 XBOX_CHECK_INTERVAL = 0
 XBOX_ACTIVE_CHECK_INTERVAL = 0
 LOCAL_TIMEZONE = ""
@@ -289,7 +404,7 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 DEFAULT_TOKENS_FILENAME = "xbox_tokens.json"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
+SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
 # Secrets whose length is issued by Microsoft rather than chosen by the user, so reporting it discloses nothing
 FIXED_LENGTH_SECRET_KEYS = frozenset(("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
@@ -310,6 +425,7 @@ SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
 PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#user-privacy-settings"
 TIMEZONE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#time-zone"
 SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#webhook-settings"
 TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
@@ -370,6 +486,7 @@ import signal
 import smtplib
 import ssl
 from email.header import Header
+from email.utils import parsedate_to_datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
@@ -411,7 +528,7 @@ from collections import namedtuple
 import subprocess
 import tempfile
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 
 # The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
@@ -443,6 +560,9 @@ DOCTOR_SMTP_TIMEOUT = 5
 # Shared doctor label for the email channel, kept identical to the sibling monitors
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 
+# The webhook readiness label names the service it validated, so anything matching on it matches this prefix
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
+
 # Width of the progress line currently on screen, which is what erasing it needs to know
 DOCTOR_PROGRESS_WIDTH = 0
 
@@ -463,6 +583,7 @@ class DoctorReport:
     checks: list = field(default_factory=list)
     authenticated: bool = False
     email_ready: bool = False
+    webhook_ready: bool = False
 
 
 # Creates one doctor result, refusing a marker outside the shared four and redacting every field it shows
@@ -824,6 +945,34 @@ def doctor_check_email_notifications(report):
     return [make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {alerts}. No email was sent during this passive check")]
 
 
+# Reports whether webhook alerts can fire at all, then whether the settings they would use are usable
+def doctor_check_webhook_notifications(report):
+    selected = webhook_notification_categories()
+    # An error alert is on by default, so on its own it cannot make a fresh install look configured
+    deliberate = WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION or WEBHOOK_GAME_CHANGE_NOTIFICATION or WEBHOOK_STATUS_NOTIFICATION
+    if not WEBHOOK_ENABLED:
+        if not deliberate:
+            return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled", "Use --webhook or set WEBHOOK_ENABLED to turn them on")]
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are selected but the channel is switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the selected webhook alerts off", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    if not selected:
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert type is selected", recovery_fix_with_guide("Turn on at least one WEBHOOK_ notification setting, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    provider = normalized_webhook_provider()
+    if not provider:
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_PROVIDER must be discord or ntfy")
+        return [make_doctor_check("Notifications", "WARN", advice.summary, advice.detail, advice)]
+    if not validate_webhook_url():
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+        return [make_doctor_check("Notifications", "WARN", advice.summary, advice.detail, advice)]
+    for validation_error in (validate_webhook_customization(provider), validate_webhook_headers(provider)):
+        if validation_error is not None:
+            advice = classify_recovery_error(context="webhook", detail=validation_error)
+            return [make_doctor_check("Notifications", "WARN", advice.summary, advice.detail, advice)]
+    report.webhook_ready = True
+    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(selected)}. The private link was not displayed. No webhook was sent during this passive check")]
+
+
 # Asks one yes or no question, treating a closed or interrupted input as no
 def ask_yes_no(question, default=False):
     hint = "[Y/n]" if default else "[y/N]"
@@ -844,17 +993,26 @@ def ask_yes_no(question, default=False):
 
 # Offers a real delivery test for each channel that already passed, approved separately from the report
 def offer_doctor_delivery_tests(report):
-    if not report.email_ready or not sys.stdin.isatty() or not sys.stdout.isatty():
+    if not (report.email_ready or report.webhook_ready) or not sys.stdin.isatty() or not sys.stdout.isatty():
         return []
     print("\nOptional delivery tests\n")
     print("Doctor will not write files. Each approved test sends one real message.\n")
     offered = []
-    if ask_yes_no("Send one test email now? This will deliver a real message"):
-        delivered = send_email("xbox_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=DOCTOR_SMTP_TIMEOUT) == 0
-        check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
-    else:
-        check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
-    offered.append(check)
+    if report.email_ready:
+        if ask_yes_no("Send one test email now? This will deliver a real message"):
+            delivered = send_email("xbox_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=DOCTOR_SMTP_TIMEOUT) == 0
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
+        else:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+        offered.append(check)
+    if report.webhook_ready:
+        provider = webhook_provider_display_name()
+        if ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
+            delivered = send_webhook("xbox_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook settings work.", "status", force=True) == 0
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", f"Doctor test webhook through {provider} delivered" if delivered else f"Doctor test webhook through {provider} delivery failed", f"One real test notification was sent to {webhook_destination_host()}" if delivered else "The approved test webhook could not be delivered")
+        else:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent")
+        offered.append(check)
     # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
     for check in offered:
         report.checks.append(check)
@@ -870,7 +1028,7 @@ def build_doctor_report(xbox_gamertag=None, config_path=None, env_path=None, con
         ("the configuration", lambda: doctor_check_configuration(config_path, env_path, config_advice, timezone_advice, xbox_gamertag)),
         ("connectivity", lambda: doctor_check_connectivity()),
         ("authentication", lambda: asyncio.run(doctor_check_xbox_live(report, xbox_gamertag, progress))),
-        ("notifications", lambda: doctor_check_email_notifications(report)),
+        ("notifications", lambda: doctor_check_email_notifications(report) + doctor_check_webhook_notifications(report)),
     )
     for label, run_step in steps:
         if progress is not None:
@@ -941,6 +1099,12 @@ def startup_notification_state():
     return "On (" + ", ".join(enabled) + ")" if enabled else "Off"
 
 
+# Returns the webhook alert rollup, which reads Off whenever the channel itself is switched off
+def startup_webhook_notification_state():
+    enabled = webhook_notification_categories() if WEBHOOK_ENABLED else []
+    return f"On ({', '.join(enabled)}) through {webhook_provider_display_name()}" if enabled else "Off"
+
+
 # Builds every summary row in the order the sibling tools print them, most useful first
 def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, log_path=None):
     supplied = doctor_secret_sources()
@@ -954,6 +1118,7 @@ def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, l
         StartupSummaryRow("Target", str(xbox_gamertag) if xbox_gamertag else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(XBOX_CHECK_INTERVAL)}] [online: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]", concise=True),
         StartupSummaryRow("Notifications (email)", startup_notification_state(), concise=True),
+        StartupSummaryRow("Notifications (webhook)", startup_webhook_notification_state(), concise=True),
         StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
         StartupSummaryRow("Output logging", str(log_path) if log_path else "Disabled"),
         StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
@@ -983,7 +1148,7 @@ def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, l
 # Formats one summary row with an aligned value column, wrapping only the rollup that grows long
 def format_startup_summary_row(row):
     prefix = f"* {(row.label + ':'):<30}"
-    if row.label == "Notifications (email)":
+    if row.label in ("Notifications (email)", "Notifications (webhook)"):
         return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
     return f"{prefix}{row.value}\n"
 
@@ -2071,6 +2236,11 @@ WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_N
 # The recommended preset leaves STATUS_NOTIFICATION off: it also mails every away transition, which is a lot of mail
 WIZARD_RECOMMENDED_EMAIL_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
 
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+
+# The same reasoning as the email preset: every away transition would publish its own notification
+WIZARD_RECOMMENDED_WEBHOOK_KEYS = ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+
 # Where the Microsoft application the tool signs in through is registered
 ENTRA_PORTAL_URL = "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
 
@@ -2080,6 +2250,7 @@ WIZARD_SECTIONS = (
     ("Polling", "Polling intervals", "Change how often Xbox Live is checked.", ("XBOX_CHECK_INTERVAL", "XBOX_ACTIVE_CHECK_INTERVAL"), ()),
     ("Authentication", "Authentication", "Enter the Microsoft application credentials and authorize again.", (), ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET")),
     ("Email", "Email notifications", "Change SMTP details and which events are mailed.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Webhook", "Webhook notifications", "Change the Discord or ntfy destination and which events are sent.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
     ("Output", "Output files", "Change the log, CSV and status file destinations.", ("DISABLE_LOGGING", "CSV_FILE", "XBOX_STATUS_FILE"), ()),
 )
 
@@ -2244,6 +2415,78 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
     state.config_values.update(selected)
 
 
+# Collects the webhook destination and the alerts that should reach it
+def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=bool(state.config_values.get("WEBHOOK_ENABLED")), input_func=input_func):
+        _wizard_disable_webhook(state)
+        return
+    choice = _wizard_ask_choice("Which webhook service should receive alerts?", [
+        ("Discord", "Sends a Discord embed to one channel webhook."),
+        ("ntfy", "Sends a native notification to one ntfy topic URL."),
+    ], input_func=input_func)
+    provider = "discord" if choice == 0 else "ntfy"
+    state.config_values["WEBHOOK_PROVIDER"] = provider
+    if provider == "discord":
+        print("  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
+    else:
+        print("  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server.")
+    while True:
+        entered = _wizard_ask_secret("Paste the Discord webhook URL" if provider == "discord" else "Paste the ntfy topic URL or ntfy.sh topic name", getpass_func=getpass_func)
+        webhook_url = normalize_ntfy_topic_url(entered) if provider == "ntfy" else str(entered).strip()
+        if validate_webhook_url(webhook_url):
+            _wizard_queue_secret(state, "WEBHOOK_URL", webhook_url, input_func=input_func)
+            break
+        # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
+        if not webhook_url:
+            if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set", input_func=input_func):
+                _wizard_disable_webhook(state)
+                return
+            continue
+        if provider == "ntfy":
+            print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
+        else:
+            print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
+        if not _wizard_offer_retry("webhook URL", input_func=input_func):
+            _wizard_disable_webhook(state)
+            return
+    if provider == "ntfy" and _wizard_ask_yes_no("Authenticate this ntfy topic with a separate access token?", default=False, input_func=input_func):
+        while True:
+            token = _wizard_ask_secret("Paste the ntfy access token only", getpass_func=getpass_func)
+            if not token or ("\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic "))):
+                _wizard_queue_secret(state, "NTFY_ACCESS_TOKEN", token, input_func=input_func)
+                break
+            print("  Paste only the access token without a Bearer or Basic prefix.")
+            if not _wizard_offer_retry("ntfy access token", input_func=input_func):
+                break
+    state.config_values["WEBHOOK_ENABLED"] = True
+    preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
+        ("Status and errors, recommended", "Online and offline changes, game changes and monitoring errors."),
+        ("Every supported alert", "Adds a notification for every away transition as well."),
+        ("Custom", "Choose each webhook alert separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {name: name in WIZARD_RECOMMENDED_WEBHOOK_KEYS for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "Send a webhook alert when the user goes online or offline?"),
+            ("WEBHOOK_GAME_CHANGE_NOTIFICATION", "Send a webhook alert when the user starts, changes or stops a game?"),
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on every status change, including away?"),
+            ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
+
+
+# Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
+def _wizard_disable_webhook(state):
+    state.config_values["WEBHOOK_ENABLED"] = False
+    for key in WIZARD_WEBHOOK_NOTIFICATION_KEYS:
+        state.config_values[key] = False
+
+
 # Signs in to the collected mail server without sending anything, so a refused login is caught during setup
 def _wizard_verify_smtp(values, password):
     names = WIZARD_SMTP_CONFIG_KEYS + ("SMTP_PASSWORD",)
@@ -2321,6 +2564,7 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
         "Polling": lambda: _wizard_collect_polling_section(state, input_func=input_func),
         "Authentication": lambda: _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func),
         "Email": lambda: _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Webhook": lambda: _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func),
         "Output": lambda: _wizard_collect_output_section(state, input_func=input_func),
     }
     collectors[name]()
@@ -2337,6 +2581,8 @@ def _wizard_print_summary_rows(rows):
 def _wizard_print_setup_summary(state):
     email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status", "ERROR_NOTIFICATION": "errors"}
     enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
+    webhook_labels = {"WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "WEBHOOK_GAME_CHANGE_NOTIFICATION": "game", "WEBHOOK_STATUS_NOTIFICATION": "every status", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
+    enabled_webhook = [webhook_labels[name] for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS if state.config_values.get(name)]
     rows = [
         ("Target", state.target or "not set"),
         ("Persist target", "yes" if state.persist_target else "no"),
@@ -2346,6 +2592,8 @@ def _wizard_print_setup_summary(state):
         ("Microsoft sign-in", "authorized in this session" if state.token_json else "not done yet"),
         ("Email", "enabled" if enabled_email else "disabled"),
         ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
+        ("Webhook", f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.config_values.get("WEBHOOK_ENABLED") else "disabled"),
+        ("Webhook alerts", ", ".join(enabled_webhook) if enabled_webhook else "none"),
         ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
         ("Status file", state.config_values.get("XBOX_STATUS_FILE") or "default"),
@@ -2471,6 +2719,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
         _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+        _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
         _wizard_collect_output_section(state, input_func=input_func)
         saved = _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func)
@@ -2580,6 +2829,7 @@ def help_examples():
         ("Notifications", (
             ("Email when the user goes online or offline, and on game changes", f"{prefix} <xbox_gamertag> -a -g"),
             ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
         )),
         ("Information and diagnostics", (
             ("Show detailed profile information and exit", f"{prefix} -i <xbox_gamertag>"),
@@ -2616,7 +2866,7 @@ def print_welcome_screen(input_func=None, interactive=None, config_file=None, en
 
 
 # The one-shot commands that write a secret, which stay usable when no gamertag was given
-SECRET_ACTION_FLAGS = ("--set-ms-app-credentials", "--set-smtp-password")
+SECRET_ACTION_FLAGS = ("--set-ms-app-credentials", "--set-smtp-password", "--set-webhook-url")
 
 
 # Prints the commands to run next, with the file paths this run was given so they can be pasted as they are
@@ -2744,6 +2994,31 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
     return str(destination)
 
 
+# Accepts a complete webhook URL, or a bare ntfy.sh topic name when ntfy is the selected provider
+def normalize_webhook_destination(value):
+    return normalize_ntfy_topic_url(value) if normalized_webhook_provider() == "ntfy" else str(value or "").strip()
+
+
+# Checks one entered webhook destination without contacting the service, because the only confirmation a
+# webhook service offers is a delivered notification, and setting a URL must not publish one
+def validate_webhook_destination(value):
+    candidate = normalize_webhook_destination(value)
+    if not candidate:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="No webhook URL was entered, so the dotenv file was not changed"))
+    if not validate_webhook_url(candidate):
+        raise RecoveryError(classify_recovery_error(context="webhook", detail="WEBHOOK_URL needs a complete HTTPS link, so the dotenv file was not changed"))
+    detected = detect_webhook_provider(candidate)
+    configured = normalized_webhook_provider()
+    if detected and configured and detected != configured:
+        raise RecoveryError(classify_recovery_error(context="webhook", detail=f"WEBHOOK_PROVIDER is set to {webhook_provider_display_name(configured)} but that is a {webhook_provider_display_name(detected)} URL, so the dotenv file was not changed"))
+    return webhook_provider_display_name(detected or configured)
+
+
+# Stores one webhook destination in the dotenv file, so the private URL never has to appear on a command line
+def run_set_webhook_url(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
+    return run_set_secret("WEBHOOK_URL", "--set-webhook-url", "* Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL\n* ntfy: the complete topic URL, or just the topic name when it is hosted on ntfy.sh", "Enter the webhook URL (input hidden): ", validate_webhook_destination, lambda provider: f"The entered value looks like a valid {provider} destination", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, normalize_webhook_destination, ("Send a test webhook:", "--send-test-webhook"))
+
+
 # Stores one SMTP password in the dotenv file after the mail server has actually accepted it
 def run_set_smtp_password(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
     return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
@@ -2829,6 +3104,41 @@ def apply_diagnostic_cli_flags(args):
 
 
 
+# Applies the webhook options that were actually typed, then reconciles the provider with the destination
+def apply_webhook_cli_overrides(args, parser):
+    global WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+    if args.webhook_provider is not None:
+        WEBHOOK_PROVIDER = str(args.webhook_provider)
+    if args.webhook_url is not None:
+        if not validate_webhook_url(args.webhook_url):
+            parser.error("--webhook-url needs a complete HTTPS link without embedded credentials")
+        WEBHOOK_URL = str(args.webhook_url).strip()
+        WEBHOOK_ENABLED = True
+        SECRET_SOURCES["WEBHOOK_URL"] = "command line"
+    if args.webhook_enabled is not None:
+        WEBHOOK_ENABLED = args.webhook_enabled
+    # Naming one alert also switches the channel on, so a single flag is enough to try it out
+    if args.webhook_active_inactive is True:
+        WEBHOOK_ENABLED = True
+        WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = True
+    if args.webhook_game_change is True:
+        WEBHOOK_ENABLED = True
+        WEBHOOK_GAME_CHANGE_NOTIFICATION = True
+    if args.webhook_status is True:
+        WEBHOOK_ENABLED = True
+        WEBHOOK_STATUS_NOTIFICATION = True
+    if args.webhook_errors is not None:
+        WEBHOOK_ERROR_NOTIFICATION = args.webhook_errors
+        if args.webhook_errors:
+            WEBHOOK_ENABLED = True
+    # A recognised URL describes its own service, so it corrects a provider the settings got wrong
+    if args.webhook_provider is None:
+        detected = detect_webhook_provider(WEBHOOK_URL)
+        if detected and detected != normalized_webhook_provider():
+            WEBHOOK_PROVIDER = detected
+            print(f"* Warning: the configured webhook provider does not match the destination URL, using {webhook_provider_display_name(detected)}\n")
+
+
 # The categories that mean the saved credentials themselves stopped working, which no retry can repair
 AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired", "auth.token_cache"})
 
@@ -2841,6 +3151,7 @@ RECOVERY_CODES = frozenset({
     "xbox.malformed_response", "xbox.rate_limited", "xbox.unavailable", "resource.exhausted",
     "target.missing", "target.not_found", "target.not_visible",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
+    "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.exists", "file.unreadable", "file.unwritable", "secret.entry", "unknown",
 })
 
@@ -2884,10 +3195,12 @@ def sanitize_error_text(value):
     for secret in known_secret_values():
         text = text.replace(secret, "<redacted>")
     patterns = (
-        (r"(?m)(\b(?:MS_APP_CLIENT_ID|MS_APP_CLIENT_SECRET|SMTP_PASSWORD)\b\s*=\s*).*$", r"\1<redacted>"),
+        (r"(?m)(\b(?:MS_APP_CLIENT_ID|MS_APP_CLIENT_SECRET|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*).*$", r"\1<redacted>"),
+        # A webhook URL is itself the credential, so the whole link is replaced wherever it appears
+        (r"(?i)https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api(?:/v[0-9]+)?/webhooks/[0-9]+/[^\s'\"<>]+", "<redacted>"),
         # An XBL3.0 header is 'XBL3.0 x=<userhash>;<token>', so stopping at the semicolon would leave the token
         (r"(?i)(authorization['\"]?\s*[:=]\s*['\"]?(?:bearer|basic|xbl3\.0)\s+)[^\s,'\"}]+", r"\1<redacted>"),
-        (r"(?i)(['\"]?(?:client_secret|client_id|access_token|refresh_token|id_token|smtp_password)['\"]?\s*[:=]\s*['\"]?)[^\s,;'\"}]+", r"\1<redacted>"),
+        (r"(?i)(['\"]?(?:client_secret|client_id|access_token|refresh_token|id_token|smtp_password|webhook_url|ntfy_access_token)['\"]?\s*[:=]\s*['\"]?)[^\s,;'\"}]+", r"\1<redacted>"),
         (r"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+", r"\1<redacted>"),
     )
     for pattern, replacement in patterns:
@@ -3036,6 +3349,17 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if context == "smtp.settings":
         return make_recovery_advice("smtp.invalid", f"The SMTP settings are incorrect: {safe_detail}" if safe_detail else "The SMTP settings are incorrect", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run: {tool_command('--send-test-email')}", SMTP_GUIDE_URL), False, safe_detail)
+
+    if context == "webhook":
+        if "429" in message or "rate limit" in message:
+            return make_recovery_advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", recovery_fix_with_guide(f"Enable fewer webhook alert types, or wait until the service accepts deliveries again, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), True, safe_detail)
+        # Every configuration problem this tool reports names the setting that has to change, which the
+        # text of a rejection from Discord or ntfy never does
+        if "webhook_" in message or "ntfy_access_token" in message:
+            return make_recovery_advice("webhook.invalid", safe_detail or "The webhook settings cannot be used", recovery_fix_with_guide(f"Correct the reported setting, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), False, safe_detail)
+        if any(term in message for term in ("could not be reached", "connection", "timed out", "timeout")):
+            return make_recovery_advice("webhook.connection", "The webhook service could not be reached", recovery_fix_with_guide("Check your internet connection, DNS and firewall, then try again", WEBHOOK_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("webhook.rejected", safe_detail or "The webhook service refused the delivery", recovery_fix_with_guide(f"Confirm the webhook still exists and that the saved URL is current, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), False, safe_detail)
 
     if context.startswith("smtp"):
         for current in iter_exc_chain(error):
@@ -3469,6 +3793,410 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     return 0
 
 
+
+# Webhook notifications, delivered through Discord or ntfy
+# ----------------------------------------------------------
+
+# One retry only. An alert that is already late is worth less than a monitoring loop that keeps polling
+WEBHOOK_MAX_ATTEMPTS = 2
+
+# The service supplies the rate-limit delay, so it is bounded before it is trusted
+WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
+WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+WEBHOOK_TIMEOUT_SECONDS = 10
+
+# Discord rejects an embed longer than these limits and ntfy rejects a message above its byte limit,
+# so an over-long alert is trimmed here rather than being refused by the service
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4095
+NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
+
+# The embed colour each alert is drawn in, so a webhook reader can tell them apart at a glance. Every status
+# alert shares one colour, so the two status settings do not read as two different kinds of event
+WEBHOOK_EVENT_COLORS = {"status": 0x107C10, "game": 0x8957E5, "error": 0xE74C3C}
+
+
+# Returns whether a webhook URL is a complete private HTTPS link
+def validate_webhook_url(url=None):
+    selected_url = WEBHOOK_URL if url is None else url
+    if not isinstance(selected_url, str) or not selected_url.strip():
+        return False
+    try:
+        parsed = urlsplit(selected_url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Returns the webhook destination host on its own, so delivery can be traced without printing the private URL
+def webhook_destination_host(url=None):
+    try:
+        return urlsplit(str(WEBHOOK_URL if url is None else url).strip()).hostname or "unknown host"
+    except ValueError:
+        return "unknown host"
+
+
+# Converts a complete ntfy URL or a bare ntfy.sh topic name into a complete HTTPS URL
+def normalize_ntfy_topic_url(value):
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if validate_webhook_url(normalized):
+        return normalized
+    if re.fullmatch(r"[-_A-Za-z0-9]{1,64}", normalized):
+        return f"https://ntfy.sh/{normalized}"
+    return ""
+
+
+# Returns the normalized configured webhook provider, or an empty string when it is not one of the supported two
+def normalized_webhook_provider(provider=None):
+    selected_provider = WEBHOOK_PROVIDER if provider is None else provider
+    if not isinstance(selected_provider, str):
+        return ""
+    normalized = selected_provider.strip().casefold()
+    return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Returns the user-facing spelling of one webhook provider
+def webhook_provider_display_name(provider=None):
+    normalized = normalized_webhook_provider(provider)
+    if normalized:
+        return "Discord" if normalized == "discord" else "ntfy"
+    return sanitize_error_text(WEBHOOK_PROVIDER if provider is None else provider)
+
+
+# Detects Discord and public ntfy destinations from their distinctive URL shapes
+def detect_webhook_provider(url):
+    if not validate_webhook_url(url):
+        return ""
+    try:
+        parsed = urlsplit(str(url).strip())
+    except ValueError:
+        return ""
+    hostname = parsed.hostname.casefold() if parsed.hostname else ""
+    if hostname == "ntfy.sh":
+        return "ntfy"
+    discord_host = hostname in ("discord.com", "discordapp.com") or hostname.endswith(".discord.com") or hostname.endswith(".discordapp.com")
+    discord_path = re.match(r"^/api(?:/v[0-9]+)?/webhooks/[0-9]+/[^/]+/?$", parsed.path) is not None
+    return "discord" if discord_host and discord_path else ""
+
+
+# Returns whether one webhook alert is switched on, independently of the matching email setting
+def webhook_event_enabled(notification_type):
+    settings = {
+        "status": WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION,
+        "all_status": WEBHOOK_STATUS_NOTIFICATION,
+        "game": WEBHOOK_GAME_CHANGE_NOTIFICATION,
+        "error": WEBHOOK_ERROR_NOTIFICATION,
+    }
+    return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
+
+
+# Returns the enabled webhook alert names, in the order the startup summary and doctor print them
+def webhook_notification_categories():
+    settings = (
+        (WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, "online and offline changes"),
+        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game changes"),
+        (WEBHOOK_STATUS_NOTIFICATION, "all status changes"),
+        (WEBHOOK_ERROR_NOTIFICATION, "errors"),
+    )
+    return [label for enabled, label in settings if enabled]
+
+
+# Parses a rate-limit delay from the response and bounds an untrusted server value to a short wait
+def webhook_retry_after_seconds(response):
+    candidates = []
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        candidates.append(headers.get("Retry-After"))
+    try:
+        payload = response.json()
+    except Exception as diag_exc:
+        debug_print("Webhook retry response has no JSON body", outcome="failed", error=f"{type(diag_exc).__name__}: {diag_exc}")
+        payload = None
+    if isinstance(payload, dict):
+        candidates.append(payload.get("retry_after"))
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        try:
+            seconds = float(candidate)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(str(candidate))
+                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            except Exception as diag_exc:
+                debug_print("Cannot parse the webhook Retry-After value", outcome="failed", error=f"{type(diag_exc).__name__}: {diag_exc}")
+                continue
+        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
+    return WEBHOOK_FALLBACK_RETRY_SECONDS
+
+
+# Substitutes the supported placeholders through a nested webhook template
+def format_payload(template, payload):
+    if isinstance(template, dict):
+        return {key: format_payload(value, payload) for key, value in template.items()}
+    if isinstance(template, list):
+        return [format_payload(value, payload) for value in template]
+    if isinstance(template, tuple):
+        return tuple(format_payload(value, payload) for value in template)
+    if isinstance(template, str):
+        # Discord rejects a colour sent as text, so this one placeholder resolves to the number itself
+        if template == "{color}":
+            return payload.get("color", WEBHOOK_EVENT_COLORS["status"])
+        try:
+            return template.format(**payload)
+        except KeyError:
+            return template
+    return template
+
+
+# Returns a configuration error for unsafe or unsupported webhook customization
+def validate_webhook_customization(provider=None):
+    selected_provider = normalized_webhook_provider(provider)
+    if selected_provider == "discord":
+        if not isinstance(WEBHOOK_USERNAME, str):
+            return "WEBHOOK_USERNAME must be a string"
+        if not isinstance(WEBHOOK_AVATAR_URL, str):
+            return "WEBHOOK_AVATAR_URL must be a string"
+        if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
+            return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+    if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
+        return "WEBHOOK_TRANSFORMS must be a list or tuple"
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        if not isinstance(transform, (list, tuple)) or len(transform) < 2 or not isinstance(transform[0], str) or not isinstance(transform[1], str):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and a string method name"
+        # Only public str methods are reachable, so a template cannot call arbitrary attributes of the value
+        if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    return None
+
+
+# Applies the configured string transformations to one webhook value mapping
+def apply_webhook_transforms(payload):
+    transformed = dict(payload)
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        field_name = transform[0]
+        method_name = transform[1]
+        if field_name not in transformed or not isinstance(transformed[field_name], str):
+            continue
+        try:
+            transformed[field_name] = getattr(transformed[field_name], method_name)(*transform[2:])
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TRANSFORMS entry {index + 1} could not apply {field_name}.{method_name}") from exc
+    return transformed
+
+
+# Builds the bounded placeholder values shared by the template, the headers and both providers
+def build_webhook_values(title, description, notification_type):
+    safe_title = re.sub(r"[\r\n]+", " ", sanitize_error_text(title)).strip()[:WEBHOOK_EMBED_TITLE_LIMIT] or "Xbox Monitor"
+    safe_description = re.sub(r"\r\n?", "\n", sanitize_error_text(description)).strip()[:WEBHOOK_EMBED_DESCRIPTION_LIMIT]
+    username = WEBHOOK_USERNAME.strip()[:80] if isinstance(WEBHOOK_USERNAME, str) else ""
+    avatar_url = WEBHOOK_AVATAR_URL.strip() if isinstance(WEBHOOK_AVATAR_URL, str) else ""
+    payload = {"title": safe_title, "description": safe_description, "version": VERSION, "color": WEBHOOK_EVENT_COLORS.get(notification_type, WEBHOOK_EVENT_COLORS["status"]), "timestamp": datetime.now().astimezone().isoformat(), "username": username, "avatar_url": avatar_url}
+    return apply_webhook_transforms(payload)
+
+
+# Builds one customized Discord-format payload, keeping mentions disabled whatever the template says
+def build_webhook_payload(title, description, notification_type, payload_values=None):
+    values = build_webhook_values(title, description, notification_type) if payload_values is None else payload_values
+    try:
+        payload = format_payload(WEBHOOK_TEMPLATE, values)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders") from exc
+    if isinstance(payload, dict):
+        # An empty name or avatar means "use the webhook default", which Discord expects as an absent key
+        if payload.get("username") == "":
+            payload.pop("username")
+        if payload.get("avatar_url") == "":
+            payload.pop("avatar_url")
+        payload["allowed_mentions"] = {"parse": []}
+    return payload
+
+
+# Truncates text to a UTF-8 byte limit without leaving a partial character behind
+def truncate_utf8_bytes(text, max_bytes, suffix=""):
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    encoded_suffix = suffix.encode("utf-8")
+    if len(encoded_suffix) >= max_bytes:
+        return encoded_suffix[:max_bytes].decode("utf-8", errors="ignore")
+    return encoded[:max_bytes - len(encoded_suffix)].decode("utf-8", errors="ignore") + suffix
+
+
+# Builds one bounded ntfy title and message pair
+def build_ntfy_webhook_message(title, description):
+    safe_title = re.sub(r"[\r\n]+", " ", sanitize_error_text(title)).strip()[:WEBHOOK_EMBED_TITLE_LIMIT] or "Xbox Monitor"
+    safe_message = truncate_utf8_bytes(sanitize_error_text(description), NTFY_MESSAGE_LIMIT_BYTES, NTFY_TRUNCATION_SUFFIX)
+    return safe_title, safe_message
+
+
+# Returns a safe validation error for one custom webhook header mapping
+def _validate_webhook_header_mapping(headers):
+    if not isinstance(headers, dict):
+        return "WEBHOOK_HEADERS must be a dictionary of string header names and values"
+    normalized_names = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", name):
+            return "WEBHOOK_HEADERS contains an invalid HTTP header name"
+        normalized_name = name.casefold()
+        if normalized_name in normalized_names:
+            return "WEBHOOK_HEADERS contains duplicate case-insensitive header names"
+        normalized_names.add(normalized_name)
+        if not isinstance(value, str):
+            return f"WEBHOOK_HEADERS value for {name} must be a string"
+        # A line break in a header value would let a configured value inject a second header
+        if "\r" in value or "\n" in value:
+            return f"WEBHOOK_HEADERS value for {name} must not contain line breaks"
+    return None
+
+
+# Returns a safe configuration error for the custom headers or the ntfy access token
+def validate_webhook_headers(provider=None):
+    selected_provider = normalized_webhook_provider(provider)
+    header_error = _validate_webhook_header_mapping(WEBHOOK_HEADERS)
+    if header_error is not None:
+        return header_error
+    if selected_provider == "ntfy":
+        if not isinstance(NTFY_ACCESS_TOKEN, str):
+            return "NTFY_ACCESS_TOKEN must be a string"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if "\r" in token or "\n" in token:
+            return "NTFY_ACCESS_TOKEN must not contain line breaks"
+        if token.casefold().startswith(("bearer ", "basic ")):
+            return "NTFY_ACCESS_TOKEN must contain only the access token, without an Authorization scheme"
+    return None
+
+
+# Builds the provider-specific headers, substituting placeholders and adding the private ntfy authentication
+def build_webhook_headers(provider, payload):
+    validation_error = validate_webhook_headers(provider)
+    if validation_error is not None:
+        raise ValueError(validation_error)
+    try:
+        formatted_headers = format_payload(WEBHOOK_HEADERS, payload)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_HEADERS could not be formatted with the supported placeholders") from exc
+    # Re-checked after substitution, because a placeholder value could carry a line break the template did not
+    formatted_error = _validate_webhook_header_mapping(formatted_headers)
+    if formatted_error is not None:
+        raise ValueError(formatted_error)
+    headers = dict(cast("dict[str, str]", formatted_headers))
+    if not any(name.casefold() == "user-agent" for name in headers):
+        headers["User-Agent"] = f"XboxMonitor/{VERSION}"
+    if provider == "ntfy":
+        headers = {name: value for name, value in headers.items() if name.casefold() != "content-type"}
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if token:
+            headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+# Reports one webhook configuration or delivery failure through the shared recovery renderer, so it carries a
+# category and a fix line like every other failure this tool prints
+def print_webhook_error(message):
+    print_recovery_advice(classify_recovery_error(context="webhook", detail=str(message)))
+
+
+# Sends one webhook request with the destination, deadline and redirect policy every delivery shares
+def post_webhook_request(client, **request_kwargs):
+    destination = str(WEBHOOK_URL or "").strip()
+    # Revalidated here because a SIGHUP dotenv reload can replace the destination after the delivery started
+    if not validate_webhook_url(destination):
+        raise httpx.InvalidURL("WEBHOOK_URL must contain a complete HTTPS link")
+    return client.post(destination, **request_kwargs)
+
+
+# Sends one webhook through its own bounded retry path, which never shares the Xbox Live retry policy
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None):
+    if not force and not webhook_event_enabled(notification_type):
+        debug_print("Webhook delivery", outcome="skipped", type=notification_type, reason="alerts are disabled")
+        return 1
+    if not validate_webhook_url():
+        print_webhook_error("WEBHOOK_URL must contain a complete HTTPS link")
+        return 1
+    provider = normalized_webhook_provider()
+    if not provider:
+        print_webhook_error("WEBHOOK_PROVIDER must be discord or ntfy")
+        return 1
+    customization_error = validate_webhook_customization(provider)
+    if customization_error is not None:
+        print_webhook_error(customization_error)
+        return 1
+    header_error = validate_webhook_headers(provider)
+    if header_error is not None:
+        print_webhook_error(header_error)
+        return 1
+    try:
+        webhook_values = build_webhook_values(title, description, notification_type)
+        request_headers = build_webhook_headers(provider, webhook_values)
+        discord_payload = build_webhook_payload(title, description, notification_type, webhook_values) if provider == "discord" else None
+    except ValueError as exc:
+        print_webhook_error(exc)
+        return 1
+    sleep_func = time.sleep if sleeper is None else sleeper
+    ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
+    last_error = None
+    # Redirects are refused, so a moved endpoint cannot forward the alert and its authorization header elsewhere
+    with httpx.Client(verify=tls_context(), timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        for attempt in range(WEBHOOK_MAX_ATTEMPTS):
+            attempt_number = attempt + 1
+            try:
+                debug_print("Webhook delivery", channel=provider, host=webhook_destination_host(), attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", timeout=f"{WEBHOOK_TIMEOUT_SECONDS}s")
+                if provider == "ntfy":
+                    response = post_webhook_request(client, content=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers)
+                elif isinstance(discord_payload, str):
+                    response = post_webhook_request(client, content=discord_payload, headers=request_headers)
+                else:
+                    response = post_webhook_request(client, json=discord_payload, headers=request_headers)
+                # A rate limit and a server fault are the only answers worth repeating, and only once
+                retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+                debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", status=response.status_code, retryable=retryable)
+                if 200 <= response.status_code <= 299:
+                    verbose_print(f"Webhook delivered through {provider}: {webhook_values['title']}")
+                    return 0
+                last_error = f"HTTP {response.status_code}: {str(getattr(response, 'text', ''))[:200]}"
+                if not retryable or attempt_number == WEBHOOK_MAX_ATTEMPTS:
+                    print_webhook_error(last_error)
+                    return 1
+                delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+                debug_print("Webhook delivery", channel=provider, retry_in=f"{delay:.1f}s", next_attempt=f"{attempt_number + 1}/{WEBHOOK_MAX_ATTEMPTS}")
+                sleep_func(delay)
+            except httpx.HTTPError as exc:
+                last_error = exc
+                debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+                if attempt_number == WEBHOOK_MAX_ATTEMPTS:
+                    print_webhook_error(exc)
+                    return 1
+                debug_print("Webhook delivery", channel=provider, retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS:.1f}s", next_attempt=f"{attempt_number + 1}/{WEBHOOK_MAX_ATTEMPTS}")
+                sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
+    print_webhook_error(last_error)
+    return 1
+
+
+# Sends one alert through the email and webhook channels, each switched on independently of the other
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None):
+    email_attempted = bool(email_enabled)
+    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_delivered = False
+    webhook_delivered = False
+    if email_attempted:
+        print(f"Sending email notification to {RECEIVER_EMAIL}")
+        email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
+    if webhook_attempted:
+        print("Sending webhook notification")
+        webhook_delivered = send_webhook(subject, body, notification_type, force=True) == 0
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
+
+
+
 # Initializes the CSV file
 def init_csv_file(csv_file_name):
     try:
@@ -3743,7 +4471,7 @@ def decrease_active_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
-    global XBOX_AUTH_REFRESH_VERSION
+    global XBOX_AUTH_REFRESH_VERSION, WEBHOOK_PROVIDER
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -3767,6 +4495,7 @@ def reload_secrets_signal_handler(sig, frame):
             print_recovery_advice(missing_dependency_advice("python-dotenv", "Secrets cannot be reloaded from a dotenv file", "Or export them as environment variables and restart"), label="Warning")
 
     auth_credentials_changed = False
+    webhook_url_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
@@ -3779,9 +4508,17 @@ def reload_secrets_signal_handler(sig, frame):
                     SECRET_SOURCES.pop(secret, None)
                 if secret in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"):
                     auth_credentials_changed = True
+                if secret == "WEBHOOK_URL":
+                    webhook_url_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
     if auth_credentials_changed:
         XBOX_AUTH_REFRESH_VERSION += 1
+    # A replacement destination can belong to the other service, which the reloaded URL is the only record of
+    if webhook_url_changed:
+        detected_provider = detect_webhook_provider(WEBHOOK_URL)
+        if detected_provider and detected_provider != normalized_webhook_provider():
+            WEBHOOK_PROVIDER = detected_provider
+            print(f"* Updated webhook provider to {webhook_provider_display_name(detected_provider)}")
 
     print_cur_ts("Timestamp:\t\t\t")
 
@@ -4824,6 +5561,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         alive_counter = 0
         email_sent = False
+        webhook_sent = False
         # A poll that keeps failing for the same reason repeats the fix paragraph on every cycle without it
         recovery_hints = RecoveryHintTracker()
         # Every failed check prints its advice, so the end of a streak is worth one line closing it
@@ -4918,6 +5656,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     verbose_notice(f"Recovered after {error_streak} failed {'check' if error_streak == 1 else 'checks'} in a row")
                 error_streak = 0
                 email_sent = False
+                webhook_sent = False
                 recovery_hints.reset()
             except Exception as e:
                 if status and status != "offline":
@@ -4929,12 +5668,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 debug_print("Presence check", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, streak=error_streak)
                 print_recovery_advice(advice, recovery_hints, retry_note=f"retrying in {display_time(sleep_interval)}")
                 # Credentials do not recover on their own, so this is the one category worth an email
-                if advice.code in AUTH_RECOVERY_CODES and ERROR_NOTIFICATION and not email_sent:
+                if advice.code in AUTH_RECOVERY_CODES and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
                     m_subject = f"xbox_monitor: Xbox authentication error! (user: {xbox_gamertag})"
                     m_body = f"{advice.summary}\n\nTo fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
-                    email_sent = True
+                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
+                    email_sent = email_sent or email_delivered
+                    webhook_sent = webhook_sent or webhook_delivered
                 print_cur_ts("Timestamp:\t\t\t")
                 debug_print("Sleep", seconds=sleep_interval, reason="the presence check failed")
                 await asyncio.sleep(sleep_interval)
@@ -5021,9 +5760,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if platform:
                     platform_str = f"{platform}, "
                 m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
-                if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag):
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                email_status_enabled = STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag)
+                webhook_status_enabled = webhook_event_enabled("all_status") or (webhook_event_enabled("status") and act_inact_flag)
+                if email_status_enabled or webhook_status_enabled:
+                    send_notification_channels("status", m_subject, m_body, email_enabled=email_status_enabled, webhook_enabled=webhook_status_enabled)
 
                 status_ts_old = status_ts
                 print_cur_ts("Timestamp:\t\t\t")
@@ -5066,9 +5806,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 change = True
 
-                if GAME_CHANGE_NOTIFICATION and m_subject and m_body:
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                if m_subject and m_body and (GAME_CHANGE_NOTIFICATION or webhook_event_enabled("game")):
+                    send_notification_channels("game", m_subject, m_body, email_enabled=GAME_CHANGE_NOTIFICATION)
 
                 game_ts_old = game_ts
                 print_cur_ts("Timestamp:\t\t\t")
@@ -5083,9 +5822,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 m_subject = f"Xbox user {xbox_gamertag} detected playing{game_info} (via title history)"
                 m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game{game_info}.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
 
-                if ACTIVE_INACTIVE_NOTIFICATION or STATUS_NOTIFICATION:
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                email_activity_enabled = ACTIVE_INACTIVE_NOTIFICATION or STATUS_NOTIFICATION
+                webhook_activity_enabled = webhook_event_enabled("status") or webhook_event_enabled("all_status")
+                if email_activity_enabled or webhook_activity_enabled:
+                    send_notification_channels("status", m_subject, m_body, email_enabled=email_activity_enabled, webhook_enabled=webhook_activity_enabled)
 
                 print_cur_ts("Timestamp:\t\t\t")
                 title_history_ts_old = title_history_ts
@@ -5119,7 +5859,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -5248,6 +5988,12 @@ def main():
         help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
     )
     conf.add_argument(
+        "--set-webhook-url",
+        dest="set_webhook_url",
+        action="store_true",
+        help="Enter the Discord or ntfy webhook URL privately and save it to the dotenv file",
+    )
+    conf.add_argument(
         "--doctor",
         dest="doctor",
         action="store_true",
@@ -5306,6 +6052,78 @@ def main():
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
+    )
+
+    webhook = parser.add_argument_group("Webhook notifications")
+    webhook_toggle = webhook.add_mutually_exclusive_group()
+    webhook_toggle.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable the configured webhook alerts"
+    )
+    webhook_toggle.add_argument(
+        "--no-webhook",
+        dest="webhook_enabled",
+        action="store_false",
+        default=None,
+        help="Disable the configured webhook alerts"
+    )
+    webhook.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Discord webhook or ntfy topic URL for this run (may stay in shell history, prefer --set-webhook-url)"
+    )
+    webhook.add_argument(
+        "--webhook-provider",
+        dest="webhook_provider",
+        choices=("discord", "ntfy"),
+        help="Webhook request format for this run (default: configured provider)"
+    )
+    webhook.add_argument(
+        "--webhook-active-inactive",
+        dest="webhook_active_inactive",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert when user goes online/offline"
+    )
+    webhook.add_argument(
+        "--webhook-game-change",
+        dest="webhook_game_change",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert on game start/change/stop"
+    )
+    webhook.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert on all status changes"
+    )
+    webhook_error_toggle = webhook.add_mutually_exclusive_group()
+    webhook_error_toggle.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert on errors"
+    )
+    webhook_error_toggle.add_argument(
+        "--no-webhook-error-notify",
+        dest="webhook_errors",
+        action="store_false",
+        default=None,
+        help="Disable webhook alerts on errors"
+    )
+    webhook.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send one test webhook to verify the destination settings"
     )
 
     # User information & listing
@@ -5418,7 +6236,7 @@ def main():
 
     args = parser.parse_args()
 
-    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_ms_app_credentials, args.set_smtp_password), strict=True) if selected]
+    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_ms_app_credentials, args.set_smtp_password, args.set_webhook_url), strict=True) if selected]
     if len(selected_secret_actions) > 1:
         parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
@@ -5605,6 +6423,8 @@ def main():
     if args.notify_errors is False:
         ERROR_NOTIFICATION = False
 
+    apply_webhook_cli_overrides(args, parser)
+
     if doctor_mode:
         sys.exit(run_doctor(args.xbox_gamertag, cfg_path, env_path, config_advice, timezone_advice))
 
@@ -5627,6 +6447,23 @@ def main():
             run_set_smtp_password(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
         except Exception as exc:
             print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.set_webhook_url:
+        try:
+            run_set_webhook_url(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
+        except Exception as exc:
+            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.send_test_webhook:
+        print(f"* Sending test webhook notification through {webhook_provider_display_name()} to {webhook_destination_host()} ...\n")
+        # Forced past the alert settings, because the point of the test is the destination, not the choices
+        if send_webhook("xbox_monitor: test webhook", "This is a test notification - your webhook settings seem to be correct !", "status", force=True) == 0:
+            print("* Webhook sent successfully !")
+        else:
             sys.exit(1)
         sys.exit(0)
 

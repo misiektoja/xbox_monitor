@@ -183,3 +183,42 @@ def test_a_quoted_value_survives_the_round_trip(secret_paths, monkeypatch):
 def test_a_written_dotenv_file_is_private(secret_paths):
     monitor.update_dotenv_values(secret_paths["env"], {"SMTP_PASSWORD": "value"})
     assert secret_paths["env"].stat().st_mode & 0o077 == 0
+
+
+DISCORD_URL = "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenValue"
+
+
+# Verifies the webhook command writes the destination and names the command that tests it
+def test_the_webhook_command_writes_the_destination(secret_paths, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(DISCORD_URL))
+    out = capsys.readouterr().out
+    assert f'WEBHOOK_URL="{DISCORD_URL}"' in secret_paths["env"].read_text(encoding="utf-8")
+    assert "valid Discord destination" in out
+    assert "--send-test-webhook" in out
+    assert DISCORD_URL not in out
+
+
+# Verifies an ntfy topic name is expanded before it is written, so the saved value is a complete URL
+def test_a_typed_ntfy_topic_is_written_as_a_url(secret_paths, monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
+    monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers("private-topic"))
+    assert 'WEBHOOK_URL="https://ntfy.sh/private-topic"' in secret_paths["env"].read_text(encoding="utf-8")
+
+
+# Verifies a destination that cannot be used is refused without echoing what was typed
+def test_an_unusable_destination_is_refused_without_echoing_it(secret_paths, monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers("http://discord.com/api/webhooks/1/token"))
+    assert "complete HTTPS link" in raised.value.advice.summary
+    assert secret_paths["env"].read_text(encoding="utf-8") == ""
+
+
+# Verifies a destination belonging to the other service is refused rather than saved against the wrong provider
+def test_a_destination_for_the_other_service_is_refused(secret_paths, monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(DISCORD_URL))
+    assert "WEBHOOK_PROVIDER is set to ntfy" in raised.value.advice.summary
+    assert secret_paths["env"].read_text(encoding="utf-8") == ""

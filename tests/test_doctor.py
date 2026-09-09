@@ -11,6 +11,7 @@ import pytest
 import xbox_monitor as monitor
 
 GAMERTAG = "misiektoja"
+WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenValue"
 
 # The four shared markers. A fifth is the drift these tests exist to catch
 MARKERS = ("PASS", "WARN", "FAIL", "SKIP")
@@ -119,6 +120,14 @@ def enable_email(monkeypatch):
     monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", True)
+
+
+# Turns on a working Discord destination, so the webhook check reaches the settings it validates
+def enable_webhook(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.setattr(monitor, "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", True)
 
 
 # Returns every check the doctor produced for one section
@@ -547,6 +556,90 @@ def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, smtp_sign_in_ok
     report = monitor.DoctorReport(email_ready=True)
     monitor.offer_doctor_delivery_tests(report)
     assert "1 check(s) failed" in monitor.render_doctor_summary(report.checks)
+
+
+# A fresh install has no webhook destination, and an error alert alone must not make it look configured
+def test_a_fresh_install_reports_webhooks_as_disabled(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
+    checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
+    assert [check.status for check in checks] == ["PASS"]
+    assert checks[0].label == "Webhook alerts are disabled"
+
+
+# Alerts chosen while the channel is off would never be delivered, which nothing else in the report would say
+def test_selected_webhook_alerts_with_the_channel_off_warn(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_GAME_CHANGE_NOTIFICATION", True)
+    checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
+    assert checks[0].status == "WARN"
+    assert checks[0].advice is not None
+    assert checks[0].advice.code == "webhook.invalid"
+
+
+# A channel with no alert type selected is switched on but silent
+def test_a_webhook_channel_with_no_alert_selected_warns(monkeypatch):
+    enable_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", False)
+    checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
+    assert checks[0].status == "WARN"
+    assert "no alert type is selected" in checks[0].label
+
+
+# Each unusable setting has to be named on its own, since the user can only correct the one that is wrong
+@pytest.mark.parametrize("setting, value", [
+    ("WEBHOOK_PROVIDER", "slack"),
+    ("WEBHOOK_URL", "your_webhook_url"),
+    ("WEBHOOK_AVATAR_URL", "not-a-url"),
+    ("WEBHOOK_HEADERS", {"Bad Header": "value"}),
+])
+def test_an_unusable_webhook_setting_warns_with_its_fix(monkeypatch, setting, value):
+    enable_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, setting, value)
+    report = monitor.DoctorReport()
+    checks = monitor.doctor_check_webhook_notifications(report)
+    assert checks[0].status == "WARN"
+    assert checks[0].advice is not None
+    assert checks[0].advice.code.startswith("webhook.")
+    assert report.webhook_ready is False
+
+
+# A passive check must not publish anything, and must not print the private destination it validated
+def test_the_webhook_check_sends_nothing_and_hides_the_link(monkeypatch):
+    enable_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "send_webhook", _unreachable_smtp)
+    report = monitor.DoctorReport()
+    checks = monitor.doctor_check_webhook_notifications(report)
+    assert checks[0].status == "PASS"
+    assert checks[0].label.startswith(monitor.WEBHOOK_READY_CHECK_LABEL)
+    assert report.webhook_ready is True
+    assert WEBHOOK_URL not in f"{checks[0].label} {checks[0].detail}"
+
+
+# One approval must publish exactly one notification, and its result has to reach the summary
+def test_an_approved_webhook_test_sends_one_notification(monkeypatch):
+    enable_webhook(monkeypatch)
+    sent = []
+    monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: sent.append(args[0]) or 0)
+    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: "y")
+    monkeypatch.setattr(monitor.sys, "stdin", FakeTerminal())
+    monkeypatch.setattr(monitor.sys, "stdout", FakeTerminal())
+    report = monitor.DoctorReport(webhook_ready=True)
+    offered = monitor.offer_doctor_delivery_tests(report)
+    assert len(sent) == 1
+    assert [check.status for check in offered] == ["PASS"]
+    assert offered[0] in report.checks
+
+
+# Declining has to mean nothing is published, or the approval prompt is not an approval
+def test_a_declined_webhook_test_publishes_nothing(monkeypatch):
+    enable_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "send_webhook", _unreachable_smtp)
+    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: "n")
+    monkeypatch.setattr(monitor.sys, "stdin", FakeTerminal())
+    monkeypatch.setattr(monitor.sys, "stdout", FakeTerminal())
+    offered = monitor.offer_doctor_delivery_tests(monitor.DoctorReport(webhook_ready=True))
+    assert [check.status for check in offered] == ["SKIP"]
 
 
 # There is nobody to approve a real message on a redirected run

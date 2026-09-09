@@ -123,6 +123,28 @@ Example email:
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_email_notifications.png" alt="xbox_monitor_email_notifications" width="80%"/>
 </p>
 
+## Webhook Notifications
+
+Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webhook settings](configuration.md#webhook-settings) name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, and monitoring errors.
+
+The same settings have command-line equivalents for one run. Naming any single alert also switches the channel on:
+
+```sh
+xbox_monitor <xbox_gamer_tag> --webhook-game-change
+xbox_monitor <xbox_gamer_tag> --webhook --no-webhook-error-notify
+xbox_monitor <xbox_gamer_tag> --webhook-url <url>
+```
+
+`--webhook-url` leaves the private URL in your shell history, so prefer `--set-webhook-url` for anything permanent.
+
+Verify the destination without starting monitoring:
+
+```sh
+xbox_monitor --send-test-webhook
+```
+
+A failed delivery is retried once, a rate limit waits the delay the service asked for and bounds it, and redirects are never followed. When both channels are enabled, each is delivered independently: an alert that reached Discord is not sent again just because the email failed.
+
 ## CSV Export
 
 To save every reported activity to a CSV file, set `CSV_FILE` or use `-b`:
