@@ -516,6 +516,11 @@ def test_missing_smtp_credentials_warn_without_connecting(monkeypatch):
     monkeypatch.setattr(monitor, "smtp_sign_in", _unreachable_smtp)
     checks = monitor.doctor_check_email_notifications(monitor.DoctorReport())
     assert checks[0].status == "WARN"
+    assert checks[0].label == monitor.EMAIL_UNUSABLE_CHECK_LABEL
+    assert checks[0].detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
+    assert checks[0].advice is not None
+    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in checks[0].advice.fix
+    assert monitor.SMTP_GUIDE_URL in checks[0].advice.fix
 
 
 # The report has to say what it found before any real message is offered, let alone sent

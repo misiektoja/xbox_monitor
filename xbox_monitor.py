@@ -565,6 +565,9 @@ SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 # The webhook readiness label names the service it validated, so anything matching on it matches this prefix
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
+
 # Width of the progress line currently on screen, which is what erasing it needs to know
 DOCTOR_PROGRESS_WIDTH = 0
 
@@ -868,33 +871,37 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
     return [make_doctor_check("Target", "PASS", "The monitored profile is reachable", f"Gamertag: {xbox_gamertag}, XUID: {xuid}")]
 
 
-# Returns advice for the first unusable SMTP server setting or None when they are all present and valid
-def validate_smtp_settings():
+# Reports the first unusable email setting as a doctor detail and an action that names the same settings
+def email_settings_problem():
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
-    reason = ""
 
     try:
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
-            reason = "SMTP_HOST is not a valid IP address or hostname"
+            return ("SMTP_HOST is not a valid IP address or hostname", "Correct SMTP_HOST or turn the email alerts off")
 
-    if not reason:
-        try:
-            port = int(SMTP_PORT)
-            if not (1 <= port <= 65535):
-                raise ValueError
-        except (TypeError, ValueError):
-            reason = "SMTP_PORT is not a port number between 1 and 65535"
+    try:
+        port = int(SMTP_PORT)
+        if not (1 <= port <= 65535):
+            raise ValueError
+    except (TypeError, ValueError):
+        return ("SMTP_PORT is not a port number between 1 and 65535", "Correct SMTP_PORT or turn the email alerts off")
 
-    if not reason and (not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL))):
-        reason = "SENDER_EMAIL or RECEIVER_EMAIL is not an email address"
+    if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
+        return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
 
-    if not reason and (not secret_is_set(SMTP_USER) or not secret_is_set(SMTP_PASSWORD)):
-        reason = "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
+    if not secret_is_set(SMTP_USER) or not secret_is_set(SMTP_PASSWORD):
+        return ("SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder", "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off")
 
-    return classify_recovery_error(context="smtp.settings", detail=reason) if reason else None
+    return None
+
+
+# Returns advice for the first unusable SMTP server setting, or None when they are all present and valid
+def validate_smtp_settings():
+    problem = email_settings_problem()
+    return classify_recovery_error(context="smtp.settings", detail=problem[0]) if problem is not None else None
 
 
 # Signs in to the configured SMTP server with one candidate password, without sending a message
@@ -930,15 +937,21 @@ def smtp_sign_in(password, timeout=15):
     return SMTP_USER
 
 
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail, fix):
+    advice = make_recovery_advice("smtp.invalid", EMAIL_UNUSABLE_CHECK_LABEL, recovery_fix_with_guide(fix, SMTP_GUIDE_URL), False, detail)
+    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, advice)
+
+
 # Reports whether email alerts can fire at all, then whether the settings they would use are usable
 def doctor_check_email_notifications(report):
-    settings_advice = validate_smtp_settings()
+    problem = email_settings_problem()
     # An error alert is on by default, so on its own it cannot make a fresh install look configured
     deliberate = ACTIVE_INACTIVE_NOTIFICATION or GAME_CHANGE_NOTIFICATION or STATUS_NOTIFICATION
-    if not deliberate and not (ERROR_NOTIFICATION and settings_advice is None):
+    if not deliberate and not (ERROR_NOTIFICATION and problem is None):
         return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "Use -a, -g, -s or SMTP settings with ERROR_NOTIFICATION to turn them on")]
-    if settings_advice is not None:
-        return [make_doctor_check("Notifications", "WARN", "Email alerts are on but cannot be delivered", settings_advice.summary, settings_advice)]
+    if problem is not None:
+        return [doctor_email_unusable_check(*problem)]
     try:
         smtp_sign_in(SMTP_PASSWORD, timeout=DOCTOR_SMTP_TIMEOUT)
     except RecoveryError as exc:
