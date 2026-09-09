@@ -1389,6 +1389,81 @@ def resolve_secret_env_path(env_file, flag):
     return Path(os.path.expanduser(str(selected))) if selected else Path.cwd() / ".env"
 
 
+# Walks up to the first directory that exists, so a destination under a missing folder can still be judged
+def nearest_existing_parent(path):
+    candidate = Path(path).expanduser()
+    if candidate.exists():
+        return candidate if candidate.is_dir() else candidate.parent
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate
+
+
+# Checks one setup destination without creating or modifying it, so an unwritable path is caught before any question
+def _wizard_validate_destination(path, label):
+    destination = Path(path).expanduser().resolve()
+    if destination.exists() and destination.is_dir():
+        raise ValueError(f"{label} must be a file path, not a directory")
+    parent = nearest_existing_parent(destination)
+    if not parent.is_dir():
+        raise ValueError(f"{label} does not have a usable parent directory")
+    if not os.access(str(parent), os.W_OK):
+        raise ValueError(f"{label} is not writable through parent '{parent}'")
+    return destination
+
+
+# Resolves both setup destinations, refusing the disabled settings that leave nowhere to write
+def _wizard_destinations(config_file=None, env_file=None):
+    if config_file is not None and str(config_file).casefold() == "none":
+        raise ValueError("--setup needs a config destination. Replace '--config-file none' with a writable path")
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise ValueError("--setup needs a dotenv destination. Replace '--env-file none' with a writable path")
+    config_path = Path(config_file).expanduser() if config_file is not None else Path.cwd() / DEFAULT_CONFIG_FILENAME
+    env_path = Path(env_file).expanduser() if env_file is not None else Path.cwd() / ".env"
+    return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
+
+
+# Confirms replacing an existing config before any question is asked, so a long run cannot end in a surprise
+def _wizard_choose_config_destination(config_path, input_func=None):
+    selected = Path(config_path)
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration and keep a timestamped backup?", default=False, input_func=input_func):
+        alternative = _wizard_ask_text("Another config destination, or leave empty to cancel", input_func=input_func)
+        if not alternative:
+            return None
+        try:
+            selected = _wizard_validate_destination(alternative, "Configuration destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
+    return selected
+
+
+# Reports whether one secret already holds a real value in the selected dotenv file or the environment
+def _wizard_existing_secret(key, env_path):
+    value = None
+    if Path(env_path).is_file():
+        try:
+            from dotenv import dotenv_values
+
+            value = dotenv_values(str(env_path), interpolate=False).get(key)
+        except Exception as exc:
+            debug_print("Reading the dotenv file for an existing secret", path=str(env_path), key=key, outcome="failed", error=f"{type(exc).__name__}: {exc}")
+            value = None
+    if value is None:
+        value = os.environ.get(key)
+    return secret_is_set(value)
+
+
+# Queues one secret for the save step, asking first when the dotenv file already assigns it
+def _wizard_queue_secret(state, key, value, input_func=None):
+    if not value:
+        return False
+    if dotenv_contains_key(state.env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False, input_func=input_func):
+        print(f"  The existing {key} is kept, without being displayed or rewritten.")
+        return False
+    state.secret_updates[key] = value
+    return True
+
+
 # Holds every wizard answer until the user explicitly saves, so nothing is written during questioning
 class WizardSetupState:
     # Starts from the values already in effect, which become both the defaults and the revert target
@@ -1490,7 +1565,8 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, auth
     print(f"* Register an application at {ENTRA_PORTAL_URL}")
     print("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
     print(f"  Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
-    if _wizard_credentials_ready(state) and not _wizard_ask_yes_no("Replace the Microsoft application credentials already configured?", default=False, input_func=input_func):
+    already_configured = _wizard_credentials_ready(state) or any(_wizard_existing_secret(key, state.env_path) or dotenv_contains_key(state.env_path, key) for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
+    if already_configured and not _wizard_ask_yes_no("Replace the Microsoft application credentials already configured?", default=False, input_func=input_func):
         _wizard_collect_authorization(state, input_func=input_func, authorizer=authorizer)
         return
     while True:
@@ -1557,8 +1633,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
         if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
             return
         password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
-        if password:
-            state.secret_updates["SMTP_PASSWORD"] = password
+        _wizard_queue_secret(state, "SMTP_PASSWORD", password, input_func=input_func)
         outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password, input_func=input_func)
         if outcome is None:
             _wizard_disable_email(state)
@@ -1780,12 +1855,11 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
-    if env_file and str(env_file).casefold() == "none":
-        print("--setup needs a dotenv destination. Replace '--env-file none' with a writable path.")
+    try:
+        config_path, env_path = _wizard_destinations(config_file, env_file)
+    except ValueError as exc:
+        print_recovery_advice(classify_recovery_error(context="file.unwritable", detail=str(exc)))
         return 1
-
-    config_path = Path(config_file).expanduser() if config_file else Path.cwd() / DEFAULT_CONFIG_FILENAME
-    env_path = Path(env_file).expanduser() if env_file else Path.cwd() / ".env"
 
     print("Setup Wizard\n")
     print("This asks a few questions and writes a ready-to-run configuration.")
@@ -1798,6 +1872,13 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     state.config_values["DOTENV_FILE"] = str(env_path)
 
     try:
+        # Asked before anything else, so a config that has to be replaced is agreed to rather than discovered at Save
+        chosen_config = _wizard_choose_config_destination(config_path, input_func=input_func)
+        if chosen_config is None:
+            print("\nSetup cancelled. Destination files were not changed.")
+            return 1
+        state.config_path = chosen_config
+        print()
         _wizard_collect_target_section(state, initial_target, input_func=input_func)
         print()
         _wizard_collect_polling_section(state, input_func=input_func)

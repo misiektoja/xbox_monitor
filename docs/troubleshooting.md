@@ -31,7 +31,7 @@ Doctor never starts the interactive sign-in, because that writes a token file. A
 
 Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed, and during a secret command it reports that the dotenv file was left as it was. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring.
 
-`--setup` needs somewhere to put the secrets, so it refuses `--env-file none`.
+`--setup` needs somewhere to put both files, so it refuses `--env-file none` and `--config-file none`, and it reports a destination that is a directory or that its parent will not accept a write before asking anything.
 
 ## Error Messages and Recovery
 

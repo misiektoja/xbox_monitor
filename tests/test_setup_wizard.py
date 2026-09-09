@@ -227,10 +227,10 @@ def test_editing_one_section_leaves_the_other_answers_alone(monkeypatch, wizard_
     assert "XBOX_GAMERTAG = 'SomeTag'" in written
 
 
-# Verifies a config file already in place is replaced only after a timestamped backup is taken
+# Verifies a config file already in place is replaced only after the user agrees and a backup is taken
 def test_an_existing_config_is_backed_up_before_it_is_replaced(monkeypatch, wizard_paths, capsys):
     wizard_paths["config"].write_text("# earlier config\n", encoding="utf-8")
-    run_wizard(monkeypatch, wizard_paths, BASIC_ANSWERS)
+    run_wizard(monkeypatch, wizard_paths, ["y", *BASIC_ANSWERS])
     out = capsys.readouterr().out
     backups = [path for path in wizard_paths["config"].parent.iterdir() if path.name.startswith("xbox_monitor.conf.")]
     assert len(backups) == 1
@@ -295,3 +295,83 @@ def test_the_doctor_offer_checks_the_saved_files(monkeypatch, wizard_paths):
     assert seen["config"] == str(wizard_paths["config"])
     assert seen["env"] == str(wizard_paths["env"])
     assert seen["client_id"] == "client-id"
+
+
+# Verifies a destination that cannot be written is refused before the first question is asked
+def test_an_unwritable_destination_is_refused_before_any_question(wizard_paths, capsys):
+    def refuse_every_question(prompt=""):
+        raise AssertionError(f"Setup asked a question before checking its destinations: {prompt!r}")
+
+    code = monitor.run_setup_wizard(config_file="/xbox_monitor_unwritable_root.conf", env_file=str(wizard_paths["env"]), input_func=refuse_every_question, interactive=True)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "Configuration destination is not writable" in out
+    assert "To fix:" in out
+
+
+# Verifies a directory given as a destination is refused rather than failing at the save step
+def test_a_directory_destination_is_refused(tmp_path, wizard_paths, capsys):
+    code = monitor.run_setup_wizard(config_file=str(tmp_path), env_file=str(wizard_paths["env"]), interactive=True)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "must be a file path, not a directory" in out
+
+
+# Verifies the disabled config setting is refused, since setup exists to write one
+def test_a_disabled_config_destination_is_refused(wizard_paths, capsys):
+    code = monitor.run_setup_wizard(config_file="none", env_file=str(wizard_paths["env"]), interactive=True)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "--setup needs a config destination" in out
+
+
+# Verifies an existing config can be kept by sending the run to another path instead
+def test_an_existing_config_can_be_redirected_to_another_path(monkeypatch, wizard_paths, tmp_path):
+    wizard_paths["config"].write_text("# earlier config\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.conf"
+    code, _ = run_wizard(monkeypatch, wizard_paths, ["n", str(elsewhere), *BASIC_ANSWERS])
+    assert code == 0
+    assert wizard_paths["config"].read_text(encoding="utf-8") == "# earlier config\n"
+    assert "XBOX_GAMERTAG = 'SomeTag'" in elsewhere.read_text(encoding="utf-8")
+
+
+# Verifies declining to replace an existing config and naming no alternative ends the run without writing
+def test_declining_an_existing_config_without_an_alternative_writes_nothing(monkeypatch, wizard_paths, capsys):
+    wizard_paths["config"].write_text("# earlier config\n", encoding="utf-8")
+    code, _ = run_wizard(monkeypatch, wizard_paths, ["n", ""])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert wizard_paths["config"].read_text(encoding="utf-8") == "# earlier config\n"
+    assert not wizard_paths["env"].exists()
+    assert "Setup cancelled. Destination files were not changed." in out
+
+
+# Verifies a secret already in the dotenv file is kept when the replacement is declined
+def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(monkeypatch, wizard_paths):
+    wizard_paths["env"].write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+    monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "n", "1", "", "", "1", "n", "n"]
+    code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "typed-password"])
+    written = wizard_paths["env"].read_text(encoding="utf-8")
+    assert code == 0
+    assert 'SMTP_PASSWORD="original"' in written
+    assert "typed-password" not in written
+
+
+# Verifies a confirmed replacement does reach the dotenv file
+def test_a_confirmed_dotenv_secret_replacement_is_written(monkeypatch, wizard_paths):
+    wizard_paths["env"].write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+    monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
+    answers = ["SomeTag", "", "5m", "90", "", "y", "smtp.example.com", "587", "", "someone@example.com", "from@example.com", "to@example.com", "y", "1", "", "", "1", "n", "n"]
+    run_wizard(monkeypatch, wizard_paths, answers, secrets=["client-id", "client-secret", "typed-password"])
+    assert 'SMTP_PASSWORD="typed-password"' in wizard_paths["env"].read_text(encoding="utf-8")
+
+
+# Verifies credentials already in the dotenv file are noticed even when this run did not load them
+def test_credentials_in_the_dotenv_file_prompt_before_being_replaced(monkeypatch, wizard_paths):
+    wizard_paths["env"].write_text('MS_APP_CLIENT_ID="stored-id"\nMS_APP_CLIENT_SECRET="stored-secret"\n', encoding="utf-8")
+    answers = ["SomeTag", "", "5m", "90", "n", "", "n", "", "", "1", "n", "n"]
+    code, scripted = run_wizard(monkeypatch, wizard_paths, answers)
+    assert code == 0
+    assert any("Replace the Microsoft application credentials already configured?" in prompt for prompt in scripted.prompts)
+    assert 'MS_APP_CLIENT_ID="stored-id"' in wizard_paths["env"].read_text(encoding="utf-8")
