@@ -27,6 +27,15 @@ body:
       required: true
 
   - type: textarea
+    id: doctor
+    attributes:
+      label: Preflight report
+      description: "Output of `xbox_monitor --doctor <xbox_gamer_tag>`. It names your Python version, install method, loaded files and which checks failed. It reports secrets by name only, never by value, but still redact the accounts you monitor."
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
     id: logs
     attributes:
       label: Relevant log output

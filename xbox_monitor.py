@@ -9,7 +9,6 @@ https://github.com/misiektoja/xbox_monitor/
 Python pip3 requirements:
 
 python-xbox
-requests
 python-dateutil
 httpx
 pytz

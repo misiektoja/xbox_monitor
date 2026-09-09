@@ -171,4 +171,6 @@ def test_the_minimum_python_version_is_declared_once():
     assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == monitor.MINIMUM_PYTHON_VERSION
     matrix = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["test"]["strategy"]["matrix"]["python-version"]
     assert min(tuple(int(part) for part in str(version).split(".")) for version in matrix) == monitor.MINIMUM_PYTHON_VERSION
-    assert f"Python {minimum_text} or higher" in read_asset("README.md")
+    # The requirements moved to the documentation site, and the README keeps only the badge
+    assert f"Python {minimum_text} or higher" in read_asset("docs/installation.md")
+    assert f"python-{minimum_text}+" in read_asset("README.md")

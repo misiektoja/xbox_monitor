@@ -1,6 +1,12 @@
 # Getting help
 
-Start with the [README](README.md). [Requirements](README.md#requirements), [Installation](README.md#installation) and [Quick Start](README.md#quick-start) cover most first-run problems, and [Configuration](README.md#configuration) explains every setting the tool reads.
+Start with the [documentation site](https://misiektoja.github.io/xbox_monitor/). [Installation](https://misiektoja.github.io/xbox_monitor/installation/) and [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) cover most first-run problems, [Configuration](https://misiektoja.github.io/xbox_monitor/configuration/) explains every setting the tool reads and [Troubleshooting](https://misiektoja.github.io/xbox_monitor/troubleshooting/) covers what each reported failure means.
+
+Before opening an issue, run the preflight report and read what it says. It writes nothing:
+
+```sh
+xbox_monitor --doctor <xbox_gamer_tag>
+```
 
 ## Check your setup first
 
