@@ -218,7 +218,7 @@ def test_only_the_rows_that_are_not_a_pass_carry_a_fix(xbox_session, doctor_run,
     monkeypatch.setattr(monitor, "XBOX_ACTIVE_CHECK_INTERVAL", 5)
     _, raw = doctor_run(xbox_gamertag=GAMERTAG)
     lines = as_displayed(raw).splitlines()
-    fixes = [index for index, line in enumerate(lines) if line.startswith("To fix: ")]
+    fixes = [index for index, line in enumerate(lines) if line.startswith("  To fix: ")]
     assert fixes
     for index in fixes:
         preceding = next(MARKER_RE.match(line) for line in reversed(lines[:index]) if MARKER_RE.match(line))
@@ -811,3 +811,34 @@ def test_the_timezone_row_names_the_value(monkeypatch):
 
     check = next(item for item in checks if item.label == monitor.TIMEZONE_CHECK_LABELS["config"])
     assert check.detail == "Time zone: Europe/Warsaw"
+
+
+# Verifies the constructor drops a detail that only repeats its label, so no row says the same thing twice
+def test_a_detail_that_repeats_its_label_is_dropped():
+    check = monitor.make_doctor_check("Configuration", "PASS", "Output logging is disabled", "Output logging is disabled")
+
+    assert check.detail == ""
+
+
+# Verifies only the four shared markers can reach a report
+def test_only_the_four_shared_markers_are_accepted():
+    assert monitor.DOCTOR_STATUSES == MARKERS
+    assert [monitor.make_doctor_check("Configuration", status, "a label").status for status in MARKERS] == list(MARKERS)
+
+    with pytest.raises(ValueError):
+        monitor.make_doctor_check("Configuration", "INFO", "a label")
+
+
+# Verifies one row reads as one block: the action lines sit under the marker at the detail indent while a pass row has none
+def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
+    monkeypatch.setattr(monitor, "colorize", lambda theme, text: text)
+    advice = monitor.make_recovery_advice("unknown", "a summary", monitor.recovery_fix_with_guide("do the thing", monitor.DOCTOR_GUIDE_URL), True)
+    report = monitor.DoctorReport([
+        monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", advice),
+        monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", advice),
+    ])
+
+    lines = monitor.render_doctor_sections(report).splitlines()
+    rows = lines[lines.index("[WARN] a warning row"):]
+
+    assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {monitor.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
