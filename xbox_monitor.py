@@ -2903,35 +2903,35 @@ def read_secret_privately(prompt_text, getpass_func=None):
 
 
 # Reports whether the user agreed to replace secrets a dotenv file already holds
-def confirm_secret_replacement(destination, keys, input_func=None):
+def confirm_secret_replacement(destination, keys, subject, flag, guide_url, input_func=None):
     present = [key for key in keys if dotenv_contains_key(destination, key)]
     if not present:
         return
     ask = input if input_func is None else input_func
-    subject = f"{join_names(present)} is already set" if len(present) == 1 else f"{join_names(present)} are already set"
+    already_set = f"{join_names(present)} is already set" if len(present) == 1 else f"{join_names(present)} are already set"
     try:
-        confirmed = str(read_interactively(ask, f"{subject} in '{destination}'. Replace {'it' if len(present) == 1 else 'them'}? [y/N]: ")).strip().casefold() in ("y", "yes")
+        confirmed = str(read_interactively(ask, f"{already_set} in '{destination}'. Replace {'it' if len(present) == 1 else 'them'}? [y/N]: ")).strip().casefold() in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         print()
-        confirmed = False
+        raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
     if not confirmed:
-        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{join_names(present)} was left as it is and the dotenv file was not changed"))
+        raise RecoveryError(secret_replacement_declined_advice(subject, flag, guide_url, len(present) > 1))
 
 
 # Collects one secret through a hidden prompt, checks it with the given validator and writes it only then
-def run_set_secret(key, flag, guidance, prompt_text, validator, describe_success, env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None, normalize=None, test_step=None):
+def run_set_secret(key, flag, subject, guide_url, guidance, prompt_text, validator, describe_success, env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None, normalize=None, test_step=None):
     destination = resolve_secret_env_path(env_file, flag)
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
     if not terminal_is_interactive:
         raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{flag} needs an interactive terminal so the value stays hidden"))
 
-    confirm_secret_replacement(destination, (key,), input_func=input_func)
+    confirm_secret_replacement(destination, (key,), subject, flag, guide_url, input_func=input_func)
     print(guidance)
     try:
         entered = read_secret_privately(prompt_text, getpass_func=getpass_func)
     except (EOFError, KeyboardInterrupt):
         print()
-        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{key} entry was cancelled and the dotenv file was not changed")) from None
+        raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
 
     print(f"* Checking the entered value before writing it to '{destination}' ...")
     outcome = validator(entered)
@@ -2956,7 +2956,7 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
     if not terminal_is_interactive:
         raise RecoveryError(classify_recovery_error(context="secret.entry", detail="--set-ms-app-credentials needs an interactive terminal so the values stay hidden"))
 
-    confirm_secret_replacement(destination, keys, input_func=input_func)
+    confirm_secret_replacement(destination, keys, "Microsoft application credentials", "--set-ms-app-credentials", CREDENTIALS_GUIDE_URL, input_func=input_func)
     print(f"* Register an application at {ENTRA_PORTAL_URL}")
     print("* Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
     print(f"* Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
@@ -3022,12 +3022,12 @@ def validate_webhook_destination(value):
 
 # Stores one webhook destination in the dotenv file, so the private URL never has to appear on a command line
 def run_set_webhook_url(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
-    return run_set_secret("WEBHOOK_URL", "--set-webhook-url", "* Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL\n* ntfy: the complete topic URL, or just the topic name when it is hosted on ntfy.sh", "Enter the webhook URL (input hidden): ", validate_webhook_destination, lambda provider: f"The entered value looks like a valid {provider} destination", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, normalize_webhook_destination, ("Send a test webhook:", "--send-test-webhook"))
+    return run_set_secret("WEBHOOK_URL", "--set-webhook-url", "webhook URL", WEBHOOK_GUIDE_URL, "* Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL\n* ntfy: the complete topic URL, or just the topic name when it is hosted on ntfy.sh", "Enter the webhook URL (input hidden): ", validate_webhook_destination, lambda provider: f"The entered value looks like a valid {provider} destination", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, normalize_webhook_destination, ("Send a test webhook:", "--send-test-webhook"))
 
 
 # Stores one SMTP password in the dotenv file after the mail server has actually accepted it
 def run_set_smtp_password(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
-    return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
+    return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", "SMTP password", SMTP_GUIDE_URL, f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
 
 
 # Saves the last seen status atomically, so an interrupted write cannot strand a half-written status file
@@ -3237,6 +3237,17 @@ def make_recovery_advice(code, summary, fix, retryable, detail=""):
 # Appends the documentation link that matches the fix, on its own line
 def recovery_fix_with_guide(fix, guide_url):
     return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
+def secret_entry_cancelled_advice(subject, flag, guide_url):
+    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
+
+
+# Returns the advice a declined secret replacement reports, worded the same way by every one-shot secret command
+def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
+    kept = "were left as they are" if plural else "was left as it is"
+    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
 
 
 # Renders one piece of advice, adding the fix paragraph and the technical detail only where they help

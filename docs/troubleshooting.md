@@ -29,7 +29,7 @@ Doctor never starts the interactive sign-in, because that writes a token file. A
 
 `--setup`, `--set-ms-app-credentials`, `--set-smtp-password` and `--set-webhook-url` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
 
-Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed and during a secret command it reports that the dotenv file was left as it was. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring.
+Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed. During a secret command it says the entry was cancelled, names the command that resumes it and leaves the dotenv file unchanged. Answering `n` at a replace question instead says the saved values were left as they are. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring.
 
 `--setup` needs somewhere to put both files, so it refuses `--env-file none` and `--config-file none`. It reports a destination that is a directory or whose parent will not accept a write before asking anything.
 

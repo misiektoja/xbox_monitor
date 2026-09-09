@@ -132,7 +132,7 @@ def test_an_interrupted_entry_writes_nothing(secret_paths):
 
     with pytest.raises(monitor.RecoveryError) as raised:
         monitor.run_set_smtp_password(env_file=str(secret_paths["env"]), interactive=True, getpass_func=interrupt)
-    assert "was cancelled" in raised.value.advice.detail
+    assert "was cancelled" in raised.value.advice.summary
     assert secret_paths["env"].read_text(encoding="utf-8") == ""
 
 
@@ -222,3 +222,38 @@ def test_a_destination_for_the_other_service_is_refused(secret_paths, monkeypatc
         monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(DISCORD_URL))
     assert "WEBHOOK_PROVIDER is set to ntfy" in raised.value.advice.summary
     assert secret_paths["env"].read_text(encoding="utf-8") == ""
+
+
+# Verifies an interrupted entry reports the cancel itself, with the command that resumes it
+def test_an_interrupted_secret_entry_reports_the_cancel(tmp_path, monkeypatch):
+    destination = tmp_path / ".env"
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+
+    def interrupt(prompt=""):
+        raise KeyboardInterrupt
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_smtp_password(env_file=str(destination), interactive=True, getpass_func=interrupt)
+
+    advice = raised.value.advice
+    assert advice.summary == "SMTP password setup was cancelled and the dotenv file was not changed"
+    assert "Run --set-smtp-password again when you have the value ready" in advice.fix
+    assert monitor.SMTP_GUIDE_URL in advice.fix
+    assert not destination.exists()
+
+
+# Verifies a declined replacement reports the kept value rather than a cancelled entry
+def test_a_declined_secret_replacement_reports_the_kept_value(tmp_path, monkeypatch):
+    destination = tmp_path / ".env"
+    destination.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_smtp_password(env_file=str(destination), interactive=True, input_func=lambda prompt="": "n", getpass_func=lambda prompt="": pytest.fail("hidden prompt used"))
+
+    advice = raised.value.advice
+    assert advice.summary == "The saved SMTP password was left as it is and the dotenv file was not changed"
+    assert "answer y to replace the saved value" in advice.fix
+    assert destination.read_text(encoding="utf-8") == 'SMTP_PASSWORD="original"\n'
