@@ -87,6 +87,29 @@ xbox_monitor <xbox_gamer_tag> --status-file ~/xbox/last_status.json
 
 The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind.
 
+## Startup Summary
+
+Monitoring mode prints the settings that are actually in effect before the first check:
+
+```
+* Target:                       misiektoja
+* Polling intervals:            [offline: 3 minutes] [online: 1 minute]
+* Notifications (email):        On (status changes, game changes, errors)
+* Notifications (webhook):      On (online and offline changes, errors) through Discord
+* Output:                       xbox_monitor_misiektoja.log
+* Config:                       xbox_monitor.conf
+* Dotenv:                       .env
+* More details:                 use --verbose or --debug
+```
+
+Optional features appear once you switch them on. `TLS verification` appears here whenever certificate checking is off.
+
+`--verbose` or `--debug` replaces this with the complete list, in the order it prints: the log file, the liveness interval, the CSV file, the status file, the token cache, the truncation width, the resolved time zone, the install method, which secrets came from the dotenv file, the environment, the configuration file or the command line, whether certificate checking is on, how log separators are written, whether colour is actually in use and the two flags themselves.
+
+The sibling monitors print the same rows in the same order, so a setting sits in the same place whichever of them you are reading. The token cache row is the one addition, since only this tool signs in through Microsoft.
+
+The log file always receives the complete list, whichever view the terminal was shown, so a log attached to a bug report carries every effective setting.
+
 ## Email Notifications
 
 To be told when a user gets online or offline, set `ACTIVE_INACTIVE_NOTIFICATION` to `True` or use `-a`:

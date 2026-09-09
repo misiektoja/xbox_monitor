@@ -405,6 +405,23 @@ def test_printed_commands_carry_the_files_this_run_was_given(monkeypatch):
     assert monitor.tool_command("--generate-config", "plain.conf", method="pip", include_paths=False) == "xbox_monitor --generate-config plain.conf"
 
 
+# Verifies the missing-target fix carries this run's files and leaves the placeholder readable
+def test_the_missing_target_command_carries_the_files_and_the_placeholder(monkeypatch):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
+
+    fix = monitor.classify_recovery_error(None, context="target.missing").fix
+
+    assert "xbox_monitor.py <xbox_gamertag> --config-file /etc/xbox.conf --env-file /etc/xbox.env" in fix
+    assert "'<xbox_gamertag>'" not in fix
+
+
+# Verifies a <placeholder> is printed for the reader to replace rather than quoted as a literal value
+def test_a_placeholder_argument_is_left_unquoted():
+    assert monitor.render_command(["<xbox_gamertag>", "-u", "<client_id>"]) == "<xbox_gamertag> -u <client_id>"
+    assert monitor.render_command(["a value"]) == "'a value'"
+
+
 # Verifies a caller that already names a file is not given a second copy of it
 def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")

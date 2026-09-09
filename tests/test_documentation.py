@@ -253,6 +253,7 @@ def test_the_documented_install_methods_match_the_code():
     ("Check Intervals", "configuration.md"),
     ("Doctor Preflight", "troubleshooting.md"),
     ("Verbose and Debug Output", "troubleshooting.md"),
+    ("Startup Summary", "usage.md"),
     ("Coloring Log Output with GRC", "usage.md"),
 ])
 # Each section sits where a reader would look for it, matching the sibling tools

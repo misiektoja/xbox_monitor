@@ -1818,10 +1818,18 @@ def install_method_display_name(method=None):
     return {"pip": "PyPI install", "manual": "downloaded script"}.get(method or detect_install_method(), "unknown install")
 
 
+# Returns one command argument quoted for the shell of the host operating system
+def quote_command_argument(argument):
+    text = str(argument)
+    # A <placeholder> is documentation for the reader to replace, so quoting it would only be noise
+    if text.startswith("<") and text.endswith(">"):
+        return text
+    return subprocess.list2cmdline([text]) if platform.system() == "Windows" else shlex.quote(text)
+
+
 # Renders command arguments quoted for the shell of the host operating system
 def render_command(arguments):
-    values = [str(argument) for argument in arguments]
-    return subprocess.list2cmdline(values) if platform.system() == "Windows" else shlex.join(values)
+    return " ".join(quote_command_argument(argument) for argument in arguments)
 
 
 # Returns the bare command that starts this tool on the detected install, without arguments
@@ -3419,7 +3427,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {tool_command('<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>')}", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "target.missing":
-        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was given", recovery_fix_with_guide(f"Pass the account to watch: {tool_command_prefix()} <xbox_gamertag>. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was given", recovery_fix_with_guide(f"Pass the account to watch: {tool_command('<xbox_gamertag>')}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
 
     if context == "secret.entry":
         return make_recovery_advice("secret.entry", safe_detail or "The value was not entered, so nothing was written", recovery_fix_with_guide("Run the command again from an interactive terminal and enter the value when prompted", SECRETS_GUIDE_URL), False, safe_detail)
