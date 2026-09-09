@@ -419,7 +419,7 @@ EXPORTED_SECRET_KEYS = frozenset()
 # Documentation the tool links to from errors, doctor rows and the welcome screen
 DOCS_BASE_URL = "https://misiektoja.github.io/xbox_monitor"
 INSTALLATION_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
-QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#quick-start"
+QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
 CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
 CREDENTIALS_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#microsoft-entra-application-credentials"
 SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
