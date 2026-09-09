@@ -1352,9 +1352,9 @@ _QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
 # A quoted command-line option is part of an instruction rather than a name
 _QUOTED_OPTION_RE = re.compile(r"^-")
 
-# A quoted piece of a URL, such as the '?code=' a prompt points at. A title may end in a question mark, so only
-# a leading one counts
-_QUOTED_URL_PART_RE = re.compile(r"^\?|[=&]|://")
+# A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
+# so a title may end in a question mark and a title such as 'Ratchet & Clank' is still a name
+_QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
 _ONLINE_WORD_RE = re.compile(r"\b(ONLINE)\b")
 _AWAY_WORD_RE = re.compile(r"\b(AWAY)\b")
 _OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE)\b")
@@ -2710,12 +2710,15 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
 
     try:
         # Asked before anything else, so a config that has to be replaced is agreed to rather than discovered at Save
+        config_existed = Path(config_path).exists()
         chosen_config = _wizard_choose_config_destination(config_path, input_func=input_func)
         if chosen_config is None:
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             return 1
         state.config_path = chosen_config
-        print()
+        # A destination nothing was asked about printed nothing, so the separator would leave a blank gap
+        if config_existed:
+            print()
         _wizard_collect_target_section(state, initial_target, input_func=input_func)
         print()
         _wizard_collect_polling_section(state, input_func=input_func)

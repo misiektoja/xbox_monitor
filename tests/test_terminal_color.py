@@ -248,8 +248,15 @@ def test_a_quoted_option_is_not_read_as_a_name(colored):
 
 
 # Verifies a quoted piece of a URL stays plain, since the authorization prompt points at one
-def test_a_quoted_url_fragment_is_not_read_as_a_name(colored):
-    assert uncolored(colored._colorize_line("Enter authorization code (part after '?code=' in callback URL): "), "?code=")
+@pytest.mark.parametrize("fragment", ["?code=", "&state="])
+def test_a_quoted_url_fragment_is_not_read_as_a_name(colored, fragment):
+    assert uncolored(colored._colorize_line(f"Enter authorization code (part after '{fragment}' in callback URL): "), fragment)
+
+
+# Verifies the URL rule reads only a leading '?' or '&', so a title carrying one mid-name is still a title
+@pytest.mark.parametrize("title", ["Ratchet & Clank: Rift Apart", "Rock Band: A=440 Edition"])
+def test_a_title_containing_a_url_character_is_still_coloured(colored, title):
+    assert styled_as(colored._colorize_line(f"Xbox user x started playing '{title}'"), title, "game")
 
 
 # Verifies truncation is switched off, with a warning, when the package that measures width is missing

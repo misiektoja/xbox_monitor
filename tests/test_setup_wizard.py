@@ -238,6 +238,28 @@ def test_an_existing_config_is_backed_up_before_it_is_replaced(monkeypatch, wiza
     assert "Backup:" in out
 
 
+# Echoes each prompt the way a terminal does, so the transcript is what the reader actually sees
+class EchoingAnswers(ScriptedAnswers):
+    def __call__(self, prompt=""):
+        typed = super().__call__(prompt)
+        print(f"{prompt}{typed}")
+        return typed
+
+
+# Verifies the wizard leaves no double blank line, including where a destination had nothing to ask about
+@pytest.mark.parametrize("existing", [False, True])
+def test_the_wizard_output_has_no_double_blank_lines(monkeypatch, wizard_paths, capsys, existing):
+    if existing:
+        wizard_paths["config"].write_text("# earlier config\n", encoding="utf-8")
+    scripted = EchoingAnswers(["y", *BASIC_ANSWERS] if existing else BASIC_ANSWERS)
+    monkeypatch.setattr(monitor, "_wizard_request_tokens", TokenAuthorizer())
+    hidden = ["client-id", "client-secret"]
+    code = monitor.run_setup_wizard(config_file=str(wizard_paths["config"]), env_file=str(wizard_paths["env"]), input_func=scripted, getpass_func=lambda prompt="": hidden.pop(0) if hidden else "", interactive=True)
+
+    assert code == 0
+    assert "\n\n\n" not in capsys.readouterr().out
+
+
 # Verifies a target already known from the command line is offered as the default rather than asked for again
 def test_a_target_given_on_the_command_line_is_the_offered_default(monkeypatch, wizard_paths):
     answers = ["", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "n"]
