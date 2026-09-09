@@ -35,7 +35,7 @@ Ctrl+C is safe at every question. During `--setup` it reports that the destinati
 
 ## Error Messages and Recovery
 
-Every reported problem carries a category, a one-line summary, a `To fix:` paragraph and a link. The category decides the advice, so the same failure reads the same way wherever it surfaces.
+Every reported problem carries a category, a one-line summary, a `To fix:` paragraph and a link. The category decides the advice, so the same failure reads the same way wherever it surfaces. A command in the fix text matches how you installed the tool: `xbox_monitor ...` for a PyPI install and `python3 xbox_monitor.py ...` for a downloaded script. It also carries the `--config-file` or `--env-file` you started with.
 
 | What you see | What it usually means |
 | --- | --- |

@@ -1820,9 +1820,21 @@ def tool_command_prefix(method=None):
     return "xbox_monitor"
 
 
-# Returns a complete, copy-pasteable command line for this tool with every argument quoted for the host shell
-def tool_command(*arguments, method=None):
-    return " ".join([tool_command_prefix(method), *[render_command([argument]) for argument in arguments]])
+# Returns the --config-file and --env-file arguments this run was given, skipping any the caller already passed
+def active_path_arguments(arguments=()):
+    given = {str(argument) for argument in arguments}
+    paths = []
+    if CLI_CONFIG_PATH and "--config-file" not in given:
+        paths.extend(("--config-file", str(CLI_CONFIG_PATH)))
+    if DOTENV_FILE and str(DOTENV_FILE).casefold() != "none" and "--env-file" not in given:
+        paths.extend(("--env-file", str(DOTENV_FILE)))
+    return paths
+
+
+# Returns a copy-pasteable command line for this tool, carrying the config and dotenv paths this run was given
+def tool_command(*arguments, method=None, include_paths=True):
+    parts = [*arguments, *(active_path_arguments(arguments) if include_paths else ())]
+    return " ".join([tool_command_prefix(method), *[render_command([part]) for part in parts]])
 
 
 # Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
@@ -2704,7 +2716,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
     if not terminal_is_interactive:
         print("The setup wizard needs an interactive terminal (TTY).")
-        print(f"Run --setup from an interactive shell, or write a config to edit by hand with: {tool_command('--generate-config', DEFAULT_CONFIG_FILENAME)}")
+        print(f"Run --setup from an interactive shell, or write a config to edit by hand with: {tool_command('--generate-config', DEFAULT_CONFIG_FILENAME, include_paths=False)}")
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
@@ -3387,10 +3399,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Xbox Live problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
 
     if context == "config.missing":
-        return make_recovery_advice("config.missing", safe_detail or "The configuration file was not found", recovery_fix_with_guide(f"Check the --config-file path, or create one with: {tool_command('--generate-config', 'xbox_monitor.conf')}", CONFIG_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("config.missing", safe_detail or "The configuration file was not found", recovery_fix_with_guide(f"Check the --config-file path, or create one with: {tool_command('--generate-config', 'xbox_monitor.conf', include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "config.invalid":
-        return make_recovery_advice("config.invalid", safe_detail or "The configuration file could not be loaded", recovery_fix_with_guide(f"Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted. Correct the reported line, or write a fresh template to a different path with: {tool_command('--generate-config', '<new-file>')}", CONFIG_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("config.invalid", safe_detail or "The configuration file could not be loaded", recovery_fix_with_guide(f"Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted. Correct the reported line, or write a fresh template to a different path with: {tool_command('--generate-config', '<new-file>', include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "secret.missing":
         return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {tool_command('<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>')}", CREDENTIALS_GUIDE_URL), False, safe_detail)
@@ -5938,7 +5950,7 @@ def main():
                 backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
             except FileExistsError as exc:
                 # Built here rather than from the context, so the fix names the file the user actually asked for
-                print_recovery_advice(make_recovery_advice("file.exists", str(exc), recovery_fix_with_guide(f"Re-run with: {tool_command('--generate-config', output_file, '--force')}. The existing file is backed up with a timestamp first, or write to a different path", CONFIG_GUIDE_URL), False, str(exc)))
+                print_recovery_advice(make_recovery_advice("file.exists", str(exc), recovery_fix_with_guide(f"Re-run with: {tool_command('--generate-config', output_file, '--force', include_paths=False)}. The existing file is backed up with a timestamp first, or write to a different path", CONFIG_GUIDE_URL), False, str(exc)))
                 sys.exit(1)
             except OSError as exc:
                 report_recovery_error(exc, context="file.unwritable", detail=f"Config file '{output_file}' cannot be written: {exc}")

@@ -394,3 +394,20 @@ def test_the_test_webhook_command_sends_one_forced_notification(tmp_path, monkey
     assert len(sent) == 1
     assert sent[0][1]["force"] is True
     assert "discord.com" in capsys.readouterr().out
+
+
+# Verifies a printed command carries the files this run was given, so the retest reads the settings that failed
+def test_printed_commands_carry_the_files_this_run_was_given(monkeypatch):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
+
+    assert monitor.tool_command("--send-test-webhook", method="pip") == "xbox_monitor --send-test-webhook --config-file /etc/xbox.conf --env-file /etc/xbox.env"
+    assert monitor.tool_command("--generate-config", "plain.conf", method="pip", include_paths=False) == "xbox_monitor --generate-config plain.conf"
+
+
+# Verifies a caller that already names a file is not given a second copy of it
+def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
+
+    assert monitor.tool_command("--doctor", "--env-file", "/tmp/other.env", method="pip") == "xbox_monitor --doctor --env-file /tmp/other.env --config-file /etc/xbox.conf"
