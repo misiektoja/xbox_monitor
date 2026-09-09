@@ -411,3 +411,22 @@ def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
     monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
 
     assert monitor.tool_command("--doctor", "--env-file", "/tmp/other.env", method="pip") == "xbox_monitor --doctor --env-file /tmp/other.env --config-file /etc/xbox.conf"
+
+
+# Verifies both test commands carry the subject, title and body shared with the sibling monitors
+def test_the_test_messages_use_the_shared_wording(tmp_path, monkeypatch):
+    config, env = write_startup_files(tmp_path)
+    emails, webhooks = [], []
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: emails.append(args) or 0)
+    monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: webhooks.append(args) or 0)
+    monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    for flag in ("--send-test-email", "--send-test-webhook"):
+        monkeypatch.setattr(sys, "argv", ["xbox_monitor", flag, "--webhook-url", DISCORD_URL, "--config-file", str(config), "--env-file", str(env)])
+        with pytest.raises(SystemExit) as raised:
+            monitor.main()
+        assert raised.value.code == 0
+
+    assert emails[0][:2] == ("xbox_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert webhooks[0][:2] == ("xbox_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
