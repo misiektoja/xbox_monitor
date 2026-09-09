@@ -18,6 +18,9 @@ MARKERS = ("PASS", "WARN", "FAIL", "SKIP")
 
 MARKER_RE = re.compile(r"^\[([A-Z -]+)\]")
 
+# Captured before the autouse fixture below replaces the name with an offline stub
+REAL_CONNECTIVITY_CHECK = monitor.doctor_check_connectivity
+
 
 # Fails the test if the doctor tries to sign in on a path that must never reach the network
 def _unreachable_smtp(*args, **kwargs):
@@ -876,3 +879,47 @@ def test_the_summary_is_rendered_after_the_delivery_tests():
         assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
 
     assert checked, "no doctor entry point runs the delivery tests and then the summary"
+
+
+# Verifies the connectivity row carries the label and the endpoint detail shared with the sibling monitors
+def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
+    monkeypatch.setattr(monitor, "CHECK_INTERNET_URL", "https://probe.example/ping")
+
+    class FakeClient:
+        def __init__(self, fails):
+            self.fails = fails
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url):
+            if self.fails:
+                raise monitor.httpx.ConnectError("offline for doctor")
+
+    monkeypatch.setattr(monitor.httpx, "Client", lambda **kwargs: FakeClient(False))
+    passing = REAL_CONNECTIVITY_CHECK()[0]
+    monkeypatch.setattr(monitor.httpx, "Client", lambda **kwargs: FakeClient(True))
+    failing = REAL_CONNECTIVITY_CHECK()[0]
+
+    assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
+    assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
+
+
+# Verifies the output rows wait for the target instead of checking a placeholder path that is never written
+def test_the_output_rows_wait_for_a_target(doctor_run, monkeypatch):
+    monkeypatch.setattr(monitor, "XBOX_STATUS_FILE", "")
+    monkeypatch.setattr(monitor, "XBOX_LOGFILE", "xbox_monitor")
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+
+    _, without_target = doctor_run()
+    _, with_target = doctor_run(xbox_gamertag=GAMERTAG)
+
+    assert "[PASS] Status file will be finalized after a target is selected" in without_target
+    assert "[PASS] Log destination will be finalized after a target is selected" in without_target
+    assert "Path: xbox_<xbox_gamertag>_last_status.json" not in without_target
+    assert "Path: xbox_monitor_<xbox_gamertag>.log" not in without_target
+    assert "[PASS] Status file is writable" in with_target
+    assert "[PASS] Log file is writable" in with_target

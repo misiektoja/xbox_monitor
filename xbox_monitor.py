@@ -757,8 +757,11 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "CSV history is disabled"))
 
-    status_path = resolve_status_file(xbox_gamertag or "<xbox_gamertag>")
-    if path_is_writable(status_path):
+    # A configured path is fixed, so it stays checkable without a target. The default name carries the target
+    status_path = os.path.expanduser(XBOX_STATUS_FILE) if XBOX_STATUS_FILE else (resolve_status_file(xbox_gamertag) if xbox_gamertag else "")
+    if not status_path:
+        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: xbox_<target>_last_status.json in the working directory"))
+    elif path_is_writable(status_path):
         checks.append(make_doctor_check("Configuration", "PASS", "Status file is writable", f"Path: {status_path}"))
     else:
         advice = classify_recovery_error(context="file.unwritable", detail=f"Status file '{status_path}' cannot be written")
@@ -767,8 +770,11 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     if DISABLE_LOGGING:
         checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     else:
-        log_path = resolve_log_path(xbox_gamertag or "<xbox_gamertag>")
-        if path_is_writable(log_path):
+        # A name with an extension is used as it is, so only a bare base name has to wait for the target
+        log_path = resolve_log_path(xbox_gamertag) if (xbox_gamertag or Path(os.path.expanduser(XBOX_LOGFILE)).suffix) else ""
+        if not log_path:
+            checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {Path(os.path.expanduser(XBOX_LOGFILE))}"))
+        elif path_is_writable(log_path):
             checks.append(make_doctor_check("Configuration", "PASS", "Log file is writable", f"Path: {log_path}"))
         else:
             advice = classify_recovery_error(context="file.unwritable", detail=f"Log file '{log_path}' cannot be written")
