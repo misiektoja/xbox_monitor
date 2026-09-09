@@ -333,6 +333,25 @@ def test_only_debug_mode_keeps_the_screen(monkeypatch, monitor_calls, flag, expe
     assert cleared == [expected]
 
 
+# Verifies the one-shot commands keep whatever is already on the screen, so their output stays scrollable
+@pytest.mark.parametrize(("argv", "expected"), ((["xbox_monitor", "--doctor"], True), (["xbox_monitor", "--set-ms-app-credentials"], True), (["xbox_monitor", "--send-test-email"], True), (["xbox_monitor", "--help"], True), (["xbox_monitor", "test-gamertag"], False)))
+def test_one_shot_commands_keep_the_terminal_history(monkeypatch, argv, expected):
+    monkeypatch.setattr(monitor.sys, "argv", argv)
+
+    assert monitor.keep_terminal_history() is expected
+
+
+# Verifies a redirected stdout is never cleared, so no escape sequence or TERM warning reaches the captured output
+def test_a_redirected_stdout_is_never_cleared(monkeypatch):
+    commands = []
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(monitor.os, "system", lambda command: commands.append(command))
+
+    monitor.clear_screen(True)
+
+    assert commands == []
+
+
 # Verifies a verbose notice raised before monitoring starts does not print a timestamp the run has no use for
 def test_a_notice_before_monitoring_starts_carries_no_timestamp(monkeypatch, verbose_only, capsys):
     monkeypatch.setattr(monitor, "MONITORING_ACTIVE", False)

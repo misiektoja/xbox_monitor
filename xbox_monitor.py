@@ -1783,6 +1783,9 @@ def check_internet(url=None, timeout=None):
 def clear_screen(enabled=True):
     if not enabled:
         return
+    # Don't clear screen if stdout is redirected (not a TTY)
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return
     try:
         if platform.system() == 'Windows':
             os.system('cls')
@@ -2886,6 +2889,15 @@ def print_welcome_screen(input_func=None, interactive=None, config_file=None, en
 
 # The one-shot commands that write a secret, which stay usable when no gamertag was given
 SECRET_ACTION_FLAGS = ("--set-ms-app-credentials", "--set-smtp-password", "--set-webhook-url")
+
+
+# Commands that print a one-shot result and exit, so the screen keeps whatever is already on it
+KEEP_HISTORY_FLAGS = (*SECRET_ACTION_FLAGS, "--doctor", "--send-test-email", "--send-test-webhook", "--help", "-h")
+
+
+# Returns True when the running command is a one-shot whose output has to stay scrollable
+def keep_terminal_history():
+    return any(flag in sys.argv for flag in KEEP_HISTORY_FLAGS)
 
 
 # Prints the commands to run next, with the file paths this run was given so they can be pasted as they are
@@ -5968,7 +5980,7 @@ def main():
         DEBUG_MODE = True
     if CLEAR_SCREEN and DEBUG_MODE:
         debug_print("Terminal screen clear", outcome="skipped", reason="debug mode is active")
-    clear_screen(CLEAR_SCREEN and not DEBUG_MODE)
+    clear_screen(CLEAR_SCREEN and not keep_terminal_history() and not DEBUG_MODE)
 
     print_startup_banner()
 
