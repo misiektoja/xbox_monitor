@@ -65,8 +65,7 @@ pip install xbox_monitor
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
 6. [Change Log](#change-log)
 7. [License](#license)
-8. [Citation](#citation)
-9. [Support](#support)
+8. [Support](#support)
 
 <a id="requirements"></a>
 ## Requirements
@@ -532,11 +531,6 @@ See [RELEASE_NOTES.md](https://github.com/misiektoja/xbox_monitor/blob/main/RELE
 ## License
 
 Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/xbox_monitor/blob/main/LICENSE).
-
-<a id="citation"></a>
-## Citation
-
-If you use xbox_monitor in research or writing, cite it with the metadata in [CITATION.cff](https://github.com/misiektoja/xbox_monitor/blob/main/CITATION.cff). GitHub renders it as **Cite this repository** on the repository page and exports it as BibTeX or APA.
 
 <a id="support"></a>
 ## Support
