@@ -14,6 +14,8 @@ httpx
 pytz
 tzlocal (optional)
 python-dotenv (optional)
+wcwidth (optional, needed by TRUNCATE_CHARS feature)
+colorama (optional, for better colours on Windows terminals)
 """
 
 VERSION = "2.0"
@@ -142,6 +144,11 @@ MS_AUTH_TOKENS_FILE = "xbox_tokens.json"
 # Can also be set using the -b flag
 CSV_FILE = ""
 
+# File the tool saves the last seen status to, so a restart resumes from the previous session
+# Leave empty to use xbox_<xbox_gamertag>_last_status.json in the current directory
+# Can also be set using the --status-file flag
+XBOX_STATUS_FILE = ""
+
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
@@ -167,6 +174,51 @@ HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
+
+# Whether to colour terminal output
+# Colour is dropped automatically when the output is not a terminal, when NO_COLOR is set
+# or when --no-color is passed. Log files always stay plain text
+COLORED_OUTPUT = True
+
+# Optional overrides for individual colours, merged over the built-in theme
+# The defaults are shown below. Uncomment only the entries you want to change: a complete copy
+# here would pin this palette, so later changes to the built-in one would never reach you
+# COLOR_THEME = {
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     "status_active": "green",
+#     "status_away": "yellow",
+#     "status_inactive": "red",
+#     "status_offline": "red",
+#     "status_other": "white",
+#     "game": "bright_yellow",
+#     "platform": "bright_blue",
+#     "achievement": "bright_green",
+#     "duration": "green",
+#     "status_change": "yellow",
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     "count_up": "green",
+#     "count_down": "red",
+#     "link": "blue underline",
+# }
+
+# Cut every printed line to this many characters, so long lines do not wrap in a narrow terminal
+# 0 disables it, 999 uses the detected terminal width. Needs the optional wcwidth library
+# Log files always keep the untruncated text
+# Can also be set using the --truncate flag
+TRUNCATE_CHARS = 0
 
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
@@ -214,12 +266,16 @@ TOKEN_REFRESH_RETRIES = 0
 TOKEN_REFRESH_RETRY_DELAY = 0
 MS_AUTH_TOKENS_FILE = ""
 CSV_FILE = ""
+XBOX_STATUS_FILE = ""
 DOTENV_FILE = ""
 XBOX_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
+COLORED_OUTPUT = False
+COLOR_THEME: dict = {}
+TRUNCATE_CHARS = 0
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
 VERBOSE_MODE = False
 DEBUG_MODE = False
@@ -302,7 +358,7 @@ if sys.version_info < MINIMUM_PYTHON_VERSION:
 
 import time
 import json
-from typing import List, cast
+from typing import Any, List, cast
 from dataclasses import dataclass, field
 import importlib.util
 import os
@@ -327,6 +383,10 @@ try:
     from tzlocal import get_localzone
 except ImportError:
     get_localzone = None
+try:
+    from colorama import init as colorama_init  # type: ignore[import]
+except ImportError:
+    colorama_init = None
 import platform
 import re
 import ipaddress
@@ -371,6 +431,7 @@ DOCTOR_REQUIRED_DEPENDENCIES = (("pythonxbox", "python-xbox"), ("httpx", "httpx"
 DOCTOR_OPTIONAL_DEPENDENCIES = (
     ("tzlocal", "tzlocal", "Used only to auto-detect the local time zone", "Automatic time zone detection is unavailable", "Or set LOCAL_TIMEZONE to a pytz timezone name in the config file"),
     ("dotenv", "python-dotenv", "Used only to read secrets from a dotenv file", "Secrets cannot be read from a dotenv file", "Or export them as environment variables"),
+    ("wcwidth", "wcwidth", "Used only to measure display width for screen truncation", "Screen truncation is disabled", ""),
 )
 
 # An active check interval below this invites the Xbox Live rate limiter, which stops the tool seeing anything
@@ -822,12 +883,12 @@ def build_doctor_report(xbox_gamertag=None, config_path=None, env_path=None, con
 def render_doctor_sections(report):
     # The install method is context rather than a check: it cannot fail, so it is stated once here
     # instead of occupying a result row that no marker describes. The raw key is what support reports use
-    lines = ["Doctor", f"Detected install method: {detect_install_method()}"]
+    lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', detect_install_method())}"]
     for section in DOCTOR_SECTIONS:
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
             continue
-        lines.extend(("", section))
+        lines.extend(("", colorize("section", section)))
         for check in section_checks:
             lines.append(f"[{check.status}] {check.label}")
             if check.detail:
@@ -847,7 +908,7 @@ def render_doctor_summary(checks):
         sentence = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
     else:
         sentence = "  All checks passed. You are good to go!"
-    return "\n".join(("", "Summary", sentence, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    return "\n".join(("", colorize("header", "Summary"), sentence, "", f"Guide: {DOCTOR_GUIDE_URL}"))
 
 
 # Runs the preflight report plus any approved delivery test and returns the process exit code
@@ -909,6 +970,8 @@ def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, l
         StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
         StartupSummaryRow("Secrets from command line", ", ".join(from_command_line) if from_command_line else "None"),
         StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
+        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
         StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
@@ -960,25 +1023,501 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+
+# Any escape sequence, used to keep the log file plain text
+ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
+# The only escape sequence this tool emits is an SGR colour/style change, so it is the only one worth keeping
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Every other control character is dropped, keeping only tab and newline. A carriage return would let Xbox-supplied
+# text overwrite an already printed line, and the inline doctor progress that uses one writes to the terminal directly
+TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+# Collapses the whitespace a mail header cannot carry, so Xbox-supplied text in a subject cannot inject one
+def sanitize_email_header(value):
+    return re.sub(r"\s+", " ", TERMINAL_CONTROL_RE.sub("", str(value or ""))).strip()
+
+
+# Removes terminal control sequences that Xbox-supplied text could use to drive the terminal, keeping this tool's own colours
+def sanitize_terminal_text(message):
+    if not isinstance(message, str) or not message:
+        return message
+    parts = []
+    position = 0
+    for match in SGR_SEQUENCE_RE.finditer(message):
+        parts.append(TERMINAL_CONTROL_RE.sub("", message[position:match.start()]))
+        parts.append(match.group(0))
+        position = match.end()
+    parts.append(TERMINAL_CONTROL_RE.sub("", message[position:]))
+    return "".join(parts)
+
+
+# Internal flag and style map for colour handling
+COLOR_ENABLED = False
+_COLOR_STYLES: dict = {}
+
+# Default built-in colour theme. Values can be overridden via COLOR_THEME in config
+DEFAULT_COLOR_THEME = {
+    # Headings and commands the wizard tells you to run
+    "header": "bright_cyan",
+    "section": "bright_white",
+    # Identity
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
+    # Presence status values
+    "status_active": "green",
+    "status_away": "yellow",
+    "status_inactive": "red",
+    "status_offline": "red",
+    "status_other": "white",
+    # Xbox info
+    "game": "bright_yellow",
+    "platform": "bright_blue",
+    "achievement": "bright_green",
+    "duration": "green",
+    # Activity info
+    "status_change": "yellow",
+    # Misc
+    "timestamp_label": "",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+    "email": "bright_cyan",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
+    # Counters and differences
+    "count_up": "green",
+    "count_down": "red",
+    "link": "blue underline",
+}
+
+# COLOR_THEME key names used by older releases. This tool shipped the current names, so there is nothing to alias yet
+_THEME_KEY_ALIASES: dict = {}
+
+ANSI_RESET = "\033[0m"
+
+# Mapping of style names to ANSI SGR codes
+_STYLE_CODES = {
+    "bold": "1",
+    "dim": "2",
+    "underline": "4",
+    "blink": "5",
+    "black": "30",
+    "red": "31",
+    "green": "32",
+    "yellow": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "white": "37",
+    "bright_black": "90",
+    "bright_red": "91",
+    "bright_green": "92",
+    "bright_yellow": "93",
+    "bright_blue": "94",
+    "bright_magenta": "95",
+    "bright_cyan": "96",
+    "bright_white": "97",
+}
+
+# Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
+_LABEL_STYLES = (
+    (("Gamertag:", "Target:"), "username"),
+    (("XUID:",), "id"),
+    (("Current game:", "Title name:", "Game:"), "game"),
+    (("Platform:",), "platform"),
+    (("Gamerscore:",), "achievement"),
+)
+
+# Pre-compiled regexes used for line-level colourisation
+_FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
+_DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
+_DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
+# The separator is a space in prose and an equals sign in the key=value diagnostic fields. A gamertag may contain
+# spaces, which cannot be told from the rest of the sentence, so only the space-free form is coloured inside prose.
+# Only these exact phrases introduce a gamertag: a bare "user" also begins "user was" and "user with", and the
+# alternation matches at the earliest position rather than on the longest phrase, so it would colour the next word
+_USER_TAG_RE = re.compile(r"((?:Xbox gamer tag|Xbox user|for user|of user|gamertag):?|user:)([\t ]+|=)((?!ID\b)[\w.#-]+)")
+
+# A quoted value right after "user" is the monitored gamertag, the same value the "Gamertag:" row reports
+_QUOTED_USER_CONTEXT_RE = re.compile(r"\buser\s+$", re.IGNORECASE)
+_DURATION_RE = re.compile(r"~?\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
+_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+_TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_URL_RE = re.compile(r"(https?://[^\s\]]+)")
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \(email\):\s+)(On|Off)(.*)$")
+# Words that report a problem. The same word used as a key in a 'key=value' diagnostic detail names a setting
+# such as 'timeout=15' or a counter such as 'failures=3', so it leaves its line unpainted
+_ERROR_KEYWORD_RE = re.compile(r"\b(?:failures?|failed|forbidden|timeout)\b(?!\s*=)")
+# A debug trace line records what the tool tried, including attempts that fail and are then handled, so it keeps
+# its own colours instead of being painted as the failure it reports
+_DEBUG_LINE_RE = re.compile(r"^\[debug \d{2}:\d{2}:\d{2}\]")
+# Doctor status markers, coloured with the same theme parts the reference tools use for them
+_DOCTOR_MARK_RE = re.compile(r"^\[(PASS|WARN|FAIL|SKIP)\]")
+_DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+# Quoted names such as game titles. At least one word character is required so a run of ASCII art between two
+# apostrophes is not read as a name. The closing quote has to be followed by whitespace, punctuation or the end
+# of the line, so a title's own apostrophe does not end the name early: "Tom Clancy's Rainbow Six Siege"
+_QUOTED_CONTENT_RE = re.compile(r"(')([^\n]*?\w[^\n]*?)(')(?=[\s.,;:!?)\]]|$)")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since a log or state destination is
+# not content. Game titles routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# A quoted '<name>' inside a printed command is the placeholder the reader has to replace, not a game title
+_QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
+
+# A quoted command-line option is part of an instruction rather than a name
+_QUOTED_OPTION_RE = re.compile(r"^-")
+
+# A quoted piece of a URL, such as the '?code=' a prompt points at. A title may end in a question mark, so only
+# a leading one counts
+_QUOTED_URL_PART_RE = re.compile(r"^\?|[=&]|://")
+_ONLINE_WORD_RE = re.compile(r"\b(ONLINE)\b")
+_AWAY_WORD_RE = re.compile(r"\b(AWAY)\b")
+_OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE)\b")
+# The verbs the monitoring loop uses to report an activity change, coloured like the state they move to
+_GAME_STARTED_RE = re.compile(r"\bstarted playing\b")
+_GAME_STOPPED_RE = re.compile(r"\bstopped playing\b")
+_STATUS_CHANGE_RE = re.compile(r"\b(?:changed status|changed game)\b")
+
+
+# Builds an ANSI escape sequence from a style description string
+def _build_ansi_sequence(style_str):
+    if not style_str:
+        return ""
+    parts = re.split(r"[+ ]+", str(style_str).strip().lower())
+    codes = [_STYLE_CODES[part] for part in parts if part in _STYLE_CODES]
+    return f"\033[{';'.join(codes)}m" if codes else ""
+
+
+# Detects whether the given output stream likely supports ANSI colours
+def _stream_supports_color(stream):
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if os.getenv("NO_COLOR"):
+        return False
+    # On Windows with colorama, skip the TERM check since colorama handles the ANSI translation itself
+    if not (colorama_init and platform.system() == "Windows"):
+        if os.getenv("TERM", "").lower() in ("", "dumb", "unknown"):
+            return False
+    # A piped stdin usually means the output is being captured, so escape codes would end up in a file
+    if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
+        return False
+    return True
+
+
+# Initializes colour handling from the configuration and the terminal's capabilities
+def init_color_output(stream):
+    global COLOR_ENABLED, _COLOR_STYLES
+
+    # Windows needs colorama started before the support check, since it is what enables ANSI there
+    if colorama_init and platform.system() == "Windows":
+        try:
+            colorama_init(autoreset=False)
+        except Exception as exc:
+            debug_print("Colorama initialisation", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+
+    COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
+    if not COLOR_ENABLED:
+        _COLOR_STYLES = {}
+        return
+
+    user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
+    theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
+
+    # A config written against an older key name still wins over the default, unless it also sets the current name
+    for legacy_name, current_name in _THEME_KEY_ALIASES.items():
+        if user_theme and legacy_name in user_theme and current_name not in user_theme:
+            theme[current_name] = user_theme[legacy_name]
+
+    _COLOR_STYLES = {name: sequence for name, style in theme.items() if (sequence := _build_ansi_sequence(style))}
+
+
+# Applies a configured colour style, named by logical part, to the given text
+def colorize(part, text):
+    if not COLOR_ENABLED:
+        return text
+    start = _COLOR_STYLES.get(part)
+    return f"{start}{text}{ANSI_RESET}" if start else text
+
+
+# Returns the coloured representation of one Xbox presence status word
+def colorize_status(status_text):
+    status = (status_text or "").strip().lower()
+    if status in ("online", "active", "available", "yes"):
+        key = "status_active"
+    elif status == "away":
+        key = "status_away"
+    elif status in ("inactive", "no"):
+        key = "status_inactive"
+    elif status == "offline":
+        key = "status_offline"
+    else:
+        key = "status_other"
+    return colorize(key, status_text)
+
+
+# Splits a recognized output label from its value without applying a backtracking expression
+def _split_output_label(value, labels):
+    body = value.rstrip("\n")
+    cursor = len(body) - len(body.lstrip())
+    if body[cursor:cursor + 1] == "*":
+        cursor += 1
+        cursor += len(body[cursor:]) - len(body[cursor:].lstrip())
+    for label in labels:
+        if not body.startswith(label, cursor):
+            continue
+        value_start = cursor + len(label)
+        value_start += len(body[value_start:]) - len(body[value_start:].lstrip())
+        if value_start == cursor + len(label):
+            return None
+        return body[:value_start], body[value_start:]
+    return None
+
+
+# Applies a block style while preserving the highlights already inside the line
+def _apply_style_nested(line, style_name):
+    start_style = _COLOR_STYLES.get(style_name)
+    if not start_style:
+        return line
+    # Every internal reset returns to the block style instead of to plain, so one span cannot cancel the block
+    line = f"{start_style}{line}{ANSI_RESET}"
+    line = line.replace(ANSI_RESET, f"{ANSI_RESET}{start_style}")
+    if line.endswith(f"{ANSI_RESET}{start_style}"):
+        line = line[:-len(start_style)]
+    return line
+
+
+# Applies one substitution only to the parts of a line that are not already inside a colour span, so a later
+# rule cannot reclaim text an earlier rule has already coloured
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
+
+
+# Colours one quoted name unless the quoted value is shaped like a file name or a path
+def _colorize_quoted_name(match, style_name):
+    name = match.group(2)
+    if _QUOTED_FILE_LIKE_RE.search(name) or _QUOTED_PLACEHOLDER_RE.match(name) or _QUOTED_OPTION_RE.match(name) or _QUOTED_URL_PART_RE.search(name):
+        return match.group(0)
+    # What sits right before the quote decides the colour, so a quoted gamertag is not read as a game title
+    if _QUOTED_USER_CONTEXT_RE.search(match.string[:match.start()]):
+        style_name = "username"
+    return f"{match.group(1)}{colorize(style_name, name)}{match.group(3)}"
+
+
+# Applies the colour rules to a single output line
+def _colorize_line(line):
+    lowered = line.lower()
+
+    # The notification summary row carries its own On/Off state word
+    notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
+    if notification_match:
+        prefix, state, suffix = notification_match.groups()
+        return f"{prefix}{colorize('boolean_true' if state == 'On' else 'boolean_false', state)}{suffix}"
+
+    # Doctor status markers keep the rest of their line plain so long labels stay readable
+    doctor_match = _DOCTOR_MARK_RE.match(line)
+    if doctor_match:
+        return colorize(_DOCTOR_MARK_STYLES[doctor_match.group(1)], doctor_match.group(0)) + line[doctor_match.end():]
+
+    # Timestamp lines get a dimmed label and a coloured value
+    labeled_value = _split_output_label(line, ("Timestamp:",))
+    if labeled_value:
+        label, rest = labeled_value
+        return f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}" + ("\n" if line.endswith("\n") else "")
+
+    # Any '<something> URL:' row is a link, checked before the label table so 'Profile URL:' is not read as a name
+    if _split_output_label(line, ("URL:",)) or " URL:" in line:
+        return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
+
+    # Status rows report the monitored player's presence
+    labeled_value = _split_output_label(line, ("STATUS:", "Status:"))
+    if labeled_value:
+        label, status = labeled_value
+        return f"{label}{colorize_status(status)}" + ("\n" if line.endswith("\n") else "")
+
+    # Labelled Xbox metadata rows keep their label plain and colour only the value
+    for labels, style_name in _LABEL_STYLES:
+        labeled_value = _split_output_label(line, labels)
+        if not labeled_value:
+            continue
+        label, rest = labeled_value
+        return f"{label}{colorize(style_name, rest)}" + ("\n" if line.endswith("\n") else "")
+
+    # Highlight the gamertag named inside a sentence
+    line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('username', mo.group(3))}", line)
+
+    # Highlight counters and their differences
+    line = _sub_outside_color(_FROM_TO_COUNT_RE, lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)
+    line = _sub_outside_color(_DIFF_COUNT_UP_RE, lambda mo: colorize("count_up", mo.group(0)), line)
+    line = _sub_outside_color(_DIFF_COUNT_DOWN_RE, lambda mo: colorize("count_down", mo.group(0)), line)
+
+    # Highlight durations
+    line = _sub_outside_color(_DURATION_RE, lambda mo: colorize("duration", mo.group(0)), line)
+
+    # Highlight date ranges before single dates so a range is not split into two dates
+    line = _sub_outside_color(_SHORT_RANGE_DATE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_DATE_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_HOUR_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_LONG_DATE_RE, lambda mo: colorize("date", mo.group(0)), line)
+    line = _sub_outside_color(_TIME_ONLY_RE, lambda mo: colorize("date", mo.group(0)), line)
+
+    # Highlight URLs and links
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
+
+    # Highlight quoted names. A line that is only a quoted string is a free-form description, so it stays plain
+    if not line.lstrip().startswith("'"):
+        line = _sub_outside_color(_QUOTED_CONTENT_RE, lambda mo: _colorize_quoted_name(mo, "game"), line)
+
+    # Highlight boolean values
+    line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
+
+    # Highlight the presence keywords and the verbs that report an activity change
+    line = _sub_outside_color(_ONLINE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
+    line = _sub_outside_color(_AWAY_WORD_RE, lambda mo: colorize("status_away", mo.group(0)), line)
+    line = _sub_outside_color(_OFFLINE_WORD_RE, lambda mo: colorize("status_offline", mo.group(0)), line)
+    line = _sub_outside_color(_GAME_STARTED_RE, lambda mo: colorize("status_active", mo.group(0)), line)
+    line = _sub_outside_color(_GAME_STOPPED_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
+    line = _sub_outside_color(_STATUS_CHANGE_RE, lambda mo: colorize("status_change", mo.group(0)), line)
+
+    # Block highlighting, applied last so the colours added above survive through the nesting logic
+    is_debug_line = bool(_DEBUG_LINE_RE.match(lowered))
+    is_error = not is_debug_line and (bool(_ERROR_KEYWORD_RE.search(lowered)) or "critical:" in lowered or "* error" in lowered)
+    is_warning = any(word in lowered for word in ("* warning:", "caution:"))
+    is_signal = "* signal" in lowered and "received" in lowered
+
+    if lowered.startswith("to fix:"):
+        line = _apply_style_nested(line, "info")
+    elif is_error:
+        line = _apply_style_nested(line, "error")
+    elif is_warning:
+        line = _apply_style_nested(line, "warning")
+    elif is_signal:
+        line = _apply_style_nested(line, "signal")
+    elif "sending email" in lowered:
+        line = _apply_style_nested(line, "email")
+
+    return line
+
+
+# Applies colourisation to multi-line text, preserving the line breaks
+def apply_color_to_text(text):
+    if not COLOR_ENABLED or not isinstance(text, str):
+        return text
+    parts = []
+    for chunk in text.splitlines(keepends=True):
+        if chunk.endswith(("\n", "\r")):
+            stripped = chunk.rstrip("\r\n")
+            parts.append(_colorize_line(stripped) + chunk[len(stripped):])
+        else:
+            parts.append(_colorize_line(chunk))
+    return "".join(parts)
+
+
+# Cuts every line to the configured display width, measuring what the terminal shows rather than the byte count
+def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        return message
+    truncated_lines = []
+    for line in message.split("\n"):
+        expanded_line = line.expandtabs(tabsize)
+        current_width = 0
+        truncated = []
+        position = 0
+        while position < len(expanded_line):
+            # A colour sequence is copied through free of charge, so styling never eats into the visible width
+            escape = SGR_SEQUENCE_RE.match(expanded_line, position)
+            if escape:
+                truncated.append(escape.group(0))
+                position = escape.end()
+                continue
+            char_width = wcwidth(expanded_line[position])
+            if char_width is None or char_width < 0:
+                char_width = 0
+            if current_width + char_width > truncate_width:
+                break
+            truncated.append(expanded_line[position])
+            current_width += char_width
+            position += 1
+        truncated_lines.append("".join(truncated))
+    return "\n".join(truncated_lines)
+
+
+# Resolves the configured and command-line truncation settings, expanding the terminal-width sentinel
+def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
+    truncate_chars = configured_value if cli_value is None else cli_value
+    if truncate_chars:
+        try:
+            import wcwidth  # noqa: F401
+        except ImportError:
+            print_recovery_advice(missing_dependency_advice("wcwidth", "Screen truncation is disabled"), label="Warning")
+            print()
+            return 0
+    if logging_disabled:
+        return 0
+    if truncate_chars == 999:
+        terminal_size = shutil.get_terminal_size()
+        print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+        return terminal_size.columns
+    return truncate_chars
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
-        self.terminal = sys.stdout
+        # The early sanitizing stream is unwrapped so sanitizing and colouring happen exactly once. Writing
+        # through it would colourise every line twice, and the second pass no longer sees the label it
+        # already coloured, so it would recolour the value with the generic rules
+        self.terminal = unwrap_terminal_stream(sys.stdout)
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         global STDOUT_AT_START_OF_LINE
         if message:
             STDOUT_AT_START_OF_LINE = message.endswith('\n')
-        self.terminal.write(message)
-        # Expand tabs for file output (stdout remains untouched)
-        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        message = sanitize_terminal_text(message)
+        # Expand tabs for file output and drop every escape, so the log file stays plain text
+        self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", message).expandtabs(8)))
+        # Truncated before colouring, so escape sequences never count toward the displayed width
+        if TRUNCATE_CHARS:
+            message = truncate_string_per_line(message, TRUNCATE_CHARS)
+        self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
         self.logfile.flush()
 
     # Writes text the log file should keep but the terminal has already shown, or does not need
     def log_only(self, message):
-        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", sanitize_terminal_text(message)).expandtabs(8)))
         self.logfile.flush()
 
     # Writes text meant for the reader at the terminal, which the log file has its own version of
@@ -986,11 +1525,55 @@ class Logger(object):
         global STDOUT_AT_START_OF_LINE
         if message:
             STDOUT_AT_START_OF_LINE = message.endswith('\n')
-        self.terminal.write(message)
+        message = sanitize_terminal_text(message)
+        if TRUNCATE_CHARS:
+            message = truncate_string_per_line(message, TRUNCATE_CHARS)
+        self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
 
     def flush(self):
         pass
+
+
+# Sanitizing and colouring stdout wrapper, used before the logging policy has been resolved
+class TerminalStream(object):
+    # Stores the wrapped terminal stream
+    def __init__(self, stream):
+        self.terminal = stream
+
+    # Writes one sanitized and coloured message to the wrapped terminal
+    def write(self, message):
+        global STDOUT_AT_START_OF_LINE
+        if message:
+            STDOUT_AT_START_OF_LINE = message.endswith('\n')
+        message = sanitize_terminal_text(message)
+        if TRUNCATE_CHARS:
+            message = truncate_string_per_line(message, TRUNCATE_CHARS)
+        self.terminal.write(apply_color_to_text(message))
+        self.terminal.flush()
+
+    # Writes one message to the terminal while matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # Discards log-only output while file logging is not set up
+    def log_only(self, message):
+        return
+
+    # Flushes the wrapped terminal
+    def flush(self):
+        self.terminal.flush()
+
+    # Forwards the remaining stream attributes to the wrapped terminal
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
+
+
+# Returns the underlying terminal behind any number of sanitizing stream wrappers
+def unwrap_terminal_stream(stream):
+    while isinstance(stream, TerminalStream):
+        stream = stream.terminal
+    return stream
 
 
 # Signal handler when user presses Ctrl+C
@@ -1218,7 +1801,7 @@ def _wizard_ask_choice(question, options, default_index=0, input_func=None):
     print(question)
     for index, (label, description) in enumerate(options, 1):
         marker = " (default)" if index - 1 == default_index else ""
-        print(f"  {index}. {label}{marker}")
+        print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker) if marker else ''}")
         if description:
             for line in description.splitlines():
                 print(f"     {line}")
@@ -1426,8 +2009,8 @@ def _wizard_destinations(config_file=None, env_file=None):
 # Confirms replacing an existing config before any question is asked, so a long run cannot end in a surprise
 def _wizard_choose_config_destination(config_path, input_func=None):
     selected = Path(config_path)
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration and keep a timestamped backup?", default=False, input_func=input_func):
-        alternative = _wizard_ask_text("Another config destination, or leave empty to cancel", input_func=input_func)
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False, input_func=input_func):
+        alternative = _wizard_ask_text("Another config destination or leave empty to cancel", input_func=input_func)
         if not alternative:
             return None
         try:
@@ -1458,7 +2041,7 @@ def _wizard_queue_secret(state, key, value, input_func=None):
     if not value:
         return False
     if dotenv_contains_key(state.env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False, input_func=input_func):
-        print(f"  The existing {key} is kept, without being displayed or rewritten.")
+        print(f"  Existing {key} will be retained without being displayed or rewritten.")
         return False
     state.secret_updates[key] = value
     return True
@@ -1497,7 +2080,7 @@ WIZARD_SECTIONS = (
     ("Polling", "Polling intervals", "Change how often Xbox Live is checked.", ("XBOX_CHECK_INTERVAL", "XBOX_ACTIVE_CHECK_INTERVAL"), ()),
     ("Authentication", "Authentication", "Enter the Microsoft application credentials and authorize again.", (), ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET")),
     ("Email", "Email notifications", "Change SMTP details and which events are mailed.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
-    ("Output", "Output files", "Change the log and CSV destinations.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
+    ("Output", "Output files", "Change the log, CSV and status file destinations.", ("DISABLE_LOGGING", "CSV_FILE", "XBOX_STATUS_FILE"), ()),
 )
 
 
@@ -1716,6 +2299,7 @@ def _wizard_email_answer_missing(state, key):
 def _wizard_collect_output_section(state, input_func=None):
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
     state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func)
+    state.config_values["XBOX_STATUS_FILE"] = _wizard_ask_text("Optional status file path (blank uses the default next to the tool)", default=str(state.config_values.get("XBOX_STATUS_FILE") or ""), input_func=input_func)
 
 
 # Runs one editable section again after resetting only the keys it owns
@@ -1764,11 +2348,12 @@ def _wizard_print_setup_summary(state):
         ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
         ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
+        ("Status file", state.config_values.get("XBOX_STATUS_FILE") or "default"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", install_method_display_name()),
     ]
-    print("\nSetup summary\n")
+    print("\n" + colorize("header", "Setup summary") + "\n")
     _wizard_print_summary_rows(rows)
 
 
@@ -1794,7 +2379,7 @@ def _wizard_review_setup(state, input_func=None, getpass_func=None):
 
 # Prints where setup will write and which install method the printed commands are written for
 def _wizard_print_setup_destinations(config_path, env_path):
-    print(f"Detected install method: {install_method_display_name()}")
+    print(f"Detected install method: {colorize('username', install_method_display_name())}")
     print(f"Configuration:           {config_path}")
     print(f"Dotenv:                  {env_path}\n")
 
@@ -1861,7 +2446,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print_recovery_advice(classify_recovery_error(context="file.unwritable", detail=str(exc)))
         return 1
 
-    print("Setup Wizard\n")
+    print(colorize("header", "Setup Wizard") + "\n")
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.\n")
@@ -1875,7 +2460,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         # Asked before anything else, so a config that has to be replaced is agreed to rather than discovered at Save
         chosen_config = _wizard_choose_config_destination(config_path, input_func=input_func)
         if chosen_config is None:
-            print("\nSetup cancelled. Destination files were not changed.")
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             return 1
         state.config_path = chosen_config
         print()
@@ -1890,11 +2475,11 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         _wizard_collect_output_section(state, input_func=input_func)
         saved = _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func)
     except (EOFError, KeyboardInterrupt):
-        print("Setup cancelled. Destination files were not changed.")
+        print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         return 1
 
     if not saved:
-        print("\nSetup cancelled. Destination files were not changed.")
+        print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
         return 1
 
     # Everything above only filled the state, so this is the first and only point anything reaches disk
@@ -1922,7 +2507,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the Xbox tokens to '{tokens_path}': {exc}"))
             return 1
 
-    print("\nSaved files\n")
+    print("\n" + colorize("header", "Saved files") + "\n")
     print(f"  Configuration: {state.config_path}")
     if config_backup:
         print(f"  Backup:        {config_backup}")
@@ -1942,13 +2527,13 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             doctor_exit = run_doctor(xbox_gamertag=state.target, config_path=str(state.config_path), env_path=str(state.env_path) if secrets_written else None)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
-        print("Setup is saved. Use the commands below when ready.")
+        print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
     env_arguments = ["--env-file", str(state.env_path)] if secrets_written else []
     # A saved target is already in the config file, so the printed commands stay short
     target_arguments = [] if state.persist_target or not state.target else [state.target]
     paths = ["--config-file", str(state.config_path)] + env_arguments
-    print("\nNext steps\n")
+    print("\n" + colorize("header", "Next steps") + "\n")
     print_labelled_command("Check setup again:", tool_command("--doctor", *target_arguments, *paths))
     start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
     print_labelled_command(start_label, tool_command(*target_arguments, *paths))
@@ -1958,7 +2543,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         start_monitoring = bool(state.target and _wizard_credentials_ready(state) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional launch
-        print("Setup is saved. Start monitoring with the command above when ready.")
+        print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
         return 0
     if start_monitoring:
         launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if secrets_written else None)
@@ -2014,14 +2599,14 @@ def print_welcome_screen(input_func=None, interactive=None, config_file=None, en
     print_labelled_command("Easiest start (guided setup wizard):", f"{prefix} --setup", "   (or just answer Y below)" if terminal_is_interactive else "")
     print_labelled_command("Check setup before monitoring:", f"{prefix} --doctor <xbox_gamertag>")
     print_labelled_command("Show profile details and exit:", f"{prefix} -i <xbox_gamertag>")
-    print(f"Full options: {prefix} --help")
+    print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if terminal_is_interactive:
         try:
             start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
         except (EOFError, KeyboardInterrupt):
             # This prompt sits outside the wizard, which handles its own interrupts
-            print("Setup cancelled.")
+            print(colorize("warning", "Setup cancelled."))
             return 1
         if start_setup:
             print()
@@ -2513,6 +3098,8 @@ def tls_context():
 
 # Returns the file the tool saves the last seen status to, so a restart resumes from it
 def resolve_status_file(xbox_gamertag):
+    if XBOX_STATUS_FILE:
+        return os.path.expanduser(XBOX_STATUS_FILE)
     return f"xbox_{xbox_gamertag}_last_status.json"
 
 
@@ -2564,7 +3151,7 @@ STARTUP_BANNER = r"""
 
 # Prints the ASCII startup banner with its separately aligned version
 def print_startup_banner():
-    print(STARTUP_BANNER)
+    print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
     print(f"{'':21}v{VERSION}\n")
 
 
@@ -2858,7 +3445,8 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
-        email_msg["Subject"] = str(Header(subject, 'utf-8'))
+        # A game title or bio arrives from Xbox Live, so a line break in it would start a second header
+        email_msg["Subject"] = str(Header(sanitize_email_header(subject), 'utf-8'))
 
         if body:
             part1 = MIMEText(body, 'plain')
@@ -3713,7 +4301,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
         hdr = f"{'#'.ljust(w_num)}  {'Title'.ljust(w_title)}  {'Last played'.ljust(w_last)}  {'Total'.ljust(w_total)}"
         sep = f"{'-' * w_num}  {'-' * w_title}  {'-' * w_last}  {'-' * w_total}"
-        print(hdr)
+        print(colorize("section", hdr))
         print(sep)
 
         for i, title in enumerate(recent_games[:games_count], 1):
@@ -3808,7 +4396,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
         hdr = f"{'Date'.ljust(w_date)}  {'Game'.ljust(w_game)}  {'Achievement'.ljust(w_ach)}"
         sep = f"{'-' * w_date}  {'-' * w_game}  {'-' * w_ach}"
-        print(hdr)
+        print(colorize("section", hdr))
         print(sep)
 
         for ach, title_name in all_recent_achievements[:achievements_count]:
@@ -3854,11 +4442,53 @@ def find_config_file(cli_path=None):
 # Settings an older version wrote that this version no longer defines, ignored instead of rejected
 RETIRED_CONFIG_SETTINGS = frozenset(())
 
+# Settings the template ships commented out. They are still accepted, since the template is the allowlist
+COMMENTED_CONFIG_SETTINGS = frozenset(("COLOR_THEME",))
+
 
 # Collects the setting names the built-in configuration template defines
 def _config_allowed_names():
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
-    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
+
+
+# Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
+# not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
+def argparse_color_kwargs() -> dict[str, Any]:
+    return {"color": False} if sys.version_info >= (3, 14) else {}
+
+
+# Returns the --config-file value straight from the arguments, before argparse has run
+def early_config_file_argument(arguments=None):
+    values = list(sys.argv[1:] if arguments is None else arguments)
+    for index, argument in enumerate(values):
+        if argument == "--config-file" and index + 1 < len(values):
+            return values[index + 1]
+        if argument.startswith("--config-file="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+# Applies the config settings that take effect before argument parsing, leaving errors to the later load.
+# The screen clear and the startup banner both run before argparse, so a configured CLEAR_SCREEN or
+# COLORED_OUTPUT would otherwise only take effect after the first output was already written
+def apply_early_output_config():
+    global CLEAR_SCREEN, COLORED_OUTPUT
+
+    try:
+        cli_path = early_config_file_argument()
+        config_path = find_config_file(os.path.expanduser(cli_path) if cli_path else None)
+        if not config_path:
+            return
+        # Reading a config no longer runs it, so this early peek cannot have side effects
+        values = parse_config_content(Path(config_path).read_text(encoding="utf-8"), str(config_path))
+    except Exception:
+        # A broken or unreadable config is reported with full detail once the arguments are parsed
+        return
+    if isinstance(values.get("CLEAR_SCREEN"), bool):
+        CLEAR_SCREEN = values["CLEAR_SCREEN"]
+    if isinstance(values.get("COLORED_OUTPUT"), bool):
+        COLORED_OUTPUT = values["COLORED_OUTPUT"]
 
 
 # Parses allowlisted literal config assignments without executing any file content
@@ -4120,7 +4750,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             status_online_start_ts = status_ts_old
             status_online_start_ts_old = status_online_start_ts
 
-        xbox_last_status_file = f"xbox_{xbox_gamertag}_last_status.json"
+        xbox_last_status_file = resolve_status_file(xbox_gamertag)
         last_status_read = []
         last_status_ts = 0
         last_status = ""
@@ -4489,7 +5119,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -4528,6 +5158,19 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # The screen clear and the startup banner both run before the arguments are parsed, so the few settings
+    # that decide them are read here too
+    apply_early_output_config()
+
+    # Read straight from sys.argv because argparse has not run yet, and the banner is printed before it does
+    if "--no-color" in sys.argv:
+        COLORED_OUTPUT = False
+
+    init_color_output(stdout_bck)
+
+    if not isinstance(sys.stdout, TerminalStream):
+        sys.stdout = TerminalStream(sys.stdout)
+
     # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
     if "--debug" in sys.argv:
         DEBUG_MODE = True
@@ -4539,7 +5182,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="xbox_monitor",
-        description=("Monitor an Xbox user's playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), epilog=help_examples(), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor an Xbox user's playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), epilog=help_examples(), formatter_class=argparse.RawTextHelpFormatter, **argparse_color_kwargs()
     )
 
     # Positional
@@ -4731,11 +5374,32 @@ def main():
         help="Write status & game changes to CSV"
     )
     opts.add_argument(
+        "--status-file",
+        dest="status_file",
+        metavar="PATH",
+        type=str,
+        help="File to save the last seen status to (default: xbox_<xbox_gamertag>_last_status.json)"
+    )
+    opts.add_argument(
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
         default=None,
         help="Disable logging to xbox_monitor_<gamertag>.log"
+    )
+    opts.add_argument(
+        "--no-color",
+        dest="no_color",
+        action="store_true",
+        default=None,
+        help="Disable coloured output in the terminal"
+    )
+    opts.add_argument(
+        "--truncate",
+        dest="truncate",
+        metavar="CHARS",
+        type=int,
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
     )
     opts.add_argument(
         "--verbose",
@@ -4788,6 +5452,12 @@ def main():
 
     # Applied again, so a saved DEBUG_MODE cannot switch off a flag the user just typed
     apply_diagnostic_cli_flags(args)
+
+    # Re-initialised so a COLORED_OUTPUT or COLOR_THEME from the config file takes effect before the welcome
+    # screen, the setup wizard or doctor print anything, with --no-color still winning over both
+    if args.no_color:
+        COLORED_OUTPUT = False
+    init_color_output(stdout_bck)
 
     # A gamertag given on the command line always wins over the saved one
     if not args.xbox_gamertag and XBOX_GAMERTAG:
@@ -4913,8 +5583,15 @@ def main():
     elif CSV_FILE:
         CSV_FILE = os.path.expanduser(CSV_FILE)
 
+    if args.status_file:
+        XBOX_STATUS_FILE = os.path.expanduser(args.status_file)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    # Resolved after DISABLE_LOGGING, because truncation only applies to what the terminal shows and a run
+    # with no log file would otherwise lose the cut text for good
+    TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
 
     if args.notify_active_inactive is True:
         ACTIVE_INACTIVE_NOTIFICATION = True

@@ -9,12 +9,12 @@ The distributed package contains no vendored third-party source. It declares the
 | Component | License | Use |
 | --- | --- | --- |
 | [python-xbox](https://pypi.org/project/python-xbox/) | MIT | Xbox Live API client for presence, games and achievements |
-| [requests](https://pypi.org/project/requests/) | Apache-2.0 | HTTP for the monitored service, notifications and artwork |
 | [python-dateutil](https://pypi.org/project/python-dateutil/) | Apache-2.0 or BSD-3-Clause | Timestamp parsing and relative date arithmetic |
 | [httpx](https://pypi.org/project/httpx/) | BSD-3-Clause | Async HTTP transport used by the Xbox Live client |
 | [pytz](https://pypi.org/project/pytz/) | MIT | Timezone conversion for displayed and logged times |
 | [tzlocal](https://pypi.org/project/tzlocal/) | MIT | Local timezone detection |
 | [python-dotenv](https://pypi.org/project/python-dotenv/) | BSD-3-Clause | Reading secrets from `.env` |
+| [wcwidth](https://pypi.org/project/wcwidth/) | MIT | Measuring display width for `TRUNCATE_CHARS` |
 
 ## Build, test and lint dependencies
 
