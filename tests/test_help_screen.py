@@ -100,3 +100,11 @@ def test_an_interrupt_on_the_welcome_screen_reports_the_cancellation(capsys):
 def test_the_welcome_screen_keeps_one_blank_line_between_blocks(capsys):
     monitor.print_welcome_screen(interactive=False)
     assert "\n\n\n" not in capsys.readouterr().out
+
+
+# Verifies both file flags advertise the `none` sentinel, since either can switch its own discovery off
+def test_both_file_flags_advertise_the_none_sentinel(monkeypatch, capsys):
+    compact = " ".join(help_output(monkeypatch, capsys).split())
+
+    assert "Location of the optional config file (auto-search if not set, disable with 'none')" in compact
+    assert "Path to optional dotenv file (auto-search if not set, disable with 'none')" in compact

@@ -1,5 +1,9 @@
 """Tests that a config file is read as data and never executed."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 import xbox_monitor as monitor
@@ -146,3 +150,15 @@ def test_a_retired_setting_is_ignored_and_reported(tmp_path, monkeypatch, capsys
     assert namespace["XBOX_CHECK_INTERVAL"] == 300
     assert "TOOL_ALIVE_INTERVAL" not in namespace
     assert "no longer uses, which were ignored: TOOL_ALIVE_INTERVAL" in out
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Verifies `--config-file none` switches discovery off instead of being read as a missing file
+def test_config_file_none_disables_discovery(tmp_path):
+    result = subprocess.run([sys.executable, str(PROJECT_ROOT / "xbox_monitor.py"), "--config-file", "none", "--env-file", "none", "--no-color"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+    output = result.stdout + result.stderr
+    assert "Config file 'none' does not exist" not in output
+    assert "XBOX_GAMERTAG needs to be defined" in output

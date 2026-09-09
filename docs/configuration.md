@@ -29,6 +29,8 @@ By default the tool looks for `xbox_monitor.conf` in the current directory, then
 xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
 ```
 
+`--config-file none` switches automatic config discovery off for one run.
+
 ## Target Account
 
 Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on the command line always wins over the saved one. With a saved value you can start monitoring with no arguments at all:
