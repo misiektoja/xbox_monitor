@@ -46,9 +46,9 @@ def test_the_debug_flag_beats_a_config_that_disables_it(tmp_path, monkeypatch, c
     seen = {}
     real_load = monitor.load_config_file
 
-    def observing_load(config_path, namespace=None, report_errors=True):
+    def observing_load(config_path, namespace=None, report_errors=True, advice_out=None):
         seen["during_load"] = monitor.DEBUG_MODE
-        return real_load(config_path, namespace, report_errors)
+        return real_load(config_path, namespace, report_errors, advice_out)
 
     monkeypatch.setattr(monitor, "load_config_file", observing_load)
 
