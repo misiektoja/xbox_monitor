@@ -6074,13 +6074,13 @@ def main():
         "--set-webhook-url",
         dest="set_webhook_url",
         action="store_true",
-        help="Enter the Discord or ntfy webhook URL privately and save it to the dotenv file",
+        help="Save a Discord or ntfy webhook URL through a hidden prompt",
     )
     conf.add_argument(
         "--doctor",
         dest="doctor",
         action="store_true",
-        help="Run preflight checks on this setup and exit",
+        help="Run read-only preflight checks and report what is ready and what is not",
     )
 
     # API credentials
@@ -6206,7 +6206,24 @@ def main():
         "--send-test-webhook",
         dest="send_test_webhook",
         action="store_true",
-        help="Send one test webhook to verify the destination settings"
+        help="Send one test webhook without starting monitoring"
+    )
+
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=positive_interval_arg,
+        help="Polling interval when user is offline"
+    )
+    times.add_argument(
+        "-k", "--active-interval",
+        dest="active_interval",
+        metavar="SECONDS",
+        type=positive_interval_arg,
+        help="Polling interval when user is online"
     )
 
     # User information & listing
@@ -6247,23 +6264,6 @@ def main():
         type=int,
         default=10,
         help="Limit number of recently played games to display (default: 10)"
-    )
-
-    # Intervals & timers
-    times = parser.add_argument_group("Intervals & timers")
-    times.add_argument(
-        "-c", "--check-interval",
-        dest="check_interval",
-        metavar="SECONDS",
-        type=positive_interval_arg,
-        help="Polling interval when user is offline"
-    )
-    times.add_argument(
-        "-k", "--active-interval",
-        dest="active_interval",
-        metavar="SECONDS",
-        type=positive_interval_arg,
-        help="Polling interval when user is online"
     )
 
     opts = parser.add_argument_group("Features & output")

@@ -17,11 +17,18 @@ def help_output(monkeypatch, capsys):
     return capsys.readouterr().out
 
 
-# Verifies every argument group is named for what a reader is looking for rather than for the code behind it
-def test_the_argument_groups_say_what_they_are_for(monkeypatch, capsys):
+# Verifies the argument groups carry the names and the order shared with the sibling monitors
+def test_the_argument_groups_use_the_shared_names_in_order(monkeypatch, capsys):
     out = help_output(monkeypatch, capsys)
-    for heading in ("Configuration & dotenv files:", "API credentials:", "Email notifications:", "User information & listing:", "Intervals & timers:", "Features & output:"):
-        assert heading in out
+    titles = ['Configuration & dotenv files', 'API credentials', 'Email notifications', 'Webhook notifications', 'Intervals & timers', 'User information & listing', 'Features & output']
+
+    positions = []
+    for title in titles:
+        marker = f"\n{title}:\n"
+        assert marker in out, f"the '{title}' group is missing"
+        positions.append(out.index(marker))
+
+    assert positions == sorted(positions), "the argument groups are not in the shared order"
 
 
 # Verifies the commands that write a secret are listed with the files they write
@@ -108,3 +115,22 @@ def test_both_file_flags_advertise_the_none_sentinel(monkeypatch, capsys):
 
     assert "Location of the optional config file (auto-search if not set, disable with 'none')" in compact
     assert "Path to optional dotenv file (auto-search if not set, disable with 'none')" in compact
+
+
+# The one sentence each shared one-shot flag uses across the sibling monitors
+SHARED_FLAG_HELP = {
+    "--setup": "Run the guided setup and write a ready-to-run configuration",
+    "--doctor": "Run read-only preflight checks and report what is ready and what is not",
+    "--set-webhook-url": "Save a Discord or ntfy webhook URL through a hidden prompt",
+    "--set-smtp-password": "Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
+    "--send-test-email": "Send test email to verify SMTP settings",
+    "--send-test-webhook": "Send one test webhook without starting monitoring",
+}
+
+
+# Verifies each shared one-shot flag describes itself with the sentence the sibling monitors use
+def test_the_shared_flags_use_the_shared_help_sentences(monkeypatch, capsys):
+    compact = " ".join(help_output(monkeypatch, capsys).split())
+
+    for flag, sentence in SHARED_FLAG_HELP.items():
+        assert f"{flag} {sentence}" in compact, f"the '{flag}' help sentence has drifted from the shared wording"
