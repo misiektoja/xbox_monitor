@@ -3437,8 +3437,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         # Classified from the error, because the detail names the endpoint rather than the failure
         cause = str(error or "").lower()
         if "timed out" in cause or "timeout" in cause:
-            return make_recovery_advice("network.timeout", "The connectivity endpoint did not answer in time", recovery_fix_with_guide("Check network, DNS, proxy and CHECK_INTERNET_URL settings", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
-        return make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", recovery_fix_with_guide("Check network, DNS, proxy and CHECK_INTERNET_URL settings", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.timeout", "The connectivity endpoint did not answer in time", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True, safe_detail)
+        return make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True, safe_detail)
 
     if context == "smtp.settings":
         return make_recovery_advice("smtp.invalid", f"The SMTP settings are incorrect: {safe_detail}" if safe_detail else "The SMTP settings are incorrect", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run: {tool_command('--send-test-email')}", SMTP_GUIDE_URL), False, safe_detail)

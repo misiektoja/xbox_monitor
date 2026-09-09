@@ -19,7 +19,7 @@ The report covers six sections:
 | **Target** | That the monitored gamertag resolves and shares its activity |
 | **Notifications** | Whether email alerts are on and, if so, whether the SMTP server accepts the configured login. Whether the webhook destination, headers and alert choices can be used |
 
-Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Every `[WARN]` and `[FAIL]` row carries an indented `To fix:` line and a link under its marker. A `[SKIP]` row names a check that could not run and says why. A warning describes a working setup worth reviewing. Only a failure changes the exit code, which is 1 when anything failed and 0 otherwise, so the report can be used in a script.
+Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Every `[WARN]` and `[FAIL]` row carries an indented `To fix:` line under its marker, plus a `Guide:` link when a documentation page covers that row. A `[SKIP]` row names a check that could not run and says why. A warning describes a working setup worth reviewing. Only a failure changes the exit code, which is 1 when anything failed and 0 otherwise, so the report can be used in a script.
 
 When both the input and the output are a terminal and a channel passed, the report offers one real test message for that channel. Nothing is sent without a separate yes and the result is counted in the summary. The webhook check validates the settings without contacting Discord or ntfy, so nothing is published until you approve the test.
 
@@ -35,7 +35,7 @@ Ctrl+C is safe at every question. During `--setup` it reports that the destinati
 
 ## Error Messages and Recovery
 
-Every reported problem carries a category, a one-line summary, a `To fix:` paragraph and a link. The category decides the advice, so the same failure reads the same way wherever it surfaces. A command in the fix text matches how you installed the tool: `xbox_monitor ...` for a PyPI install and `python3 xbox_monitor.py ...` for a downloaded script. It also carries the `--config-file` or `--env-file` you started with.
+Every reported problem carries a category, a one-line summary and a `To fix:` paragraph, plus a `Guide:` link when a documentation page covers it. The category decides the advice, so the same failure reads the same way wherever it surfaces. A command in the fix text matches how you installed the tool: `xbox_monitor ...` for a PyPI install and `python3 xbox_monitor.py ...` for a downloaded script. It also carries the `--config-file` or `--env-file` you started with.
 
 | What you see | What it usually means |
 | --- | --- |

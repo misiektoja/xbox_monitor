@@ -92,7 +92,7 @@ def test_the_classifier_guard_still_inspects_the_source():
     assert all(marker in SOURCE for marker in CLASSIFIER_EXEMPTIONS)
 
 
-# Every fix has to end with the guide line, since the fix paragraph is where a reader looks for the next step
+# A fix ends with the guide line wherever a page covers the failure, since that is where a reader looks next
 def test_every_fix_carries_a_guide_link():
     advice = [
         monitor.classify_recovery_error(context="config.missing"),
@@ -100,9 +100,15 @@ def test_every_fix_carries_a_guide_link():
         monitor.classify_recovery_error(context="target.missing"),
         monitor.classify_recovery_error(http_error(429), context="monitor"),
         monitor.classify_recovery_error(http_error(500), context="monitor"),
-        monitor.classify_recovery_error(socket.timeout(), context="connectivity"),
     ]
     assert all("\nGuide: https://" in item.fix for item in advice)
+
+
+# The connectivity check has no page of its own, and its fix already names the setting to look at
+def test_the_connectivity_fix_carries_no_guide_link():
+    advice = monitor.classify_recovery_error(socket.timeout(), context="connectivity")
+
+    assert advice.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
 
 
 @pytest.mark.parametrize("status, code", [
