@@ -524,3 +524,30 @@ def test_the_custom_webhook_preset_writes_each_answer(monkeypatch, wizard_paths)
     assert values["WEBHOOK_GAME_CHANGE_NOTIFICATION"] is False
     assert values["WEBHOOK_STATUS_NOTIFICATION"] is True
     assert values["WEBHOOK_ERROR_NOTIFICATION"] is False
+
+
+# Verifies every wizard prompt, visible or hidden, is coloured the same way
+def test_wizard_prompts_are_colorized_visible_and_hidden_alike(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    prompts = []
+
+    assert monitor._wizard_ask_secret("Client secret value", getpass_func=lambda prompt: prompts.append(prompt) or "secret") == "secret"
+    assert monitor._wizard_input("Xbox gamertag to monitor: ", input_func=lambda prompt: prompts.append(prompt) or "") == ""
+
+    hidden_prompt, visible_prompt = prompts
+    assert hidden_prompt == monitor.colorize("info", "Client secret value: ")
+    assert visible_prompt == monitor.colorize("info", "Xbox gamertag to monitor: ")
+    assert hidden_prompt.endswith(monitor.ANSI_RESET)
+
+
+# Verifies debug output is off while a hidden wizard answer is read and restored afterwards
+def test_a_hidden_wizard_answer_is_read_with_debug_output_off(monkeypatch):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    seen = []
+
+    answer = monitor._wizard_ask_secret("Client secret value", getpass_func=lambda prompt: seen.append(monitor.DEBUG_MODE) or "secret")
+
+    assert answer == "secret"
+    assert seen == [False]
+    assert monitor.DEBUG_MODE is True

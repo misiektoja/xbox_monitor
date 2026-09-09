@@ -734,3 +734,22 @@ def test_the_doctor_never_reaches_the_connectivity_gate_that_stops_a_normal_run(
     with pytest.raises(SystemExit):
         monitor.main()
     assert "Summary" in capsys.readouterr().out
+
+
+# Verifies the Python row states the minimum it was judged against, whichever way the judgement went
+def test_the_python_row_names_the_minimum_supported_version():
+    below = (monitor.MINIMUM_PYTHON_VERSION[0], monitor.MINIMUM_PYTHON_VERSION[1] - 1, 0)
+
+    supported = monitor.doctor_check_environment()[0]
+    unsupported = monitor.doctor_check_environment(version_info=below)[0]
+
+    assert supported.detail == f"Minimum supported version: {monitor.MINIMUM_PYTHON_VERSION_TEXT}"
+    assert unsupported.detail == supported.detail
+
+
+# Verifies settings that are merely valid take no row, since a value that is fine is not a finding
+def test_valid_intervals_and_separators_take_no_row():
+    labels = [check.label for check in monitor.doctor_check_configuration()]
+
+    assert "Check intervals are set" not in labels
+    assert not any(label.startswith("ASCII log separators") for label in labels)
