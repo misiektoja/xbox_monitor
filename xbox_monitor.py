@@ -544,11 +544,13 @@ DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
 # Imported without a guard, so the tool cannot start when one of these is missing
 DOCTOR_REQUIRED_DEPENDENCIES = (("pythonxbox", "python-xbox"), ("httpx", "httpx"), ("dateutil", "python-dateutil"), ("pytz", "pytz"))
 
-# Guarded imports the tool degrades around, with what stops working and what to do instead
+# Guarded imports the tool degrades around, with what stops working and what to do instead. The last field
+# names the only operating system a row applies to, so a machine it cannot affect is not warned about it
 DOCTOR_OPTIONAL_DEPENDENCIES = (
-    ("tzlocal", "tzlocal", "Used only to auto-detect the local time zone", "Automatic time zone detection is unavailable", "Or set LOCAL_TIMEZONE to a pytz timezone name in the config file"),
-    ("dotenv", "python-dotenv", "Used only to read secrets from a dotenv file", "Secrets cannot be read from a dotenv file", "Or export them as environment variables"),
-    ("wcwidth", "wcwidth", "Used only to measure display width for screen truncation", "Screen truncation is disabled", ""),
+    ("tzlocal", "tzlocal", "Used only to auto-detect the local time zone", "Automatic time zone detection is unavailable", "Or set LOCAL_TIMEZONE to a pytz timezone name in the config file", ""),
+    ("dotenv", "python-dotenv", "Used only to read secrets from a dotenv file", "Secrets cannot be read from a dotenv file", "Or export them as environment variables", ""),
+    ("wcwidth", "wcwidth", "Used only to measure display width for screen truncation", "Screen truncation is disabled", "", ""),
+    ("colorama", "colorama", "Used only for coloured output in the older Windows Command Prompt", "Coloured output may not render in the older Windows Command Prompt", "Or use Windows Terminal, which needs nothing extra", "Windows"),
 )
 
 # An active check interval below this invites the Xbox Live rate limiter, which stops the tool seeing anything
@@ -592,7 +594,7 @@ def make_doctor_check(section, status, label, detail="", advice=None):
         raise ValueError(f"Unsupported doctor status: {status}")
     safe_label = sanitize_error_text(label)
     safe_detail = sanitize_error_text(detail)
-    # Several advice objects carry the same text as their summary, and printing it twice reads as two problems
+    # Several advice objects carry the same text as their summary and printing it twice reads as two problems
     return DoctorCheck(section, status, safe_label, "" if safe_detail == safe_label else safe_detail, advice)
 
 
@@ -614,7 +616,7 @@ def doctor_terminal_stream():
 
 
 # Shows one transient step only on an interactive terminal, erased by overwriting its own width
-# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and an escape
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces and an escape
 # sequence would make that width wrong and leave a styled remnant behind
 def doctor_progress(label):
     global DOCTOR_PROGRESS_WIDTH
@@ -660,7 +662,9 @@ def doctor_check_environment(version_info=None, spec_finder=None):
             advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f"Install it with: {pip_install_command(package_name)}", INSTALLATION_GUIDE_URL), False)
             checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
 
-    for module_name, package_name, purpose, effect, alternative in DOCTOR_OPTIONAL_DEPENDENCIES:
+    for module_name, package_name, purpose, effect, alternative, only_on in DOCTOR_OPTIONAL_DEPENDENCIES:
+        if only_on and platform.system() != only_on:
+            continue
         if dependency_is_installed(module_name, spec_finder):
             checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
@@ -840,7 +844,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
     return checks
 
 
-# Reports whether a profile was even named, and stays silent once authentication has already explained itself
+# Reports whether a profile was even named and stays silent once authentication has already explained itself
 def doctor_check_target_identity(report, xbox_gamertag=None):
     if not xbox_gamertag:
         advice = classify_recovery_error(context="target.missing", detail="No Xbox gamertag was given")
@@ -865,7 +869,7 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
     return [make_doctor_check("Target", "PASS", "The monitored profile is reachable", f"Gamertag: {xbox_gamertag}, XUID: {xuid}")]
 
 
-# Returns advice for the first unusable SMTP server setting, or None when they are all present and valid
+# Returns advice for the first unusable SMTP server setting or None when they are all present and valid
 def validate_smtp_settings():
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
@@ -1056,7 +1060,7 @@ def render_doctor_sections(report):
     return sanitize_error_text("\n".join(lines))
 
 
-# Renders the one sentence that says whether the setup is usable, and where to read more
+# Renders the one sentence that says whether the setup is usable and where to read more
 def render_doctor_summary(checks):
     failures = sum(check.status == "FAIL" for check in checks)
     warnings = sum(check.status == "WARN" for check in checks)
@@ -1196,7 +1200,7 @@ ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 # Every other control character is dropped, keeping only tab and newline. A carriage return would let Xbox-supplied
-# text overwrite an already printed line, and the inline doctor progress that uses one writes to the terminal directly
+# text overwrite an already printed line and the inline doctor progress that uses one writes to the terminal directly
 TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
@@ -1308,7 +1312,7 @@ _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
 # The separator is a space in prose and an equals sign in the key=value diagnostic fields. A gamertag may contain
 # spaces, which cannot be told from the rest of the sentence, so only the space-free form is coloured inside prose.
-# Only these exact phrases introduce a gamertag: a bare "user" also begins "user was" and "user with", and the
+# Only these exact phrases introduce a gamertag: a bare "user" also begins "user was" and "user with" and the
 # alternation matches at the earliest position rather than on the longest phrase, so it would colour the next word
 _USER_TAG_RE = re.compile(r"((?:Xbox gamer tag|Xbox user|for user|of user|gamertag):?|user:)([\t ]+|=)((?!ID\b)[\w.#-]+)")
 
@@ -1661,7 +1665,7 @@ def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
 class Logger(object):
     def __init__(self, filename):
         # The early sanitizing stream is unwrapped so sanitizing and colouring happen exactly once. Writing
-        # through it would colourise every line twice, and the second pass no longer sees the label it
+        # through it would colourise every line twice and the second pass no longer sees the label it
         # already coloured, so it would recolour the value with the generic rules
         self.terminal = unwrap_terminal_stream(sys.stdout)
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
@@ -1680,7 +1684,7 @@ class Logger(object):
         self.terminal.flush()
         self.logfile.flush()
 
-    # Writes text the log file should keep but the terminal has already shown, or does not need
+    # Writes text the log file should keep but the terminal has already shown or does not need
     def log_only(self, message):
         self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", sanitize_terminal_text(message)).expandtabs(8)))
         self.logfile.flush()
@@ -1876,7 +1880,7 @@ def write_file_atomically(destination, content, mode=None):
     return str(destination_path)
 
 
-# Confirms replacing one existing generated config, or requires --force when there is nobody to ask
+# Confirms replacing one existing generated config or requires --force when there is nobody to ask
 def confirm_generated_config_replacement(destination, force=False, interactive=None, input_func=input):
     destination_path = Path(destination).expanduser()
     if not destination_path.exists() or force:
@@ -2226,7 +2230,7 @@ class WizardSetupState:
         self.persist_target = True
 
 
-# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+# The mail server settings the wizard collects and how long its sign-in check waits for the server
 WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
 WIZARD_SMTP_TIMEOUT = 5
 
@@ -2994,13 +2998,13 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
     return str(destination)
 
 
-# Accepts a complete webhook URL, or a bare ntfy.sh topic name when ntfy is the selected provider
+# Accepts a complete webhook URL or a bare ntfy.sh topic name when ntfy is the selected provider
 def normalize_webhook_destination(value):
     return normalize_ntfy_topic_url(value) if normalized_webhook_provider() == "ntfy" else str(value or "").strip()
 
 
 # Checks one entered webhook destination without contacting the service, because the only confirmation a
-# webhook service offers is a delivered notification, and setting a URL must not publish one
+# webhook service offers is a delivered notification and setting a URL must not publish one
 def validate_webhook_destination(value):
     candidate = normalize_webhook_destination(value)
     if not candidate:
@@ -3142,8 +3146,12 @@ def apply_webhook_cli_overrides(args, parser):
 # The categories that mean the saved credentials themselves stopped working, which no retry can repair
 AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired", "auth.token_cache"})
 
+# Failed checks in a row before a failure that can clear on its own is worth an alert. A short outage recovers
+# well inside this, so only an outage the operator has to know about reaches them
+MONITOR_TRANSIENT_ALERT_AFTER = 20
 
-# Stable recovery categories. Every code here is produced somewhere in this file, and nothing else is accepted
+
+# Stable recovery categories. Every code here is produced somewhere in this file and nothing else is accepted
 RECOVERY_CODES = frozenset({
     "config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing",
     "auth.credentials_invalid", "auth.token_expired", "auth.token_cache", "auth.oauth_code",
@@ -3239,6 +3247,21 @@ def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, lab
     return "\n".join(lines)
 
 
+# Builds the subject for one recovery notification, naming what failed rather than the category it fell into
+def recovery_email_subject(advice, xbox_gamertag):
+    return f"xbox_monitor: {advice.summary} (user: {xbox_gamertag})"
+
+
+# Builds the body for one recovery notification, repeating the fix the operator sees on screen
+def recovery_email_body(advice, error_streak=0):
+    lines = [advice.summary, "", f"To fix: {advice.fix}"]
+    if error_streak > 1:
+        lines.extend(["", f"Failed checks in a row: {error_streak}"])
+    if advice.detail:
+        lines.extend(["", f"Technical detail: {advice.detail}"])
+    return "\n".join(lines) + get_cur_ts("\n\nTimestamp: ")
+
+
 # Prints advice in full the first time its category appears and as one line while the same category persists
 def print_recovery_advice(advice, tracker=None, retry_note="", debug=None, label="Error"):
     print(render_recovery_advice(advice, debug, retry_note, tracker is None or tracker.should_render(advice), label))
@@ -3290,7 +3313,7 @@ def is_too_many_open_files(error):
     return False
 
 
-# Returns the HTTP status carried by any exception in the chain, or None when the failure was not a response
+# Returns the HTTP status carried by any exception in the chain or None when the failure was not a response
 def http_status_from(error):
     for current in iter_exc_chain(error):
         response = getattr(current, "response", None)
@@ -3496,7 +3519,7 @@ def format_diagnostic_line(operation, fields):
 # Prints a technical diagnostic line, shown only when debug mode is on
 # Debug output exists to be pasted into a public bug report, so it is redacted here rather than at every call site
 # The parameter is named _operation because tools in this family wrap calls that legitimately have an
-# operation field, and a caller passing operation= would collide with the positional
+# operation field and a caller passing operation= would collide with the positional
 def debug_print(_operation, **fields):
     global STDOUT_AT_START_OF_LINE
     if DEBUG_MODE:
@@ -3849,7 +3872,7 @@ def normalize_ntfy_topic_url(value):
     return ""
 
 
-# Returns the normalized configured webhook provider, or an empty string when it is not one of the supported two
+# Returns the normalized configured webhook provider or an empty string when it is not one of the supported two
 def normalized_webhook_provider(provider=None):
     selected_provider = WEBHOOK_PROVIDER if provider is None else provider
     if not isinstance(selected_provider, str):
@@ -4155,7 +4178,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                     response = post_webhook_request(client, content=discord_payload, headers=request_headers)
                 else:
                     response = post_webhook_request(client, json=discord_payload, headers=request_headers)
-                # A rate limit and a server fault are the only answers worth repeating, and only once
+                # A rate limit and a server fault are the only answers worth repeating and only once
                 retryable = response.status_code == 429 or 500 <= response.status_code <= 599
                 debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", status=response.status_code, retryable=retryable)
                 if 200 <= response.status_code <= 299:
@@ -5665,16 +5688,19 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     sleep_interval = XBOX_CHECK_INTERVAL
                 error_streak += 1
                 advice = classify_recovery_error(e, context="monitor", detail=f"Reading the presence for '{xbox_gamertag}' failed: {e}")
-                debug_print("Presence check", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, streak=error_streak)
-                print_recovery_advice(advice, recovery_hints, retry_note=f"retrying in {display_time(sleep_interval)}")
-                # Credentials do not recover on their own, so this is the one category worth an email
-                if advice.code in AUTH_RECOVERY_CODES and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
-                    m_subject = f"xbox_monitor: Xbox authentication error! (user: {xbox_gamertag})"
-                    m_body = f"{advice.summary}\n\nTo fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
+                debug_print("Presence check", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, retryable=advice.retryable, streak=error_streak)
+                # A failure that can clear on its own is worth an alert only once it clearly has not
+                alert_after = MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1
+                exhausted = advice.code == "resource.exhausted"
+                print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
+                if error_streak >= alert_after and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
+                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
                     email_sent = email_sent or email_delivered
                     webhook_sent = webhook_sent or webhook_delivered
                 print_cur_ts("Timestamp:\t\t\t")
+                # A local file descriptor limit cannot be retried away inside this process
+                if exhausted:
+                    sys.exit(2)
                 debug_print("Sleep", seconds=sleep_interval, reason="the presence check failed")
                 await asyncio.sleep(sleep_interval)
                 continue
@@ -5902,7 +5928,7 @@ def main():
     # that decide them are read here too
     apply_early_output_config()
 
-    # Read straight from sys.argv because argparse has not run yet, and the banner is printed before it does
+    # Read straight from sys.argv because argparse has not run yet and the banner is printed before it does
     if "--no-color" in sys.argv:
         COLORED_OUTPUT = False
 
@@ -5911,7 +5937,7 @@ def main():
     if not isinstance(sys.stdout, TerminalStream):
         sys.stdout = TerminalStream(sys.stdout)
 
-    # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
+    # Read straight from sys.argv because argparse has not run yet and the screen is cleared before it does
     if "--debug" in sys.argv:
         DEBUG_MODE = True
     if CLEAR_SCREEN and DEBUG_MODE:
@@ -6240,7 +6266,7 @@ def main():
     if len(selected_secret_actions) > 1:
         parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
-    # Applied before the config file is read so a failing load is already visible, and again after it so a saved
+    # Applied before the config file is read so a failing load is already visible and again after it so a saved
     # DEBUG_MODE = False cannot switch off what the command line asked for
     apply_diagnostic_cli_flags(args)
 

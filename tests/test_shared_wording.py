@@ -131,6 +131,6 @@ SHARED_WORDING = (
 
 
 @pytest.mark.parametrize("sentence", SHARED_WORDING)
-# Wording shared with the siblings has to stay identical, or the next edit silently forks the contract
+# Wording shared with the siblings has to stay identical or the next edit silently forks the contract
 def test_the_shared_wording_is_unchanged(sentence):
     assert sentence in TEMPLATES

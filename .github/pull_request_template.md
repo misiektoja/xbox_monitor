@@ -1,6 +1,6 @@
 ## What this changes
 
-<!-- The behavior that changes for a user, and why. Link the issue when there is one. -->
+<!-- The behavior that changes for a user and why. Link the issue when there is one. -->
 
 ## Checks
 

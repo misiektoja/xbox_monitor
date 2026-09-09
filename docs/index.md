@@ -6,9 +6,9 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 
 - **Real-time tracking** of Xbox Live users' gaming activity, including when a user gets online or offline and which games they play
 - **Basic statistics for user activity**: duration in different states, time spent playing a game, overall time and number of games played in a session
-- **Detailed user information** display mode covering XUID, online status and last online date, platform, account tier, gamerscore, real name, location, friends count and optionally the friends list, recently played games with last played date and total play time, and recently earned achievements
+- **Detailed user information** display mode covering XUID, online status and last online date, platform, account tier, gamerscore, real name, location, friends count and optionally the friends list, recently played games with last played date and total play time, plus recently earned achievements
 - **Activity detection for appear-offline users**, using title history to report gaming activity even when the monitored profile is set to Appear Offline
-- **Email notifications** for various events: the user gets online, away or offline, starts, finishes or changes a game, and monitoring errors
+- **Email notifications** for various events: the user gets online, away or offline, starts, finishes or changes a game, plus monitoring errors
 - **Webhook notifications** to a Discord channel or an ntfy topic, with the same events switched on separately from email
 - **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
 - **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything

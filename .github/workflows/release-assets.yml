@@ -54,7 +54,7 @@ jobs:
             xbox_monitor_${{ github.event.release.tag_name }}.tar.gz
 
       # Publishing the bundle alongside the archives lets offline verifiers check provenance
-      # without calling the attestations API, and it is the form automated scanners look for
+      # without calling the attestations API and it is the form automated scanners look for
       - name: Stage the provenance bundle as a release asset
         shell: bash
         env:

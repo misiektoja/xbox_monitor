@@ -27,7 +27,7 @@ pip install -r docs/requirements.txt
 mkdocs build --strict
 ```
 
-CI runs all three on every push and pull request, across Python 3.11 through 3.14, and again before anything is published to PyPI.
+CI runs all three on every push and pull request, across Python 3.11 through 3.14 and again before anything is published to PyPI.
 
 ## What is covered
 
@@ -37,6 +37,6 @@ The test layout mirrors the surfaces a user touches rather than the module layou
 
 * Keep every test offline. If a code path needs network access, stub it with `monkeypatch` rather than skipping the test.
 * Restore module-level globals you change. Tests share one imported module, so a leaked global affects whatever runs next.
-* Never use a real client secret, SMTP password or Xbox token file.
+* Never use a real client secret, SMTP password, webhook URL or Xbox token file.
 
 A change to the monitoring loop, authentication or Xbox data handling is not verified by this suite alone. Exercise it against a real account and say so in the pull request, without gamertags or credentials.

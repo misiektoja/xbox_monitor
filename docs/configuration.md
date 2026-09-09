@@ -31,7 +31,7 @@ xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
 
 ## Target Account
 
-Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on the command line always wins over the saved one, and with a saved value you can start monitoring with no arguments at all:
+Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on the command line always wins over the saved one. With a saved value you can start monitoring with no arguments at all:
 
 ```sh
 xbox_monitor
@@ -71,7 +71,7 @@ Email is switched off automatically while `SMTP_HOST`, `SMTP_USER` or `SMTP_PASS
 
 ## Webhook Settings
 
-Alerts can also be delivered to a **Discord** channel or an **ntfy** topic. The webhook channel is configured and switched on separately from email, so you can send game changes to Discord while email stays off, or use both.
+Alerts can also be delivered to a **Discord** channel or an **ntfy** topic. The webhook channel is configured and switched on separately from email, so you can send game changes to Discord while email stays off or use both.
 
 Save the destination privately, which never puts it in your shell history:
 
@@ -79,7 +79,7 @@ Save the destination privately, which never puts it in your shell history:
 xbox_monitor --set-webhook-url
 ```
 
-For Discord this is the URL from Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL. For ntfy it is the complete topic URL, such as `https://ntfy.sh/your-private-topic`, or just the topic name when it is hosted on ntfy.sh. The service is detected from the URL, so `WEBHOOK_PROVIDER` only needs setting for a self-hosted ntfy server.
+For Discord this is the URL from Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL. For ntfy it is the complete topic URL, such as `https://ntfy.sh/your-private-topic` or just the topic name when it is hosted on ntfy.sh. The service is detected from the URL, so `WEBHOOK_PROVIDER` only needs setting for a self-hosted ntfy server.
 
 The URL is checked for shape without contacting the service, because the only confirmation Discord or ntfy can give is a delivered notification. The command prints `--send-test-webhook` as the next step, which does deliver one.
 
@@ -94,11 +94,11 @@ WEBHOOK_STATUS_NOTIFICATION = False             # every status change, including
 WEBHOOK_ERROR_NOTIFICATION = True               # monitoring errors, enabled by default
 ```
 
-A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+A `WEBHOOK_URL` that is unset or still holding its `your_webhook_url` placeholder switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
 
-Discord alerts are sent as an embed built from `WEBHOOK_TEMPLATE`, which supports the `title`, `description`, `version`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Mentions are always disabled, whatever the template says. `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` override the webhook's own display name and picture, and both are ignored by ntfy.
+Discord alerts are sent as an embed built from `WEBHOOK_TEMPLATE`, which supports the `title`, `description`, `version`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Mentions are always disabled, whatever the template says. `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` override the webhook's own display name and picture. Both are ignored by ntfy.
 
-ntfy alerts are sent as a native message with the subject as the title, so no template is involved. Use `WEBHOOK_HEADERS` to add ntfy options such as priority or tags, and `NTFY_ACCESS_TOKEN` when the topic needs authentication:
+ntfy alerts are sent as a native message with the subject as the title, so no template is involved. Use `WEBHOOK_HEADERS` to add ntfy options such as priority or tags. Use `NTFY_ACCESS_TOKEN` when the topic needs authentication:
 
 ```python
 WEBHOOK_HEADERS = {"Priority": "5", "Tags": "video_game"}
@@ -113,7 +113,7 @@ WEBHOOK_TRANSFORMS = [
 ]
 ```
 
-Which events actually fire, and how a failed delivery is retried, is covered in [Webhook Notifications](usage.md#webhook-notifications).
+Which events actually fire and how a failed delivery is retried is covered in [Webhook Notifications](usage.md#webhook-notifications).
 
 ## TLS Verification
 
@@ -127,7 +127,7 @@ Set it to `False` only on a network that intercepts TLS with its own certificate
 
 ## Check Intervals
 
-To change the polling intervals, use `-k` and `-c`, or the matching settings:
+To change the polling intervals, use `-k` and `-c` or the matching settings:
 
 ```sh
 xbox_monitor <xbox_gamer_tag> -k 30 -c 120
@@ -167,7 +167,7 @@ xbox_monitor --set-smtp-password
 xbox_monitor --set-webhook-url
 ```
 
-Each command rewrites its assignment in the dotenv file in place, keeps every other line and comment, and asks first when the value is already set. `--setup` does the same as part of the guided run.
+Each command rewrites its assignment in the dotenv file in place and keeps every other line and comment. Each asks first when the value is already set. `--setup` does the same as part of the guided run.
 
 Export them on Linux, Unix, macOS and WSL:
 
@@ -179,7 +179,7 @@ export WEBHOOK_URL="your_webhook_url"
 export NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
-On **Windows Command Prompt** use `set`, and on **Windows PowerShell** use `$env`.
+On **Windows Command Prompt** use `set` and on **Windows PowerShell** use `$env`.
 
 A dotenv file keeps them across sessions:
 
@@ -207,6 +207,6 @@ A secret already exported in the environment wins over the same name in the dote
 
 `--doctor` reports which secrets are loaded and which source each one came from, by name and never by value. Diagnostic output is redacted, so a report can be pasted into a public bug report.
 
-The Xbox token cache named by `MS_AUTH_TOKENS_FILE` holds a live refresh token. The tool creates it readable only by its owner, and `--doctor` warns when an existing one is readable by other accounts.
+The Xbox token cache named by `MS_AUTH_TOKENS_FILE` holds a live refresh token. The tool creates it readable only by its owner. `--doctor` warns when an existing one is readable by other accounts.
 
 As a fallback, secrets can also be stored in the configuration file or the source.

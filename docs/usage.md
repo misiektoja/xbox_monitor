@@ -71,9 +71,9 @@ The tool runs until interrupted with `Ctrl+C`. Use `tmux` or `screen` to keep it
 
 You can monitor several players by running several copies.
 
-Output is written to `xbox_monitor_<gamer_tag>.log`. Change it with `XBOX_LOGFILE`, or switch it off with `DISABLE_LOGGING`, `-d` or `--disable-logging`.
+Output is written to `xbox_monitor_<gamer_tag>.log`. Change it with `XBOX_LOGFILE` or switch it off with `DISABLE_LOGGING`, `-d` or `--disable-logging`.
 
-Set `ASCII_LOG_SEPARATORS` to `"Auto"`, the default, to use ASCII separator-only lines on Windows, `"On"` to use them everywhere, or `"Off"` to keep Unicode separators in logs on every system. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
+Set `ASCII_LOG_SEPARATORS` to `"Auto"`, the default, to use ASCII separator-only lines on Windows, `"On"` to use them everywhere or `"Off"` to keep Unicode separators in logs on every system. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
 Set `TRUNCATE_CHARS` or use the `--truncate` flag to cut each screen line to a maximum width, which stops long game titles from wrapping. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. Truncation needs the optional `wcwidth` library to measure display width. If it is missing, the tool says so at startup and leaves lines untouched.
 
@@ -113,7 +113,7 @@ To stop the error email, which is on by default, set `ERROR_NOTIFICATION` to `Fa
 xbox_monitor <xbox_gamer_tag> -e
 ```
 
-The error email fires only for a credential failure, since every other kind of failure clears on its own.
+The error alert fires at once for a failure that cannot clear on its own, such as expired credentials or a profile that stopped sharing its activity. A failure that can clear on its own, such as a timeout or a rate limit, is alerted on only after 20 failed checks in a row, so a short outage does not reach you. Either way the alert is sent once and not repeated until a check succeeds. The same rule governs the webhook error alert.
 
 Set the [SMTP settings](configuration.md#smtp-settings) first.
 
@@ -125,7 +125,7 @@ Example email:
 
 ## Webhook Notifications
 
-Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webhook settings](configuration.md#webhook-settings) name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, and monitoring errors.
+Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webhook settings](configuration.md#webhook-settings) name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, plus monitoring errors.
 
 The same settings have command-line equivalents for one run. Naming any single alert also switches the channel on:
 
@@ -143,7 +143,7 @@ Verify the destination without starting monitoring:
 xbox_monitor --send-test-webhook
 ```
 
-A failed delivery is retried once, a rate limit waits the delay the service asked for and bounds it, and redirects are never followed. When both channels are enabled, each is delivered independently: an alert that reached Discord is not sent again just because the email failed.
+A failed delivery is retried once. A rate limit waits the delay the service asked for and bounds it. Redirects are never followed. When both channels are enabled, each is delivered independently: an alert that reached Discord is not sent again just because the email failed.
 
 ## CSV Export
 
@@ -194,7 +194,7 @@ COLORED_OUTPUT = False
 
 On Windows, install [colorama](https://pypi.org/project/colorama/) for colours in the older Command Prompt. Windows Terminal needs nothing extra.
 
-Each part of the output has a logical name, and `COLOR_THEME` in the configuration file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
+Each part of the output has a logical name. `COLOR_THEME` in the configuration file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
 
 Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Delete the block or edit only the entries you want to change:
 
@@ -207,13 +207,13 @@ COLOR_THEME = {
 
 | Theme key | Default | What it colours |
 | --- | --- | --- |
-| `header` | `bright_cyan` | Report and wizard headings, and the tool name in the startup banner |
+| `header` | `bright_cyan` | Report and wizard headings, plus the tool name in the startup banner |
 | `section` | `bright_white` | Section names and every command the tool tells you to run |
 | `username` | `bright_cyan underline` | The monitored gamertag, the detected install method and wizard menu numbers |
 | `id` | `bright_magenta` | The XUID |
-| `status_active` | `green` | An online presence, and a game that just started |
+| `status_active` | `green` | An online presence or a game that just started |
 | `status_away` | `yellow` | An away presence |
-| `status_inactive` | `red` | An inactive presence, and a game that just stopped |
+| `status_inactive` | `red` | An inactive presence or a game that just stopped |
 | `status_offline` | `red` | An offline presence |
 | `status_other` | `white` | A presence value the tool does not recognise |
 | `game` | `bright_yellow` | Game titles |
@@ -232,8 +232,8 @@ COLOR_THEME = {
 | `date_range` | `magenta` | Date and time ranges |
 | `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
 | `boolean_false` | `red` | `False`, `Disabled` and `Off` |
-| `count_up` | `green` | A count that went up, and the `(+n)` beside it |
-| `count_down` | `red` | A count that went down, and the `(-n)` beside it |
+| `count_up` | `green` | A count that went up, with the `(+n)` beside it |
+| `count_down` | `red` | A count that went down, with the `(-n)` beside it |
 | `link` | `blue underline` | URLs |
 
 ## Coloring Log Output with GRC

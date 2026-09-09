@@ -32,7 +32,7 @@ def test_the_one_shot_commands_are_listed_with_the_files_they_write(monkeypatch,
         assert flag in configuration
 
 
-# Verifies the examples name the first run, the alerts and the diagnostics, and end with one guide link
+# Verifies the examples name the first run, the alerts and the diagnostics and end with one guide link
 def test_the_examples_cover_the_three_things_a_newcomer_does(monkeypatch, capsys):
     out = help_output(monkeypatch, capsys)
     examples = out.split("Examples:")[1]

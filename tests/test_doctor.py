@@ -205,7 +205,7 @@ def test_sections_appear_in_the_fixed_order(xbox_session, doctor_run):
     assert positions == sorted(positions)
 
 
-# A fix line under a passing row is noise, and a missing one under a failure leaves the user stuck
+# A fix line under a passing row is noise and a missing one under a failure leaves the user stuck
 def test_only_the_rows_that_are_not_a_pass_carry_a_fix(xbox_session, doctor_run, monkeypatch):
     xbox_session()
     monkeypatch.setattr(monitor, "XBOX_ACTIVE_CHECK_INTERVAL", 5)
@@ -264,12 +264,21 @@ def test_a_missing_required_dependency_fails():
 
 
 # A guarded import only removes one feature, so the row has to say which one rather than look like a failure
-def test_a_missing_optional_dependency_warns_and_says_what_breaks():
+def test_a_missing_optional_dependency_warns_and_says_what_breaks(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
     checks = monitor.doctor_check_environment(spec_finder=lambda name: None)
     optional = [check for check in checks if "Optional dependency" in check.label]
     assert len(optional) == len(monitor.DOCTOR_OPTIONAL_DEPENDENCIES)
     assert all(check.status == "WARN" for check in optional)
     assert all("Monitoring is unaffected" in check.detail for check in optional)
+
+
+# A warning about a library that cannot affect this machine is noise the reader has to learn to ignore
+@pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
+def test_a_platform_specific_dependency_is_only_reported_where_it_applies(monkeypatch, system, reported):
+    monkeypatch.setattr(monitor.platform, "system", lambda: system)
+    checks = monitor.doctor_check_environment(spec_finder=lambda name: None)
+    assert any("colorama" in check.label for check in checks) is reported
 
 
 # Every command the report prints has to match how this copy was installed
@@ -314,7 +323,7 @@ def test_a_secret_value_never_appears_in_the_report(monkeypatch):
     assert "MS_APP_CLIENT_SECRET" in rendered
 
 
-# A fresh install has no secrets, and saying so is more useful than printing nothing
+# A fresh install has no secrets and saying so is more useful than printing nothing
 def test_a_run_with_no_secrets_says_so(monkeypatch):
     for key in monitor.SECRET_KEYS:
         monkeypatch.setattr(monitor, key, "")
@@ -331,7 +340,7 @@ def test_a_rate_limiting_interval_is_warned_about(monkeypatch):
     assert str(monitor.DOCTOR_MIN_SAFE_ACTIVE_INTERVAL) in check.advice.fix
 
 
-# Turning verification off is a deliberate choice for one network, and it must never pass unremarked
+# Turning verification off is a deliberate choice for one network and it must never pass unremarked
 def test_disabled_tls_verification_is_warned_about(monkeypatch):
     monkeypatch.setattr(monitor, "VERIFY_SSL", False)
     check = check_labelled(monitor.DoctorReport(checks=monitor.doctor_check_configuration()), "TLS certificate verification is off")
@@ -453,7 +462,7 @@ def test_a_hidden_profile_is_reported_with_the_privacy_steps(xbox_session):
     assert target[0].advice.code == "target.not_visible"
 
 
-# A fresh install has no SMTP settings, and an error alert alone must not make it look configured
+# A fresh install has no SMTP settings and an error alert alone must not make it look configured
 def test_a_fresh_install_reports_email_as_disabled(monkeypatch):
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     checks = monitor.doctor_check_email_notifications(monitor.DoctorReport())
@@ -520,7 +529,7 @@ def test_delivery_tests_are_offered_after_the_report_and_before_the_summary(xbox
     assert displayed.index(monitor.DOCTOR_DELIVERY_SECTION) < displayed.index("\nSummary\n")
 
 
-# Declining has to mean nothing is sent, or the approval prompt is not an approval
+# Declining has to mean nothing is sent or the approval prompt is not an approval
 def test_a_declined_delivery_test_sends_nothing(monkeypatch, smtp_sign_in_ok):
     enable_email(monkeypatch)
     monkeypatch.setattr(monitor, "send_email", _unreachable_smtp)
@@ -531,7 +540,7 @@ def test_a_declined_delivery_test_sends_nothing(monkeypatch, smtp_sign_in_ok):
     assert [check.status for check in offered] == ["SKIP"]
 
 
-# One approval must send exactly one message, and its result has to reach the summary
+# One approval must send exactly one message and its result has to reach the summary
 def test_an_approved_delivery_test_sends_one_message(monkeypatch, smtp_sign_in_ok):
     enable_email(monkeypatch)
     sent = []
@@ -546,7 +555,7 @@ def test_an_approved_delivery_test_sends_one_message(monkeypatch, smtp_sign_in_o
     assert offered[0] in report.checks
 
 
-# A failed delivery has to change the exit code, or an approved test that failed reads as a healthy setup
+# A failed delivery has to change the exit code or an approved test that failed reads as a healthy setup
 def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, smtp_sign_in_ok):
     enable_email(monkeypatch)
     monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
@@ -558,7 +567,7 @@ def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, smtp_sign_in_ok
     assert "1 check(s) failed" in monitor.render_doctor_summary(report.checks)
 
 
-# A fresh install has no webhook destination, and an error alert alone must not make it look configured
+# A fresh install has no webhook destination and an error alert alone must not make it look configured
 def test_a_fresh_install_reports_webhooks_as_disabled(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
     checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
@@ -604,7 +613,7 @@ def test_an_unusable_webhook_setting_warns_with_its_fix(monkeypatch, setting, va
     assert report.webhook_ready is False
 
 
-# A passive check must not publish anything, and must not print the private destination it validated
+# A passive check must not publish anything and must not print the private destination it validated
 def test_the_webhook_check_sends_nothing_and_hides_the_link(monkeypatch):
     enable_webhook(monkeypatch)
     monkeypatch.setattr(monitor, "send_webhook", _unreachable_smtp)
@@ -616,7 +625,7 @@ def test_the_webhook_check_sends_nothing_and_hides_the_link(monkeypatch):
     assert WEBHOOK_URL not in f"{checks[0].label} {checks[0].detail}"
 
 
-# One approval must publish exactly one notification, and its result has to reach the summary
+# One approval must publish exactly one notification and its result has to reach the summary
 def test_an_approved_webhook_test_sends_one_notification(monkeypatch):
     enable_webhook(monkeypatch)
     sent = []
@@ -631,7 +640,7 @@ def test_an_approved_webhook_test_sends_one_notification(monkeypatch):
     assert offered[0] in report.checks
 
 
-# Declining has to mean nothing is published, or the approval prompt is not an approval
+# Declining has to mean nothing is published or the approval prompt is not an approval
 def test_a_declined_webhook_test_publishes_nothing(monkeypatch):
     enable_webhook(monkeypatch)
     monkeypatch.setattr(monitor, "send_webhook", _unreachable_smtp)
@@ -650,7 +659,7 @@ def test_no_delivery_test_is_offered_without_a_terminal(monkeypatch):
     assert monitor.offer_doctor_delivery_tests(monitor.DoctorReport(email_ready=True)) == []
 
 
-# A healthy setup has to exit zero, or the doctor cannot be used in a script
+# A healthy setup has to exit zero or the doctor cannot be used in a script
 def test_a_healthy_setup_exits_zero(xbox_session, doctor_run):
     xbox_session()
     code, raw = doctor_run(xbox_gamertag=GAMERTAG)

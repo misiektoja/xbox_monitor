@@ -14,11 +14,11 @@ The setup wizard asks a few questions, runs the [first authorization](#first-aut
 xbox_monitor --setup
 ```
 
-It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it, and offers to write somewhere else instead. A secret already in the dotenv file is never replaced without asking.
+It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it. It offers to write somewhere else instead. A secret already in the dotenv file is never replaced without asking.
 
 It covers the monitored account, the polling intervals, the application credentials, email alerts, [webhook alerts](configuration.md#webhook-settings) and the files the tool writes. Each section can be skipped and re-entered from the summary.
 
-Nothing is written until you choose **Save settings** on the summary, and Ctrl+C at any question leaves both files untouched.
+Nothing is written until you choose **Save settings** on the summary. Ctrl+C at any question leaves both files untouched.
 
 To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
 
@@ -68,7 +68,7 @@ Next to **Client credentials** click **Add a certificate or secret**.
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_azure_ad_app2.png" alt="xbox_monitor_azure_ad_app2" width="90%"/>
 </p>
 
-Add a new client secret with a long expiry, such as two years, and a description such as *xbox_monitor_secret*.
+Add a new client secret with a description such as *xbox_monitor_secret* and a long expiry, such as two years.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_azure_ad_app3.png" alt="xbox_monitor_azure_ad_app3" width="60%"/>
@@ -101,7 +101,7 @@ The first run performs OAuth2 authorization with the credentials you supplied. `
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="90%"/>
 </p>
 
-The browser is then redirected to localhost and shows a connection error. That is expected. Copy the part after `?code=` from the address bar, without the trailing `&state=` part, and paste it into the tool.
+The browser is then redirected to localhost and shows a connection error. That is expected. Copy the part after `?code=` from the address bar, leaving out the trailing `&state=` part. Paste that into the tool.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_oauth2.png" alt="xbox_monitor_oauth2" width="70%"/>
@@ -117,6 +117,6 @@ Monitoring only works when the monitored account allows it.
 
 The monitored user should open the [Xbox profile privacy and online safety settings](https://account.xbox.com/Settings).
 
-**Others can see if you're online**, and preferably also **Others can see your Xbox profile details**, should be set to **Friends** or **Everyone**.
+Set **Others can see if you're online** to **Friends** or **Everyone**. Setting **Others can see your Xbox profile details** the same way is recommended.
 
-When the profile hides its activity, the tool reports it as a privacy setting on that account rather than a credential problem, and `--doctor` says the same.
+When the profile hides its activity, the tool reports it as a privacy setting on that account rather than a credential problem. `--doctor` says the same.

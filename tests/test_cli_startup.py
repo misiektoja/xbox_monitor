@@ -106,7 +106,7 @@ def test_a_placeholder_in_the_dotenv_file_is_not_a_source(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("smtp_user, expected", [("your_smtp_user", False), ("monitor@example.test", True)])
-# Verifies email alerts switch off at startup while any SMTP setting is a shipped placeholder, and stay on otherwise
+# Verifies email alerts switch off at startup while any SMTP setting is a shipped placeholder and stay on otherwise
 def test_email_alerts_follow_the_smtp_placeholders(tmp_path, monkeypatch, capsys, smtp_user, expected):
     config, env = write_startup_files(tmp_path, f'SMTP_HOST = "smtp.example.test"\nSMTP_USER = "{smtp_user}"\nSENDER_EMAIL = "monitor@example.test"\nRECEIVER_EMAIL = "alerts@example.test"\n', env_text='MS_APP_CLIENT_ID="dotenv-client-id-value"\nMS_APP_CLIENT_SECRET="dotenv-client-secret-value"\nSMTP_PASSWORD="dotenv-smtp-password-value"\n')
     monkeypatch.setattr(monitor, "check_internet", lambda url=None, timeout=None: True)
@@ -338,7 +338,7 @@ DISCORD_URL = "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenV
 NTFY_URL = "https://ntfy.sh/private-topic-name"
 
 
-# Verifies the webhook flags reach the run, and that naming one alert also switches the channel on
+# Verifies the webhook flags reach the run and that naming one alert also switches the channel on
 def test_the_webhook_flags_reach_the_run(tmp_path, monkeypatch):
     config, env = write_startup_files(tmp_path)
     observed = run_startup(monkeypatch, [GAMERTAG, "--webhook-url", DISCORD_URL, "--webhook-game-change", "--config-file", str(config), "--env-file", str(env)], observe=("WEBHOOK_ENABLED", "WEBHOOK_URL", "WEBHOOK_GAME_CHANGE_NOTIFICATION"))

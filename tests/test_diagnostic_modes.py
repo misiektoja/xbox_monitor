@@ -1,4 +1,4 @@
-"""Tests for --verbose and --debug: what the two modes report, and which setting wins.
+"""Tests for --verbose and --debug: what the two modes report and which setting wins.
 
 Each coverage test drives the real code path with the failure injected rather than calling the
 printers directly, so a path that was never instrumented fails the test instead of passing quietly.
@@ -306,7 +306,7 @@ def test_the_two_modes_are_independent(monkeypatch, monitor_calls, capsys):
     assert re.search(r"\* Verbose mode:\s+False", debug_output) and re.search(r"\* Debug mode:\s+True", debug_output)
 
 
-# Verifies the startup summary points at the flags while they are off, and reports them once they are on
+# Verifies the startup summary points at the flags while they are off and reports them once they are on
 def test_the_startup_summary_offers_the_flags_then_reports_them(monkeypatch, monitor_calls, capsys):
     run_main(monkeypatch, [GAMERTAG, "-u", "client-id-value", "-w", "client-secret-value"])
     without_flags = capsys.readouterr().out
@@ -317,7 +317,7 @@ def test_the_startup_summary_offers_the_flags_then_reports_them(monkeypatch, mon
     assert "use --verbose or --debug" in without_flags
     assert "* More details:" not in with_verbose
     assert "Verbose mode:" in with_verbose
-    # The concise view stays short, and asking for the full one is what adds the rest
+    # The concise view stays short and asking for the full one is what adds the rest
     assert without_flags.count("\n* ") < with_verbose.count("\n* ")
 
 

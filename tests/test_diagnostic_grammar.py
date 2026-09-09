@@ -23,7 +23,7 @@ def debug_calls():
     return [node for node in ast.walk(TREE) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "debug_print"]
 
 
-# Returns the literal operation of one call, or None when it is built at runtime
+# Returns the literal operation of one call or None when it is built at runtime
 def operation_of(node):
     first = node.args[0] if node.args else None
     return first.value if isinstance(first, ast.Constant) and isinstance(first.value, str) else None

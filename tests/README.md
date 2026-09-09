@@ -30,7 +30,7 @@ pip install -r docs/requirements.txt
 mkdocs build --strict
 ```
 
-CI runs all three on every push and pull request, across Python 3.11 through 3.14,
+CI runs all three on every push and pull request, across Python 3.11 through 3.14
 and again before anything is published to PyPI.
 
 ## Layout
@@ -38,18 +38,29 @@ and again before anything is published to PyPI.
 | File | Area under test |
 | --- | --- |
 | `conftest.py` | Shared fixtures: module globals, exported secrets and signal handlers are reset between tests |
+| `data/config_templates/` | The configuration template every released version shipped, replayed by `test_config_loading.py` |
 | `test_auth_retry.py` | Transient error classification, refresh retry and give-up behavior, no interactive auth on timeout |
-| `test_cli_startup.py` | Real startup through `main()`: `--debug` precedence over the config file, secret source attribution, placeholder gates for credentials and email, install method commands, the `--generate-config` replacement guard |
-| `test_config_loading.py` | Config files are parsed as data, rejected content and retired settings |
+| `test_cli_startup.py` | Real startup through `main()`: `--debug` precedence over the config file, secret source attribution, placeholder gates for credentials and email, install method commands, the `--generate-config` replacement guard and the webhook flags |
+| `test_config_loading.py` | Config files are parsed as data, rejected content, retired settings and every released template still loading |
 | `test_config_writing.py` | Timestamped backups, atomic replacement, private token cache writes and the guard on writing a generated config |
+| `test_diagnostic_grammar.py` | Every debug line following one `Operation: key=value` shape with a closed outcome vocabulary |
+| `test_diagnostic_modes.py` | What `--verbose` and `--debug` each report and that neither leaks a secret value |
 | `test_doctor.py` | `--doctor`: the shared report contract, every section, the delivery test approval and the exit code |
-| `test_documentation.py` | The documentation site: guide links, navigation, the flags and settings it names and the CI build |
-| `test_output_safety.py` | Redaction of secrets from debug output, recovery advice and the doctor report |
+| `test_documentation.py` | The documentation site: guide links, navigation, page structure and the flags and settings it names |
+| `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
+| `test_output_safety.py` | Redaction of secrets and upstream text that cannot drive the terminal, the log, the CSV file or an email |
 | `test_recovery_errors.py` | The recovery taxonomy, which category each failure lands in and the classifier coverage guard |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |
-| `test_repository_metadata.py` | Governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
-| `test_secret_reload.py` | `SIGHUP` reload bumping the authentication refresh version |
-| `test_tls_verification.py` | Every connection honouring `VERIFY_SSL`, and the single shared TLS context builder |
+| `test_repository_metadata.py` | Citation, funding, line endings, the declared editor style, the pinned linter, release integrity and the version sites |
+| `test_secret_commands.py` | The one-shot commands that write a secret: what each validates, writes and refuses to write |
+| `test_secret_reload.py` | `SIGHUP` reload bumping the authentication refresh version and following a replaced webhook destination |
+| `test_setup_wizard.py` | `--setup` driven end to end: what it asks, what it writes and what it leaves untouched |
+| `test_shared_wording.py` | The prompts, labels and headings this tool shares word for word with the sibling monitors |
+| `test_startup_summary.py` | The startup summary rows, their order and the concise and verbose views |
+| `test_terminal_color.py` | The colour engine, the theme in both directions and which values are coloured |
+| `test_terminal_transcripts.py` | Real pty runs: what a terminal actually receives, with and without `--no-color` |
+| `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
+| `test_webhook_notifications.py` | Webhook delivery: the destination, the request each provider gets, the bounded retry and the loop's call sites |
 
 ## Conventions
 

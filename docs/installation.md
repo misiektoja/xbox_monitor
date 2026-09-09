@@ -5,7 +5,7 @@
 * Python 3.11 or higher, which the `python-xbox` library requires
 * Libraries: [python-xbox](https://github.com/tr4nt0r/python-xbox), `python-dateutil`, `httpx`, `pytz`, `tzlocal`, `python-dotenv`, `wcwidth`, `colorama` (Windows only, optional)
 
-`tzlocal`, `python-dotenv` and `wcwidth` are optional. Without `tzlocal` the local time zone has to be set manually, without `python-dotenv` secrets have to come from the environment or the command line, and without `wcwidth` screen truncation is switched off.
+`tzlocal`, `python-dotenv`, `wcwidth` and `colorama` are optional. Without `tzlocal` the local time zone has to be set manually. Without `python-dotenv` secrets have to come from the environment or the command line. Without `wcwidth` screen truncation is switched off. `colorama` matters only in the older Windows Command Prompt. `--doctor` reports each one it finds missing, reporting `colorama` only on Windows.
 
 Tested on:
 

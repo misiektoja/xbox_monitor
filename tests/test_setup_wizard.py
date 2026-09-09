@@ -62,7 +62,7 @@ def run_wizard(monkeypatch, paths, answers, secrets=("client-id", "client-secret
 BASIC_ANSWERS = ["SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "n"]
 
 
-# Verifies a complete run writes the config, the secrets and the token cache, and reports each destination
+# Verifies a complete run writes the config, the secrets and the token cache and reports each destination
 def test_a_complete_run_writes_every_destination(monkeypatch, wizard_paths, capsys):
     code, _ = run_wizard(monkeypatch, wizard_paths, BASIC_ANSWERS)
     out = capsys.readouterr().out
@@ -146,7 +146,7 @@ def test_a_disabled_dotenv_is_refused_before_anything_is_asked(wizard_paths, cap
     assert "--setup needs a dotenv destination" in out
 
 
-# Verifies a failing sign-in can be escaped, and that escaping it keeps the credentials the user entered
+# Verifies a failing sign-in can be escaped and that escaping it keeps the credentials the user entered
 def test_a_failing_sign_in_can_be_escaped_without_losing_the_credentials(monkeypatch, wizard_paths, capsys):
     failing = TokenAuthorizer(error=RuntimeError("network down"))
     answers = ["SomeTag", "", "5m", "90", "", "y", "n", "n", "", "", "", "1", "n", "n"]
@@ -466,7 +466,7 @@ def test_declining_webhooks_turns_every_alert_off(monkeypatch, wizard_paths):
     assert values["WEBHOOK_GAME_CHANGE_NOTIFICATION"] is False
 
 
-# Verifies an unusable destination is asked again, and that giving up leaves the channel off rather than looping
+# Verifies an unusable destination is asked again and that giving up leaves the channel off rather than looping
 def test_an_unusable_webhook_url_can_be_abandoned(monkeypatch, wizard_paths, capsys):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
     answers = before_webhook_section() + ["y", "1", "n"] + after_webhook_section()

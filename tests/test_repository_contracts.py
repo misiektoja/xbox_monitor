@@ -35,7 +35,7 @@ class TestGovernanceDocuments:
     def test_codeowners_covers_every_path(self):
         assert re.search(r"^\*\s+@\S+", read_asset(".github/CODEOWNERS"), re.M)
 
-    # The policy must name the private reporting route, or reporters fall back to a public issue
+    # The policy must name the private reporting route or reporters fall back to a public issue
     def test_security_policy_routes_reports_privately(self):
         policy = read_asset("SECURITY.md")
         assert "security/advisories/new" in policy
@@ -63,7 +63,7 @@ class TestGovernanceDocuments:
 
 
 class TestIssueTemplates:
-    # Blank issues bypass the forms, and the contact links are what route vulnerabilities away from public issues
+    # Blank issues bypass the forms and the contact links are what route vulnerabilities away from public issues
     def test_template_config_disables_blank_issues_and_links_reporting(self):
         config = read_yaml_asset(".github/ISSUE_TEMPLATE/config.yml")
         assert config["blank_issues_enabled"] is False
@@ -121,7 +121,7 @@ class TestWorkflowSupplyChain:
                         offenders.append(f"{workflow.name}: {line.strip()}")
         assert offenders == []
 
-    # Publishing must run the suite first, or a broken build reaches PyPI under the project's name
+    # Publishing must run the suite first or a broken build reaches PyPI under the project's name
     def test_pypi_publish_depends_on_the_test_suite(self):
         publish = read_yaml_asset(".github/workflows/publish.yml")
         assert publish["jobs"]["test"]["uses"] == "./.github/workflows/tests.yml"

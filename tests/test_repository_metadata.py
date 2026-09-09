@@ -47,6 +47,20 @@ def test_citation_metadata_describes_this_project():
     assert author["given-names"] and author["family-names"] and author["alias"] == "misiektoja"
 
 
+# Verifies every place that states the version agrees, so a release cannot ship with --version naming the last one
+def test_every_version_site_states_the_same_version():
+    source = read_asset("xbox_monitor.py")
+    module_version = re.search(r'^VERSION = "([^"]+)"', source, re.M)
+    docstring_version = re.search(r"^v([\d.]+)$", source, re.M)
+    packaged_version = re.search(r'^version = "([^"]+)"', read_asset("pyproject.toml"), re.M)
+    newest_notes = re.search(r"^# Changes in ([\d.]+) ", read_asset("RELEASE_NOTES.md"), re.M)
+
+    assert module_version is not None and docstring_version is not None and packaged_version is not None and newest_notes is not None
+    assert docstring_version.group(1) == module_version.group(1)
+    assert packaged_version.group(1) == module_version.group(1)
+    assert newest_notes.group(1) == module_version.group(1)
+
+
 # Verifies the citation names a version somebody can cite, so it tracks the newest dated release notes section
 def test_citation_tracks_the_newest_released_version():
     released = re.search(r"^# Changes in ([\d.]+) \((\d{1,2} \w{3} \d{4})\)", read_asset("RELEASE_NOTES.md"), re.M)
@@ -125,7 +139,7 @@ def test_support_document_routes_every_request_type():
         assert concept in support
 
 
-# Verifies the optional local hooks run the same linter version CI installs, or a clean commit still fails CI
+# Verifies the optional local hooks run the same linter version CI installs or a clean commit still fails CI
 def test_local_hooks_match_the_pinned_linter():
     pinned = re.search(r'lint = \["ruff==([^"]+)"\]', read_asset("pyproject.toml"))
     assert pinned is not None
@@ -171,6 +185,30 @@ def test_the_minimum_python_version_is_declared_once():
     assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == monitor.MINIMUM_PYTHON_VERSION
     matrix = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["test"]["strategy"]["matrix"]["python-version"]
     assert min(tuple(int(part) for part in str(version).split(".")) for version in matrix) == monitor.MINIMUM_PYTHON_VERSION
-    # The requirements moved to the documentation site, and the README keeps only the badge
+    # The requirements moved to the documentation site and the README keeps only the badge
     assert f"Python {minimum_text} or higher" in read_asset("docs/installation.md")
     assert f"python-{minimum_text}+" in read_asset("README.md")
+
+
+# Prose files this repository writes and keeps to one editorial style
+PROSE_ASSETS = ("README.md", "SECURITY.md", "SUPPORT.md", "CONTRIBUTING.md", "tests/README.md", ".github/pull_request_template.md")
+
+
+# Verifies the house style holds, since a comma before "and" or "or" creeps back one edit at a time
+def test_prose_carries_no_comma_before_a_conjunction():
+    offenders = []
+    documents = [PROJECT_ROOT / name for name in PROSE_ASSETS] + sorted((PROJECT_ROOT / "docs").glob("*.md"))
+    for path in documents:
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+            if re.search(r",\s+(?:and|or)\b", line):
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{number}")
+    # Released sections are historical text, so only the version being prepared is held to the current style
+    notes = read_asset("RELEASE_NOTES.md")
+    unreleased = notes[:notes.index("# Changes in 1.9.3")]
+    for number, line in enumerate(unreleased.split("\n"), 1):
+        if re.search(r",\s+(?:and|or)\b", line):
+            offenders.append(f"RELEASE_NOTES.md:{number}")
+
+    assert offenders == []

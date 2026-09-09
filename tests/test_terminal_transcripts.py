@@ -41,7 +41,7 @@ def visible_text(raw):
     return "\n".join(apply_carriage_returns(line) for line in stripped.split("\n"))
 
 
-# Runs the tool on a pty, sends the given input, optionally interrupts it, and returns what the terminal showed
+# Runs the tool on a pty, sends the given input, optionally interrupts it and returns what the terminal showed
 def run_on_terminal(arguments, keystrokes="", interrupt_after=None, environment=None, timeout=25, keep_escapes=False):
     master, slave = pty.openpty()
     env = dict(os.environ, PYTHONUNBUFFERED="1", COLUMNS="100", LINES="40")
@@ -88,7 +88,7 @@ def terminal_config(tmp_path):
     return config, tmp_path / ".env"
 
 
-# Verifies the welcome screen offers the wizard on a terminal, and that declining it exits cleanly
+# Verifies the welcome screen offers the wizard on a terminal and that declining it exits cleanly
 def test_the_welcome_screen_offers_the_wizard_on_a_terminal():
     out, code = run_on_terminal([], keystrokes="n\n")
     assert code == 0

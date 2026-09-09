@@ -1,4 +1,4 @@
-"""Tests for the colour engine: what gets a colour, what must never get one, and what the log file keeps."""
+"""Tests for the colour engine: what gets a colour, what must never get one and what the log file keeps."""
 
 import ast
 import io

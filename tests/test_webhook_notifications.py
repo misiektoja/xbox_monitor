@@ -17,14 +17,14 @@ class FakeResponse:
         self.text = text
         self._payload = payload
 
-    # Returns the canned JSON body, or refuses the way an HTTP client does when there is none
+    # Returns the canned JSON body or refuses the way an HTTP client does when there is none
     def json(self):
         if self._payload is None:
             raise ValueError("no JSON body")
         return self._payload
 
 
-# Records every webhook request instead of sending one, and replays scripted responses
+# Records every webhook request instead of sending one and replays scripted responses
 class FakeClient:
     def __init__(self, log, responses, failure=None, **client_kwargs):
         self.log = log
@@ -115,7 +115,7 @@ def test_an_ntfy_topic_name_is_expanded_to_a_url(entered, expected):
     assert monitor.normalize_ntfy_topic_url(entered) == expected
 
 
-# Verifies the service is recognised from the URL shape, and that an unknown host stays unrecognised
+# Verifies the service is recognised from the URL shape and that an unknown host stays unrecognised
 @pytest.mark.parametrize("url, provider", [
     (DISCORD_URL, "discord"),
     ("https://canary.discord.com/api/v10/webhooks/1/token", "discord"),
@@ -398,7 +398,7 @@ def test_an_unusable_setting_stops_delivery_before_the_request(discord_enabled, 
     assert "* Error:" in capsys.readouterr().out
 
 
-# Verifies a disabled alert type is skipped, and that a forced send ignores the alert settings
+# Verifies a disabled alert type is skipped and that a forced send ignores the alert settings
 def test_a_disabled_alert_is_skipped_unless_it_is_forced(discord_enabled, webhook_client, monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", False)
     log = webhook_client()
@@ -592,7 +592,7 @@ def test_the_error_alert_is_raised_once_per_channel_and_reset_on_recovery():
     guards = {keyword.arg: ast.unparse(keyword.value) for keyword in error_calls[0].keywords}
     assert "not email_sent" in guards["email_enabled"]
     assert "not webhook_sent" in guards["webhook_enabled"]
-    # Both flags have to be cleared when a poll succeeds, or one error would silence every later one
+    # Both flags have to be cleared when a poll succeeds or one error would silence every later one
     cleared = [ast.unparse(node) for node in ast.walk(loop) if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) in ("email_sent", "webhook_sent") and ast.unparse(node.value) == "False"]
     assert cleared.count("email_sent = False") == 2
     assert cleared.count("webhook_sent = False") == 2

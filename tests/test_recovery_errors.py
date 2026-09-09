@@ -25,7 +25,7 @@ def http_error(status, url="https://profile.xboxlive.com/users"):
     return monitor.httpx.HTTPStatusError(f"{status}", request=request, response=monitor.httpx.Response(status, request=request))
 
 
-# A code outside the taxonomy is drift, and it has to be refused where the advice is built
+# A code outside the taxonomy is drift and it has to be refused where the advice is built
 def test_an_unsupported_code_is_refused():
     with pytest.raises(ValueError):
         monitor.make_recovery_advice("auth.something_new", "s", "f", False)
@@ -51,12 +51,12 @@ def produced_recovery_codes(source):
     return codes
 
 
-# Every code the taxonomy declares has to be produced somewhere, or it is documentation of nothing
+# Every code the taxonomy declares has to be produced somewhere or it is documentation of nothing
 def test_every_declared_code_is_produced_somewhere():
     assert produced_recovery_codes(SOURCE) == set(monitor.RECOVERY_CODES)
 
 
-# Every place that reports a problem without the classifier, and the reason it cannot use one
+# Every place that reports a problem without the classifier and the reason it cannot use one
 CLASSIFIER_EXEMPTIONS = {
     "or higher required": "runs at import on an interpreter too old to load the rest of the file",
     "Couldn't find the pytz library": "raised at import, while a dependency the classifier itself needs is missing",
@@ -123,7 +123,7 @@ def test_a_forbidden_profile_is_a_privacy_problem():
     assert monitor.PRIVACY_GUIDE_URL in advice.fix
 
 
-# The same status during a sign-in is a credential problem, and telling the user to check privacy would misdirect
+# The same status during a sign-in is a credential problem and telling the user to check privacy would misdirect
 def test_the_same_status_during_authentication_is_a_credential_problem():
     advice = monitor.classify_recovery_error(http_error(401, "https://login.live.com/oauth20_token.srf"), context="auth")
     assert advice.code == "auth.credentials_invalid"
@@ -153,7 +153,7 @@ def test_a_network_failure_is_told_apart_from_a_timeout(error, code):
     assert monitor.classify_recovery_error(error, context="monitor").code == code
 
 
-# Running out of descriptors is a local limit, and blaming Xbox Live for it sends the user to the wrong place
+# Running out of descriptors is a local limit and blaming Xbox Live for it sends the user to the wrong place
 def test_an_exhausted_descriptor_limit_is_reported_as_a_local_limit():
     advice = monitor.classify_recovery_error(OSError(24, "Too many open files"), context="monitor")
     assert advice.code == "resource.exhausted"
@@ -170,20 +170,20 @@ def test_an_smtp_failure_is_split_by_cause(error, code):
     assert monitor.classify_recovery_error(error, context="smtp").code == code
 
 
-# An unrecognised failure still has to say what to do, or the user is left with a stack trace and no next step
+# An unrecognised failure still has to say what to do or the user is left with a stack trace and no next step
 def test_an_unrecognised_failure_still_names_a_next_step():
     advice = monitor.classify_recovery_error(RuntimeError("something odd"), context="monitor")
     assert advice.code == "unknown"
     assert "--debug" in advice.fix
 
 
-# Advice already classified upstream must survive being reclassified, or the specific fix is replaced by a guess
+# Advice already classified upstream must survive being reclassified or the specific fix is replaced by a guess
 def test_an_already_classified_failure_is_not_reclassified():
     original = monitor.make_recovery_advice("auth.oauth_code", "s", "f", False)
     assert monitor.classify_recovery_error(monitor.RecoveryError(original), context="monitor") is original
 
 
-# The fix has to name the command for how this copy was installed, or it cannot be pasted into a shell
+# The fix has to name the command for how this copy was installed or it cannot be pasted into a shell
 def test_the_fix_is_written_for_the_detected_install_method(monkeypatch):
     monkeypatch.setattr(monitor, "detect_install_method", lambda: "pip")
     assert "xbox_monitor --generate-config" in monitor.classify_recovery_error(context="config.missing").fix
@@ -234,3 +234,62 @@ def test_only_a_credential_failure_is_worth_an_error_email():
     assert monitor.classify_recovery_error(ValueError("invalid_grant"), context="monitor").code in monitor.AUTH_RECOVERY_CODES
     assert monitor.classify_recovery_error(http_error(503), context="monitor").code not in monitor.AUTH_RECOVERY_CODES
     assert monitor.AUTH_RECOVERY_CODES <= monitor.RECOVERY_CODES
+
+
+# Returns the monitoring loop as a parsed tree, so its failure policy can be inspected without running it
+def monitoring_loop_tree():
+    for node in ast.walk(ast.parse(SOURCE)):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "xbox_monitor_user":
+            return node
+    raise AssertionError("the monitoring loop was not found")
+
+
+# The subject is the whole alert for anyone reading it on a phone, so it has to name what actually failed
+def test_the_alert_subject_names_the_failure_and_the_account():
+    advice = monitor.classify_recovery_error(http_error(401), context="monitor")
+
+    subject = monitor.recovery_email_subject(advice, "SomeTag")
+
+    assert subject.startswith("xbox_monitor: ")
+    assert advice.summary in subject
+    assert "(user: SomeTag)" in subject
+
+
+# The body repeats the fix, since the operator reading the alert is not looking at the terminal
+def test_the_alert_body_carries_the_fix_and_the_streak(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer", "Check the connection", True, "detail text")
+
+    body = monitor.recovery_email_body(advice, error_streak=7)
+
+    assert "To fix: Check the connection" in body
+    assert "Failed checks in a row: 7" in body
+    assert "Technical detail: detail text" in body
+    assert "Timestamp: " in body
+
+
+# A single failed check is not worth an alert, so the streak count only appears once it means something
+def test_a_single_failure_body_omits_the_streak(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer", "Check the connection", True)
+
+    assert "Failed checks in a row" not in monitor.recovery_email_body(advice, error_streak=1)
+
+
+# A blip must not mail anyone and a failure nothing can retry away must not wait for a streak that never comes
+def test_the_loop_alerts_at_once_only_for_a_failure_that_cannot_clear_itself():
+    loop = monitoring_loop_tree()
+    assignments = [node for node in ast.walk(loop) if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "alert_after"]
+
+    assert len(assignments) == 1
+    assert ast.unparse(assignments[0].value) == "MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1"
+    assert monitor.MONITOR_TRANSIENT_ALERT_AFTER > 1
+
+
+# Retrying a local file descriptor limit forever would spin without ever recovering, so the loop has to stop
+def test_the_loop_exits_on_a_limit_it_cannot_retry_away():
+    loop = monitoring_loop_tree()
+    guards = [ast.unparse(node.test) for node in ast.walk(loop) if isinstance(node, ast.If) and any(isinstance(inner, ast.Call) and ast.unparse(inner.func) == "sys.exit" for inner in ast.walk(node))]
+
+    assert "exhausted" in guards
+    assert monitor.classify_recovery_error(OSError(24, "Too many open files"), context="monitor").code == "resource.exhausted"

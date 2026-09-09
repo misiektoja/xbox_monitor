@@ -52,7 +52,7 @@ def row_named(rows, label):
     return matched[0]
 
 
-# Verifies a row is part of the full view and the log file unless it opts out, and stays out of the concise view
+# Verifies a row is part of the full view and the log file unless it opts out and stays out of the concise view
 def test_a_row_is_full_view_only_until_it_opts_in():
     row = monitor.StartupSummaryRow("Some setting", "some value")
 

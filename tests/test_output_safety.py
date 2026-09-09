@@ -1,6 +1,6 @@
 """Tests for what may reach the screen, the log file or an email: no live secret and no terminal control sequence.
 
-Diagnostic output exists to be pasted into a public bug report, and game titles and gamertags arrive from Xbox
+Diagnostic output exists to be pasted into a public bug report. Game titles and gamertags arrive from Xbox
 Live, so the tests drive the real print and send paths rather than the helpers alone.
 """
 
@@ -31,7 +31,7 @@ def test_a_loaded_secret_is_removed_from_arbitrary_text():
     assert "<redacted>" in text
 
 
-# A value shorter than the floor is more likely a common word than a credential, and blanking it hides the error
+# A value shorter than the floor is more likely a common word than a credential and blanking it hides the error
 def test_a_short_value_is_not_treated_as_a_secret(monkeypatch):
     monkeypatch.setattr(monitor, "SMTP_PASSWORD", "abc")
     assert monitor.sanitize_error_text("the abc failed") == "the abc failed"
@@ -49,7 +49,7 @@ def test_a_secret_shaped_value_is_removed_even_when_it_was_never_loaded(text, le
     assert leaked not in monitor.sanitize_error_text(text)
 
 
-# Redaction must not eat the message around the secret, or the error stops being diagnosable
+# Redaction must not eat the message around the secret or the error stops being diagnosable
 def test_the_surrounding_message_survives_redaction():
     assert "could not be refreshed" in monitor.sanitize_error_text(f"The token {REFRESH_TOKEN} could not be refreshed")
 
@@ -73,7 +73,7 @@ def test_advice_is_redacted_when_it_is_built():
     assert CLIENT_SECRET not in advice.summary + advice.fix + advice.detail
 
 
-# The technical detail is only printed in debug mode, and that is the path most likely to carry raw text
+# The technical detail is only printed in debug mode and that is the path most likely to carry raw text
 def test_the_printed_technical_detail_is_redacted(monkeypatch, capsys):
     advice = monitor.make_recovery_advice("unknown", "Something broke", "Try again", True, f"raw {CLIENT_SECRET}")
     monkeypatch.setattr(monitor, "DEBUG_MODE", True)
@@ -126,7 +126,7 @@ def test_a_control_sequence_wrapped_in_colour_is_still_removed():
     assert not CONTROL_CHARACTERS.search(re.sub(r"\x1b\[[0-9;]*m", "", cleaned))
 
 
-# Tabs and newlines are layout, not control, and stripping them would collapse every report into one line
+# Tabs and newlines are layout, not control and stripping them would collapse every report into one line
 def test_layout_whitespace_is_kept():
     assert monitor.sanitize_terminal_text("Gamertag:\tx\nXUID:\t1\n") == "Gamertag:\tx\nXUID:\t1\n"
 

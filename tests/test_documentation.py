@@ -95,7 +95,7 @@ def test_the_readme_links_resolve():
     assert not broken, f"the README links at missing documentation pages: {broken}"
 
 
-# Every markdown file outside the site that links into the repository, and which a docs move can silently break
+# Every markdown file outside the site that links into the repository and which a docs move can silently break
 REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md", "tests/README.md")
 
 
@@ -209,7 +209,7 @@ def test_each_page_has_exactly_one_title():
         assert len(titles) == 1, f"{path.name} has {len(titles)} titles: {titles}"
 
 
-# A reader who finds one copy of a section will not know the other exists, and the two will drift
+# A reader who finds one copy of a section will not know the other exists and the two will drift
 def test_no_section_is_duplicated_across_pages():
     seen = {}
     duplicates = []
@@ -259,3 +259,12 @@ def test_the_documented_install_methods_match_the_code():
 def test_sections_sit_on_the_page_a_reader_expects(section, page):
     located = [path.name for path in sorted(DOCS_DIR.glob("*.md")) if f"## {section}" in "\n".join(prose_lines(path))]
     assert located == [page], f"'{section}' is on {located}, expected {page}"
+
+
+# A guide that lists the test files goes stale the moment one is added and nothing else notices
+def test_the_test_suite_guide_lists_every_test_file():
+    listed = set(re.findall(r"^\| `([^`]+)` \|", (PROJECT_ROOT / "tests" / "README.md").read_text(encoding="utf-8"), re.M))
+    present = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")} | {"conftest.py"}
+
+    assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
+    assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
