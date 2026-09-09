@@ -1,4 +1,6 @@
+import ast
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,6 +8,10 @@ import httpx
 import pytest
 
 import xbox_monitor
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
 
 
 # Minimal auth manager stub whose token refresh replays a scripted sequence of outcomes
@@ -126,3 +132,20 @@ def test_signed_session_uses_configured_timeout(monkeypatch):
         assert request.extensions["timeout"] == {"connect": 42.0, "read": 42.0, "write": 42.0, "pool": 42.0}
     finally:
         asyncio.run(session.aclose())
+
+
+# Every session request needs its own deadline, since the session a library hands back may carry the
+# library default rather than the session this tool built with XBOX_API_TIMEOUT
+def test_every_session_request_passes_a_deadline():
+    tree = ast.parse((PROJECT_ROOT / "xbox_monitor.py").read_text(encoding="utf-8"))
+    calls = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in HTTP_METHODS or "session" not in ast.unparse(node.func.value).casefold():
+            continue
+        calls.append((node.lineno, {keyword.arg for keyword in node.keywords if keyword.arg}))
+    offenders = [lineno for lineno, keywords in calls if "timeout" not in keywords]
+
+    assert calls
+    assert offenders == []

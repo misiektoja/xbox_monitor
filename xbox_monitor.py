@@ -1256,7 +1256,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     http_session = getattr(auth_mgr, 'session')  # noqa: B009
 
             if http_session:
-                response = await http_session.get(url, headers=headers)
+                # The probed session may not be the one built with the configured deadline, so it is passed here too
+                response = await http_session.get(url, headers=headers, timeout=httpx.Timeout(float(XBOX_API_TIMEOUT)))
                 response.raise_for_status()
                 friends_data = response.json()
 
