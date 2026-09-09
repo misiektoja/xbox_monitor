@@ -278,7 +278,6 @@ try:
     from pythonxbox.authentication.models import OAuth2TokenResponse
     from pythonxbox.common.signed_session import SignedSession
     from pythonxbox.api.provider.presence.models import PresenceLevel
-    from pythonxbox.api.provider.people.models import PeopleDecoration
     from pythonxbox.api.provider.titlehub.models import TitleFields
     from pythonxbox.api.provider.userstats.models import GeneralStatsField
 except ModuleNotFoundError:
@@ -1142,11 +1141,9 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
         # Extract settings
         location = next((x.value for x in user_obj.settings if x.id == "Location"), "")
-        bio = next((x.value for x in user_obj.settings if x.id == "Bio"), "")
         realname = next((x.value for x in user_obj.settings if x.id == "RealNameOverride"), "")
         gamerscore = next((x.value for x in user_obj.settings if x.id == "Gamerscore"), "0")
         tier = next((x.value for x in user_obj.settings if x.id == "AccountTier"), "")
-        avatar = next((x.value for x in user_obj.settings if x.id == "GameDisplayPicRaw"), "")
 
     except Exception as e:
         print(f"\n* Error: {e}")
@@ -1246,14 +1243,15 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
             # Try to get the session from the XboxLiveClient
             http_session = None
+            # The client's shape varies by library version, so each attribute is probed and read dynamically
             if hasattr(xbl_client, 'session'):
-                http_session = getattr(xbl_client, 'session')
+                http_session = getattr(xbl_client, 'session')  # noqa: B009
             elif hasattr(xbl_client, '_session'):
-                http_session = getattr(xbl_client, '_session')
+                http_session = getattr(xbl_client, '_session')  # noqa: B009
             elif hasattr(xbl_client, '_auth_mgr'):
-                auth_mgr = getattr(xbl_client, '_auth_mgr')
+                auth_mgr = getattr(xbl_client, '_auth_mgr')  # noqa: B009
                 if hasattr(auth_mgr, 'session'):
-                    http_session = getattr(auth_mgr, 'session')
+                    http_session = getattr(auth_mgr, 'session')  # noqa: B009
 
             if http_session:
                 response = await http_session.get(url, headers=headers)
@@ -1325,7 +1323,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         try:
             ach_response = await xbl_client.achievements.get_achievements_xboxone_recent_progress_and_info(xuid)
             if hasattr(ach_response, 'achievements'):
-                recent_achievements = getattr(ach_response, 'achievements')
+                recent_achievements = getattr(ach_response, 'achievements')  # noqa: B009
             # Sometimes it might return a list directly (rare but possible in some lib versions)
             elif isinstance(ach_response, list):
                 recent_achievements = ach_response
@@ -1514,7 +1512,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     # Store as tuple (achievement, title_name) since we cannot modify the model
                     all_recent_achievements.append((ach, title_prog.name))
 
-            except Exception as e:
+            except Exception:
                 pass
 
         # Sort ALL collected achievements by time_unlocked (descending)
@@ -1650,9 +1648,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
     lastonline_ts = 0
     status = ""
     xuid = 0
-    location = ""
-    bio = ""
-    realname = ""
     title_name = ""
     game_name = ""
     platform = ""
@@ -1725,18 +1720,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 print(f"* Error: Cannot get XUID for user {xbox_gamertag}")
                 sys.exit(1)
 
-            location_tmp = next((x for x in profile.profile_users[0].settings if x.id == "Location"), None)
-            if location_tmp:
-                if location_tmp.value:
-                    location = location_tmp.value
-            bio_tmp = next((x for x in profile.profile_users[0].settings if x.id == "Bio"), None)
-            if bio_tmp:
-                if bio_tmp.value:
-                    bio = bio_tmp.value
-            realname_tmp = next((x for x in profile.profile_users[0].settings if x.id == "RealNameOverride"), None)
-            if realname_tmp:
-                if realname_tmp.value:
-                    realname = realname_tmp.value
 
         if xuid == 0:
             print(f"* Error: Cannot get XUID for user {xbox_gamertag}")
@@ -1894,7 +1877,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                             # Use refreshed offline payload if it now includes last_seen
                             if retry_status == "offline" and retry_lastonline_ts > 0:
                                 status = retry_status
-                                title_name = retry_title_name
                                 game_name = retry_game_name
                                 platform = retry_platform
                                 lastonline_ts = retry_lastonline_ts
@@ -1905,7 +1887,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                             # If status bounced back online, stop offline fallback for this poll.
                             if retry_status and retry_status != "offline":
                                 status = retry_status
-                                title_name = retry_title_name
                                 game_name = retry_game_name
                                 platform = retry_platform
                                 lastonline_ts = retry_lastonline_ts
