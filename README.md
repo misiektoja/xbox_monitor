@@ -305,10 +305,10 @@ xbox_monitor <xbox_gamer_tag> -i -u "your_ms_application_client_id" -w "your_ms_
 
 This displays:
 - Gamertag and XUID
-- Real name and Location (if available)
+- Real name, Location and Bio (if available)
 - Account Tier (Game Pass Core/Ultimate or Free)
 - Gamerscore
-- Online status and last online timestamp
+- Online status, last online timestamp and the last played title when the user is offline
 - Platform information
 - Friends count
 - Recently played games with last played date and total play time

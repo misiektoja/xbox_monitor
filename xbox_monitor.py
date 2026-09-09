@@ -1141,6 +1141,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
         # Extract settings
         location = next((x.value for x in user_obj.settings if x.id == "Location"), "")
+        bio = next((x.value for x in user_obj.settings if x.id == "Bio"), "")
         realname = next((x.value for x in user_obj.settings if x.id == "RealNameOverride"), "")
         gamerscore = next((x.value for x in user_obj.settings if x.id == "Gamerscore"), "0")
         tier = next((x.value for x in user_obj.settings if x.id == "AccountTier"), "")
@@ -1362,6 +1363,10 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         print(f"Real name:\t\t\t{realname}")
     if location:
         print(f"Location:\t\t\t{location}")
+    if bio:
+        # Xbox bios can span several lines, so continuation lines are indented to the value column
+        bio_str = bio.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\n\t\t\t\t")
+        print(f"Bio:\t\t\t\t{bio_str}")
 
     if tier:
         print(f"\nAccount Tier:\t\t\t{tier_str}")
@@ -1375,6 +1380,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         if lastonline_ts > 0:
             source_info = " (via title history)" if lastonline_source_history else ""
             print(f"Last online:\t\t\t{get_date_from_ts(lastonline_ts)}{source_info}")
+        if title_name:
+            print(f"Title name:\t\t\t{title_name}")
     else:
         if game_name:
             print(f"Current game:\t\t\t{game_name}")
