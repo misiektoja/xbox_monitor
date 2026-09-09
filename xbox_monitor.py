@@ -2336,7 +2336,7 @@ async def _wizard_request_tokens(client_id, client_secret, input_func=None):
 
 # Collects the Microsoft application credentials, then authorizes once so monitoring has a token to refresh
 def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, authorizer=None):
-    print(f"* Register an application at {ENTRA_PORTAL_URL}")
+    print(f"Register an application at {ENTRA_PORTAL_URL}")
     print("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
     print(f"  Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
     already_configured = _wizard_credentials_ready(state) or any(_wizard_existing_secret(key, state.env_path) or dotenv_contains_key(state.env_path, key) for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
@@ -2647,9 +2647,9 @@ def _wizard_review_setup(state, input_func=None, getpass_func=None):
 
 # Prints where setup will write and which install method the printed commands are written for
 def _wizard_print_setup_destinations(config_path, env_path):
-    print(f"Detected install method: {colorize('username', install_method_display_name())}")
-    print(f"Configuration:           {config_path}")
-    print(f"Dotenv:                  {env_path}\n")
+    print(f"Detected install method: {colorize('username', detect_install_method())}")
+    print(f"Configuration:          {config_path}")
+    print(f"Dotenv:                 {env_path}\n")
 
 
 # Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state
@@ -2742,6 +2742,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
         _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
         _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
         _wizard_collect_output_section(state, input_func=input_func)

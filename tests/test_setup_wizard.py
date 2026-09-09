@@ -551,3 +551,32 @@ def test_a_hidden_wizard_answer_is_read_with_debug_output_off(monkeypatch):
     assert answer == "secret"
     assert seen == [False]
     assert monitor.DEBUG_MODE is True
+
+
+# Replays scripted answers the way a terminal does, echoing each prompt so the transcript is what a user sees
+class EchoingAnswers(ScriptedAnswers):
+    def __call__(self, prompt=""):
+        typed = super().__call__(prompt)
+        print(f"{prompt}{typed}")
+        return typed
+
+
+# Verifies the destination block states the raw install method key in the column the siblings print
+def test_the_setup_header_uses_the_shared_destination_column(capsys):
+    monitor._wizard_print_setup_destinations("xbox_monitor.conf", ".env")
+
+    assert capsys.readouterr().out == f"Detected install method: {monitor.detect_install_method()}\nConfiguration:          xbox_monitor.conf\nDotenv:                 .env\n\n"
+
+
+# Verifies the credential guidance and both channel questions each open their own group
+def test_every_question_group_opens_with_one_blank_line(monkeypatch, wizard_paths, capsys):
+    hidden = ["client-id", "client-secret"]
+    monkeypatch.setattr(monitor, "_wizard_request_tokens", TokenAuthorizer())
+
+    monitor.run_setup_wizard(config_file=str(wizard_paths["config"]), env_file=str(wizard_paths["env"]), input_func=EchoingAnswers(BASIC_ANSWERS), getpass_func=lambda prompt="": hidden.pop(0) if hidden else "", interactive=True)
+
+    transcript = capsys.readouterr().out
+    assert f"\n\nRegister an application at {monitor.ENTRA_PORTAL_URL}\n" in transcript
+    assert "* Register an application at" not in transcript
+    assert "\n\nConfigure email notifications?" in transcript
+    assert "\n\nSet up webhook alerts (Discord, ntfy etc.)?" in transcript
