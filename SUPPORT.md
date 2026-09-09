@@ -17,7 +17,7 @@ xbox_monitor --version
 xbox_monitor --send-test-email
 ```
 
-Most reports come down to a Microsoft Entra application whose client ID or secret the sign-in endpoint no longer accepts, an expired token cache or an SMTP server that refuses the message. Rerun the failing command with `--debug` and keep the output.
+Most reports come down to a Microsoft Entra application whose client ID or secret the sign-in endpoint no longer accepts, an expired token cache or an SMTP server that refuses the message. Rerun the failing command with `--verbose --debug` and keep the output.
 
 ## Where to ask
 
@@ -31,7 +31,7 @@ Most reports come down to a Microsoft Entra application whose client ID or secre
 
 ## Before you post
 
-Include the version, how you installed it (PyPI or manual script), your operating system, the monitored gamertag or XUID you passed and what you expected instead. Run the failing command with `--debug` and attach the relevant part of the log, which the tool writes unless you pass `--disable-logging`.
+Include the version, how you installed it (PyPI or manual script), your operating system, the monitored gamertag or XUID you passed and what you expected instead. Run the failing command with `--verbose --debug` and attach the relevant part of the log, which the tool writes unless you pass `--disable-logging`.
 
 Never post your Microsoft application client ID or client secret, the generated token file, SMTP passwords, webhook URLs or a complete configuration file. Redact monitored gamertags if they matter to you.
 

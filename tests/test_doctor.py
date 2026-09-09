@@ -205,8 +205,8 @@ def test_only_the_rows_that_are_not_a_pass_carry_a_fix(xbox_session, doctor_run,
     fixes = [index for index, line in enumerate(lines) if line.startswith("To fix: ")]
     assert fixes
     for index in fixes:
-        preceding = next(line for line in reversed(lines[:index]) if MARKER_RE.match(line))
-        assert MARKER_RE.match(preceding).group(1) in ("WARN", "FAIL")
+        preceding = next(MARKER_RE.match(line) for line in reversed(lines[:index]) if MARKER_RE.match(line))
+        assert preceding is not None and preceding.group(1) in ("WARN", "FAIL")
 
 
 # One sentence and one link is the whole contract for the end of the report
@@ -458,6 +458,7 @@ def test_enabled_alerts_with_broken_settings_warn(monkeypatch):
     monkeypatch.setattr(monitor, "SMTP_HOST", "not a host")
     checks = monitor.doctor_check_email_notifications(monitor.DoctorReport())
     assert checks[0].status == "WARN"
+    assert checks[0].advice is not None
     assert checks[0].advice.code == "smtp.invalid"
 
 
@@ -485,6 +486,7 @@ def test_a_rejected_sign_in_fails_the_email_row(monkeypatch):
     report = monitor.DoctorReport()
     checks = monitor.doctor_check_email_notifications(report)
     assert checks[0].status == "FAIL"
+    assert checks[0].advice is not None
     assert checks[0].advice.code == "smtp.authentication"
     assert report.email_ready is False
 

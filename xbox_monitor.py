@@ -168,6 +168,10 @@ CLEAR_SCREEN = True
 # when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 
+# Report rare operational events such as recoveries and degraded features (can also be enabled via --verbose flag)
+# Independent of DEBUG_MODE, which reports every technical step instead
+VERBOSE_MODE = False
+
 # Enable debug mode for technical logging (can also be enabled via --debug flag)
 # Shows technical details, timestamps and internal state changes
 DEBUG_MODE = False
@@ -212,6 +216,7 @@ ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
+VERBOSE_MODE = False
 DEBUG_MODE = False
 
 exec(CONFIG_BLOCK, globals())
@@ -221,6 +226,9 @@ DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
+
+# Secrets whose length is issued by Microsoft rather than chosen by the user, so reporting it discloses nothing
+FIXED_LENGTH_SECRET_KEYS = frozenset(("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
 
 # Where each secret's effective value came from, recorded while precedence is applied so it can be reported later
 SECRET_SOURCES = {}
@@ -240,12 +248,15 @@ TIMEZONE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#time-zone"
 SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
 TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
-DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#debug-output"
+DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 
 # How the positional target may be written. Reused by the recovery advice and every prompt, because three
 # hand-written phrasings of the same list is what these tools drift into
 XBOX_TARGET_FORMS = "Xbox gamertag, not the Microsoft account e-mail or the real name"
+
+# True once monitoring has printed its header, so a verbose notice after that closes its own block
+MONITORING_ACTIVE = False
 
 # How LOCAL_TIMEZONE was resolved, so the doctor reports the configured value rather than the resolved one
 LOCAL_TIMEZONE_STATE = "config"
@@ -326,6 +337,8 @@ except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the Python-Xbox library !\n\nTo install it, run:\n    pip install python-xbox\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/tr4nt0r/python-xbox/")
 import shutil
 import shlex
+import textwrap
+from collections import namedtuple
 import subprocess
 import tempfile
 from pathlib import Path
@@ -569,7 +582,9 @@ def doctor_check_connectivity():
     try:
         with httpx.Client(verify=tls_context(), timeout=CHECK_INTERNET_TIMEOUT) as client:
             client.get(CHECK_INTERNET_URL)
+        debug_print("Doctor connectivity check", url=CHECK_INTERNET_URL, outcome="OK")
     except Exception as exc:
+        debug_print("Doctor connectivity check", url=CHECK_INTERNET_URL, outcome="failed", error=f"{type(exc).__name__}: {exc}")
         advice = classify_recovery_error(exc, context="connectivity", detail=f"{CHECK_INTERNET_URL} could not be reached: {exc}")
         return [make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice)]
     return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL} (TLS verification: {VERIFY_SSL})")]
@@ -594,7 +609,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
     checks = []
     credentials_missing = [name for name in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET") if not secret_is_set(globals().get(name))]
     if credentials_missing:
-        advice = classify_recovery_error(context="secret.missing", detail=f"{' and '.join(credentials_missing)} is not set" if len(credentials_missing) == 1 else f"{' and '.join(credentials_missing)} are not set")
+        advice = classify_recovery_error(context="secret.missing", detail=f"{join_names(credentials_missing)} is not set" if len(credentials_missing) == 1 else f"{join_names(credentials_missing)} are not set")
         checks.append(make_doctor_check("Authentication", "FAIL", advice.summary, advice=advice))
         return checks + doctor_check_target_identity(report, xbox_gamertag)
     checks.append(make_doctor_check("Authentication", "PASS", "Microsoft application credentials are set", "MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET both hold a value"))
@@ -700,7 +715,7 @@ def smtp_sign_in(password, timeout=15):
         settings_advice = validate_smtp_settings()
         if settings_advice is not None:
             raise RecoveryError(settings_advice)
-        debug_print(f"SMTP sign-in check against {SMTP_HOST}:{SMTP_PORT} as {SMTP_USER} (STARTTLS: {bool(SMTP_SSL)}, timeout: {timeout}s)")
+        debug_print("SMTP sign-in check", host=SMTP_HOST, port=SMTP_PORT, user=SMTP_USER, starttls=bool(SMTP_SSL), timeout=timeout)
         connection = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=timeout)
         if SMTP_SSL:
             connection.starttls(context=tls_context())
@@ -710,7 +725,7 @@ def smtp_sign_in(password, timeout=15):
             try:
                 connection.quit()
             except Exception as quit_error:
-                debug_print(f"Closing the SMTP connection failed: {type(quit_error).__name__}: {quit_error}")
+                debug_print("SMTP connection close", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
     except RecoveryError:
         raise
     except Exception as exc:
@@ -839,6 +854,87 @@ def run_doctor(xbox_gamertag=None, config_path=None, env_path=None, config_advic
     return 1 if any(check.status == "FAIL" for check in report.checks) else 0
 
 
+# One startup summary setting, routed independently to the concise view, the full view and the log file
+StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise", "full", "log"])
+StartupSummaryRow.__new__.__defaults__ = (False, True, True)
+
+
+# Reports whether the reader asked for the complete startup summary rather than the concise one
+def full_startup_summary_enabled():
+    return bool(VERBOSE_MODE or DEBUG_MODE)
+
+
+# Returns the email alert rollup, naming what is switched on rather than printing four separate booleans
+def startup_notification_state():
+    enabled = [name for name, on in (("status changes", ACTIVE_INACTIVE_NOTIFICATION), ("game changes", GAME_CHANGE_NOTIFICATION), ("all status changes", STATUS_NOTIFICATION), ("errors", ERROR_NOTIFICATION)) if on]
+    return "On (" + ", ".join(enabled) + ")" if enabled else "Off"
+
+
+# Builds every summary row in the order the sibling tools print them, most useful first
+def build_startup_summary(xbox_gamertag=None, config_path=None, env_path=None, log_path=None):
+    supplied = doctor_secret_sources()
+    from_dotenv = sorted(supplied.get("dotenv file", ()))
+    from_environment = sorted(supplied.get("environment", ()))
+    # Bucketed by exact source rather than by "everything else", so a command-line secret is not filed as config
+    from_config = sorted(supplied.get("configuration file", ()))
+    from_command_line = sorted(supplied.get("command line", ()))
+    output_state = str(log_path) if log_path else "Terminal only (logging disabled)"
+    return [
+        StartupSummaryRow("Target", str(xbox_gamertag) if xbox_gamertag else "None", concise=True),
+        StartupSummaryRow("Polling intervals", f"[offline: {display_time(XBOX_CHECK_INTERVAL)}] [online: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]", concise=True),
+        StartupSummaryRow("Notifications (email)", startup_notification_state(), concise=True),
+        StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
+        StartupSummaryRow("Output logging", str(log_path) if log_path else "Disabled"),
+        StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
+        StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
+        StartupSummaryRow("Status file", resolve_status_file(xbox_gamertag) if xbox_gamertag else "None"),
+        StartupSummaryRow("Token cache", MS_AUTH_TOKENS_FILE or "None"),
+        # Each optional feature earns a concise row only once it is actually switched on
+        StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
+        StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
+        StartupSummaryRow("Local timezone", LOCAL_TIMEZONE),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(from_environment) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(from_command_line) if from_command_line else "None"),
+        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
+        StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
+        # Points at the two modes for a reader who does not know they exist, so the full view drops it
+        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False),
+    ]
+
+
+# Formats one summary row with an aligned value column, wrapping only the rollup that grows long
+def format_startup_summary_row(row):
+    prefix = f"* {(row.label + ':'):<30}"
+    if row.label == "Notifications (email)":
+        return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
+    return f"{prefix}{row.value}\n"
+
+
+# Prints the summary, showing the concise rows unless the full view was asked for. The log file always keeps
+# the complete set, so a bug report made from a log carries every effective setting whatever the terminal showed
+def emit_startup_summary(rows, show_full=False, stream=None):
+    destination = sys.stdout if stream is None else stream
+    # A stream that does not split its output has no log file to hold the full view, so those writes go nowhere
+    write_log = getattr(destination, "log_only", lambda line: None)
+    write_terminal = getattr(destination, "terminal_only", None)
+    if write_terminal is None:
+        write_terminal = destination.write
+    for row in rows:
+        line = format_startup_summary_row(row)
+        if row.full and row.log:
+            write_log(line)
+        if row.full if show_full else row.concise:
+            write_terminal(line)
+    write_log("\n")
+    write_terminal("\n")
+    destination.flush()
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -870,6 +966,19 @@ class Logger(object):
         self.terminal.flush()
         self.logfile.flush()
 
+    # Writes text the log file should keep but the terminal has already shown, or does not need
+    def log_only(self, message):
+        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        self.logfile.flush()
+
+    # Writes text meant for the reader at the terminal, which the log file has its own version of
+    def terminal_only(self, message):
+        global STDOUT_AT_START_OF_LINE
+        if message:
+            STDOUT_AT_START_OF_LINE = message.endswith('\n')
+        self.terminal.write(message)
+        self.terminal.flush()
+
     def flush(self):
         pass
 
@@ -888,10 +997,12 @@ def check_internet(url=None, timeout=None):
     try:
         with httpx.Client(verify=tls_context(), timeout=check_timeout) as client:
             client.get(check_url)
-        return True
     except Exception as e:
+        debug_print("Connectivity check", url=check_url, outcome="failed", error=f"{type(e).__name__}: {e}")
         report_recovery_error(e, context="connectivity", detail=f"The connectivity endpoint {check_url} could not be reached: {e}")
         return False
+    debug_print("Connectivity check", url=check_url, outcome="OK")
+    return True
 
 
 # Clears the terminal screen
@@ -903,7 +1014,8 @@ def clear_screen(enabled=True):
             os.system('cls')
         else:
             os.system('clear')
-    except Exception:
+    except Exception as e:
+        debug_print("Terminal screen clear", outcome="failed", error=f"{type(e).__name__}: {e}")
         print("* Cannot clear the screen contents")
 
 
@@ -972,7 +1084,8 @@ def create_timestamped_backup(destination, attempts=100):
                 backup_file.write(existing_bytes)
                 backup_file.flush()
                 os.fsync(backup_file.fileno())
-        except Exception:
+        except Exception as backup_error:
+            debug_print("Backup write", path=str(backup_path), outcome="failed", error=f"{type(backup_error).__name__}: {backup_error}")
             try:
                 os.unlink(str(backup_path))
             except OSError:
@@ -998,6 +1111,7 @@ def write_file_atomically(destination, content, mode=None):
             os.chmod(str(temporary_path), mode)
         os.replace(str(temporary_path), str(destination_path))
         temporary_path = None
+        debug_print("Atomic file write", path=str(destination_path), outcome="OK", bytes=len(content.encode("utf-8")), mode=oct(mode) if mode is not None else None)
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
@@ -1032,7 +1146,14 @@ def write_generated_config(output_file, content, force=False, interactive=None, 
 
 # Saves the last seen status atomically, so an interrupted write cannot strand a half-written status file
 def save_last_status(status_file, status_ts, status):
+    debug_print("Status file write", path=str(status_file), status=status, ts=status_ts)
     write_file_atomically(status_file, json.dumps([status_ts, status], indent=2) + "\n")
+
+
+# Joins names the way a sentence does, so three of them do not read as "A and B and C"
+def join_names(names):
+    names = list(names)
+    return "" if not names else str(names[0]) if len(names) == 1 else f"{', '.join(str(name) for name in names[:-1])} and {names[-1]}"
 
 
 # Reports whether a setting holds a real value rather than being empty or one of the shipped placeholders
@@ -1042,7 +1163,9 @@ def secret_is_set(value):
 
 # Applies the diagnostic flags given on the command line, before and again after the config file is read
 def apply_diagnostic_cli_flags(args):
-    global DEBUG_MODE
+    global VERBOSE_MODE, DEBUG_MODE
+    if getattr(args, "verbose_mode", None):
+        VERBOSE_MODE = True
     if getattr(args, "debug_mode", None):
         DEBUG_MODE = True
 
@@ -1372,17 +1495,58 @@ def print_startup_banner():
     print(f"{'':21}v{VERSION}\n")
 
 
-# Debug print helper - only prints if DEBUG_MODE is enabled
+# Describes a secret in diagnostic output without revealing any part of it. A password the user chose reports
+# presence only: its length is a real disclosure in output that ends up pasted into bug reports
+def secret_fingerprint(value, key=None):
+    if not secret_is_set(value):
+        return "not set"
+    return f"set, {len(value)} chars" if key in FIXED_LENGTH_SECRET_KEYS else "set"
+
+
+# Renders one diagnostic line as an operation followed by comma-separated key=value fields, dropping unset ones
+def format_diagnostic_line(operation, fields):
+    rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return f"{operation}: {rendered}" if rendered else str(operation)
+
+
+# Prints a technical diagnostic line, shown only when debug mode is on
 # Debug output exists to be pasted into a public bug report, so it is redacted here rather than at every call site
-def debug_print(message):
+# The parameter is named _operation because tools in this family wrap calls that legitimately have an
+# operation field, and a caller passing operation= would collide with the positional
+def debug_print(_operation, **fields):
     global STDOUT_AT_START_OF_LINE
     if DEBUG_MODE:
         timestamp = datetime.now().strftime("%H:%M:%S")
-        prefix = ""
-        if not STDOUT_AT_START_OF_LINE:
-            prefix = "\n"
+        prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
+        message = format_diagnostic_line(_operation, fields)
         print(f"{prefix}[DEBUG {timestamp}] {sanitize_error_text(message)}")
         STDOUT_AT_START_OF_LINE = True
+
+
+# Prints a rare operational event, shown only when verbose mode is on
+def verbose_print(message):
+    global STDOUT_AT_START_OF_LINE
+    if VERBOSE_MODE:
+        prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
+        print(f"{prefix}* {sanitize_error_text(message)}")
+        STDOUT_AT_START_OF_LINE = True
+
+
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts("Timestamp:\t\t\t")
+
+
+# Marks the point where output stops being the startup screen, so later notices close their own block
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
 
 
 # Returns a printable description of an exception, including its type since some network errors carry an empty message
@@ -1419,6 +1583,7 @@ async def refresh_tokens_with_retry(auth_mgr):
             prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
             print(f"{prefix}* Token refresh attempt {attempt} of {TOKEN_REFRESH_RETRIES} failed ({format_exception(e)}), retrying in {display_time(delay)}")
             STDOUT_AT_START_OF_LINE = True
+            debug_print("Token refresh attempt", attempt=f"{attempt}/{TOKEN_REFRESH_RETRIES}", outcome="failed", error=f"{type(e).__name__}: {e}", retry_in=display_time(delay))
             await asyncio.sleep(delay)
             delay *= 2
 
@@ -1438,12 +1603,12 @@ async def oauth_interactive_auth(auth_mgr):
 async def authenticate_and_refresh_tokens(auth_mgr):
     token_file_loaded = False
     try:
-        debug_print("Loading tokens from file...")
+        debug_print("Token cache read", path=MS_AUTH_TOKENS_FILE)
         with open(MS_AUTH_TOKENS_FILE) as f:
             tokens = f.read()
         auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens)
         token_file_loaded = True
-        debug_print("Tokens loaded successfully.")
+        debug_print("Token cache read", path=MS_AUTH_TOKENS_FILE, outcome="OK")
     except FileNotFoundError:
         print(f"\n* No saved Xbox tokens at '{MS_AUTH_TOKENS_FILE}' yet, so this run will ask you to authorize once")
     except Exception as e:
@@ -1454,9 +1619,9 @@ async def authenticate_and_refresh_tokens(auth_mgr):
         await oauth_interactive_auth(auth_mgr)
 
     try:
-        debug_print("Refreshing tokens...")
+        debug_print("Token refresh")
         await refresh_tokens_with_retry(auth_mgr)
-        debug_print("Tokens refreshed successfully.")
+        debug_print("Token refresh", outcome="OK")
     except HTTPStatusError as e:
         # Temporary server-side errors are not a credential problem, so do not force interactive re-authentication
         if is_transient_auth_error(e):
@@ -1465,9 +1630,9 @@ async def authenticate_and_refresh_tokens(auth_mgr):
         report_recovery_error(e, context="auth", detail=f"Refreshing the saved Xbox tokens failed: {format_exception(e)}", label="Warning")
         print("* Re-authorization is required")
         await oauth_interactive_auth(auth_mgr)
-        debug_print("Refreshing tokens after interactive OAuth...")
+        debug_print("Token refresh after re-authorization")
         await refresh_tokens_with_retry(auth_mgr)
-        debug_print("Tokens refreshed successfully after re-authentication.")
+        debug_print("Token refresh after re-authorization", outcome="OK")
 
     # The cache holds a refresh token, so it is private to the owner and never left half-written
     write_file_atomically(MS_AUTH_TOKENS_FILE, auth_mgr.oauth.model_dump_json(), mode=0o600)
@@ -1516,7 +1681,8 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
     if isinstance(timestamp1, str):
         try:
             timestamp1 = isoparse(timestamp1)
-        except Exception:
+        except Exception as e:
+            debug_print("Timestamp parse", field="timestamp1", outcome="failed", error=f"{type(e).__name__}: {e}")
             return ""
 
     if isinstance(timestamp1, int):
@@ -1537,7 +1703,8 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
     if isinstance(timestamp2, str):
         try:
             timestamp2 = isoparse(timestamp2)
-        except Exception:
+        except Exception as e:
+            debug_print("Timestamp parse", field="timestamp2", outcome="failed", error=f"{type(e).__name__}: {e}")
             return ""
 
     if isinstance(timestamp2, int):
@@ -1596,6 +1763,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     settings_advice = validate_smtp_settings()
     if settings_advice is not None:
+        debug_print("Email delivery", outcome="skipped", reason="the SMTP settings are unusable")
         print_recovery_advice(settings_advice)
         return 1
 
@@ -1632,8 +1800,11 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
+        debug_print("Email delivery", host=SMTP_HOST, outcome="failed", error=f"{type(e).__name__}: {e}")
         report_recovery_error(e, context="smtp", detail=f"Sending the email through {SMTP_HOST} failed: {e}")
         return 1
+    debug_print("Email delivery", host=SMTP_HOST, outcome="OK", subject=subject)
+    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
 
 
@@ -1644,7 +1815,9 @@ def init_csv_file(csv_file_name):
             with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
                 writer.writeheader()
+        debug_print("CSV initialization", path=csv_file_name, outcome="OK")
     except Exception as e:
+        debug_print("CSV initialization", path=csv_file_name, outcome="failed", error=f"{type(e).__name__}: {e}")
         raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}': {e}")
 
 
@@ -1656,7 +1829,9 @@ def write_csv_entry(csv_file_name, timestamp, status, gamename):
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename})
 
+        debug_print("CSV entry write", path=csv_file_name, outcome="OK", status=status)
     except Exception as e:
+        debug_print("CSV entry write", path=csv_file_name, outcome="failed", error=f"{type(e).__name__}: {e}")
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
@@ -1684,7 +1859,8 @@ def convert_iso_str_to_datetime(dt_str):
         if utc_dt.tzinfo is None:
             utc_dt = pytz.utc.localize(utc_dt)
         return utc_dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
-    except Exception:
+    except Exception as e:
+        debug_print("Timestamp conversion to local time", outcome="failed", error=f"{type(e).__name__}: {e}")
         return None
 
 
@@ -1706,7 +1882,8 @@ def get_date_from_ts(ts):
     if isinstance(ts, str):
         try:
             ts = isoparse(ts)
-        except Exception:
+        except Exception as e:
+            debug_print("Timestamp parse", field="ts", outcome="failed", error=f"{type(e).__name__}: {e}")
             return ""
 
     if isinstance(ts, datetime):
@@ -1742,7 +1919,8 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
     if isinstance(ts, str):
         try:
             ts = isoparse(ts)
-        except Exception:
+        except Exception as e:
+            debug_print("Timestamp parse", field="ts", outcome="failed", error=f"{type(e).__name__}: {e}")
             return ""
 
     if isinstance(ts, datetime):
@@ -1781,7 +1959,8 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     if isinstance(ts, str):
         try:
             ts = isoparse(ts)
-        except Exception:
+        except Exception as e:
+            debug_print("Timestamp parse", field="ts", outcome="failed", error=f"{type(e).__name__}: {e}")
             return ""
 
     if isinstance(ts, datetime):
@@ -2041,12 +2220,12 @@ def xbox_process_presence_class(presence, platform_short=True):
                         game_name = title.name
                         break
 
-    debug_print(f"Presence data: state={status}, title_name={title_name}, game_name={game_name}, platform={platform}, lastonline={get_debug_date_from_ts(lastonline_ts)}")
-    debug_print(f"Presence raw: last_seen_title={last_seen_raw_title}, last_seen_device={last_seen_raw_device}, last_seen_timestamp={last_seen_raw_ts}")
+    debug_print("Presence parsed", state=status, title_name=title_name, game_name=game_name, platform=platform, lastonline=get_debug_date_from_ts(lastonline_ts))
+    debug_print("Presence raw fields", last_seen_title=last_seen_raw_title, last_seen_device=last_seen_raw_device, last_seen_timestamp=last_seen_raw_ts)
     if presence_titles_dbg:
-        debug_print(f"Presence device titles: {', '.join(presence_titles_dbg)}")
+        debug_print("Presence device titles", titles=", ".join(presence_titles_dbg))
     else:
-        debug_print("Presence device titles: none")
+        debug_print("Presence device titles", titles="none")
 
     return status, title_name, game_name, platform, lastonline_ts
 
@@ -2062,7 +2241,7 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
             max_items=3
         )
         if history_response.titles:
-            debug_print(f"Fetched {len(history_response.titles)} history items:")
+            debug_print("Title history fetch", outcome="OK", items=len(history_response.titles))
             best_ts = 0
             best_game = ""
             for i, title in enumerate(history_response.titles, 1):
@@ -2071,16 +2250,17 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
                     if played_dt:
                         ts = int(played_dt.timestamp())
                         game_name = title.name if hasattr(title, 'name') and title.name else "Unknown"
-                        debug_print(f"  {i}. {game_name} played at {get_date_from_ts(ts)}")
+                        debug_print("Title history item", index=i, game=game_name, played=get_date_from_ts(ts))
                         if best_ts == 0:
                             best_ts = ts
                             best_game = game_name
 
             if best_ts > 0:
-                debug_print(f"Selected title history: {best_game} at {get_date_from_ts(best_ts)}")
+                debug_print("Title history selection", game=best_game, played=get_date_from_ts(best_ts))
             return best_ts, best_game
     except Exception as e:
-        debug_print(f"Error in xbox_get_latest_title_played_ts: {e}")
+        debug_print("Title history fetch", outcome="failed", error=f"{type(e).__name__}: {e}")
+        verbose_notice("The title history fallback is unavailable, so an appear-offline user's activity may go unreported")
     return 0, ""
 
 
@@ -2088,9 +2268,9 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
 def xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts):
     # Only use title history if it's significantly newer (20s jitter buffer) OR presence is missing (0)
     if title_history_ts > 0 and (title_history_ts > (lastonline_ts + 20) or lastonline_ts == 0):
-        debug_print(f"Decision: Using Title History timestamp (history={get_debug_date_from_ts(title_history_ts)} > presence={get_debug_date_from_ts(lastonline_ts)})")
+        debug_print("Last active decision", source="title_history", history=get_debug_date_from_ts(title_history_ts), presence=get_debug_date_from_ts(lastonline_ts))
         return title_history_ts, True
-    debug_print(f"Decision: Using Presence timestamp (presence={get_debug_date_from_ts(lastonline_ts)} >= history={get_debug_date_from_ts(title_history_ts)})")
+    debug_print("Last active decision", source="presence", presence=get_debug_date_from_ts(lastonline_ts), history=get_debug_date_from_ts(title_history_ts))
     return lastonline_ts, False
 
 
@@ -2159,7 +2339,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         if session:
             await session.aclose()
         sys.exit(1)
-    debug_print(f"Profile fetched: XUID={xuid}, Gamerscore={gamerscore}, Tier={tier}")
+    debug_print("Profile fetch", outcome="OK", xuid=xuid, gamerscore=gamerscore, tier=tier)
     print_ok()
 
     print_step("Fetching presence info...")
@@ -2211,7 +2391,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     for f in friends_list_filtered
                 ]
                 friends_count = len(friends_list)
-                debug_print(f"Friends fetched via library method: {friends_count}")
+                debug_print("Friends fetch", source="library", outcome="OK", count=friends_count)
             elif len(friends_list_raw) == 1:
                 # Response contains only the target user's profile
                 # Check if this is the unfixed library bug or if user genuinely has 0 friends
@@ -2221,26 +2401,26 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
                 if actual_friend_count > 0:
                     # Bug: Library returned user profile but they have friends - fallback needed
-                    debug_print(f"Library bug detected: returned user profile with friend_count={actual_friend_count}, falling back to direct API")
+                    debug_print("Friends fetch", source="library", outcome="degraded", reason="the library returned the user's own profile", friend_count=actual_friend_count)
                     raise ValueError("Unfixed library bug - response contains user profile instead of friends")
                 else:
                     # User genuinely has 0 friends
                     friends_count = 0
                     friends_list = []
-                    debug_print("User has 0 friends (confirmed via library method)")
+                    debug_print("Friends fetch", source="library", outcome="OK", count=0, confirmed=True)
             else:
                 # Empty response - user has 0 friends
                 friends_count = 0
                 friends_list = []
-                debug_print("Friends fetched via library method: 0")
+                debug_print("Friends fetch", source="library", outcome="OK", count=0)
         else:
             # Empty people list - user has 0 friends
             friends_count = 0
             friends_list = []
-            debug_print("Friends fetched via library method: 0 (empty response)")
+            debug_print("Friends fetch", source="library", outcome="OK", count=0, response="empty")
 
     except Exception as e:
-        debug_print(f"Library method failed or unfixed: {e}")
+        debug_print("Friends fetch", source="library", outcome="failed", error=f"{type(e).__name__}: {e}")
         # Fallback to direct API call (works with unfixed library)
         try:
             peoplehub_url = "https://peoplehub.xboxlive.com"
@@ -2273,25 +2453,25 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     friends_list_raw = friends_data['people']
                     friends_list = [f for f in friends_list_raw if str(f.get('xuid', '')) != str(xuid)]
                     friends_count = len(friends_list)
-                    debug_print(f"Friends fetched via direct API: {friends_count}")
+                    debug_print("Friends fetch", source="direct API", outcome="OK", count=friends_count)
             else:
-                debug_print("Could not find HTTP session for direct API call")
+                debug_print("Friends fetch", source="direct API", outcome="skipped", reason="no HTTP session was available")
                 # Last fallback - get count from summary
                 friends_summary = await xbl_client.people.get_friends_summary_by_xuid(str(xuid))
                 if hasattr(friends_summary, 'target_following_count'):
                     friends_count = friends_summary.target_following_count
-                    debug_print(f"Friends count from summary: {friends_count}")
+                    debug_print("Friends fetch", source="summary", outcome="OK", count=friends_count)
 
         except Exception as e2:
-            debug_print(f"Direct API and summary fallbacks failed: {e2}")
+            debug_print("Friends fetch", source="direct API and summary", outcome="failed", error=f"{type(e2).__name__}: {e2}")
             print(f"Warning: Could not fetch friends: {e2}")
 
     if friends_list:
-        debug_print(f"Friends list ({len(friends_list)}):")
+        debug_print("Friends list", count=len(friends_list))
         for i, friend in enumerate(friends_list, 1):
             f_gamertag = friend.get('gamertag', 'Unknown') if isinstance(friend, dict) else getattr(friend, 'gamertag', 'Unknown')
             f_state = friend.get('presenceState', 'Unknown') if isinstance(friend, dict) else getattr(friend, 'presence_state', 'Offline')
-            debug_print(f"  {i}. {f_gamertag} ({f_state})")
+            debug_print("Friends list item", index=i, gamertag=f_gamertag, state=f_state)
 
     print_ok()
 
@@ -2314,16 +2494,16 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             print(f"Warning: Could not fetch game history: {e}")
 
         if recent_games:
-            debug_print(f"Game history titles fetched: {len(recent_games)}")
+            debug_print("Game history fetch", outcome="OK", count=len(recent_games))
             for i, title in enumerate(recent_games, 1):
                 played_val = "Unknown"
                 if title.title_history and title.title_history.last_time_played:
                     dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
                     if dt:
                         played_val = get_date_from_ts(int(dt.timestamp()))
-                debug_print(f"  {i}. {title.name} (Last played: {played_val})")
+                debug_print("Game history item", index=i, title=title.name, last_played=played_val)
         else:
-            debug_print("Game history fetched: 0")
+            debug_print("Game history fetch", outcome="OK", count=0)
 
         print_ok()
 
@@ -2342,7 +2522,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             print(f"Warning: Could not fetch achievements: {e}")
 
         if recent_achievements:
-            debug_print(f"Method 1 (Fast Feed) - Recent achievements fetched: {len(recent_achievements)}")
+            debug_print("Recent achievements fetch", source="fast feed", outcome="OK", count=len(recent_achievements))
             for i, ach in enumerate(recent_achievements, 1):
                 name = ach.name if hasattr(ach, 'name') and ach.name else "Unknown"
                 state = ach.progress_state if hasattr(ach, 'progress_state') else "Unknown"
@@ -2351,9 +2531,9 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     dt = convert_iso_str_to_datetime(ach.progression.time_unlocked)
                     if dt:
                         time_unlocked = get_date_from_ts(int(dt.timestamp()))
-                debug_print(f"  {i}. {name} ({state}, Unlocked: {time_unlocked})")
+                debug_print("Recent achievements item", index=i, name=name, state=state, unlocked=time_unlocked)
         else:
-            debug_print("Method 1 (Fast Feed) - Recent achievements fetched: 0")
+            debug_print("Recent achievements fetch", source="fast feed", outcome="OK", count=0)
 
         print_ok()
 
@@ -2449,8 +2629,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         try:
             import shutil as sh
             term_width = sh.get_terminal_size(fallback=(100, 24)).columns
-        except Exception:
-            pass
+        except Exception as e:
+            debug_print("Terminal width probe", outcome="degraded", reason="the fallback width is used", error=f"{type(e).__name__}: {e}")
 
         w_num = 3
         w_last = 24
@@ -2488,8 +2668,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                         hours = int(mins) // 60
                         mins_rem = int(mins) % 60
                         t_playtime = f"{hours}h {mins_rem}m"
-                except Exception:
-                    pass
+                except Exception as e:
+                    debug_print("Play time formatting", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             name_fmt = _shorten_middle(t_name, w_title)
 
@@ -2503,7 +2683,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
     if show_recent_achievements and recent_games:
         print("\nRecent Achievements:\n")
-        debug_print("Method 2 (Deep Scan) - Checking recent games for achievements...")
+        debug_print("Recent achievements fetch", source="deep scan")
 
         all_recent_achievements = []
 
@@ -2512,7 +2692,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             # print(f"DEBUG: Checking {title_prog.name}")
             try:
                 game_achievements = await xbl_client.achievements.get_achievements_xboxone_gameprogress(xuid, title_prog.title_id)
-                debug_print(f"Fetching detailed achievements for '{title_prog.name}'...")
+                debug_print("Title achievements fetch", title=title_prog.name)
 
                 ach_list = []
                 if isinstance(game_achievements, list):
@@ -2522,15 +2702,15 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
                 unlocked_achs = [a for a in ach_list if a.progress_state == "Achieved"]
                 if unlocked_achs:
-                    debug_print(f"  > Found {len(unlocked_achs)} unlocked achievements")
+                    debug_print("Title achievements fetch", title=title_prog.name, outcome="OK", unlocked=len(unlocked_achs))
                 # print(f"DEBUG: Unlocked {len(unlocked_achs)}")
 
                 for ach in unlocked_achs:
                     # Store as tuple (achievement, title_name) since we cannot modify the model
                     all_recent_achievements.append((ach, title_prog.name))
 
-            except Exception:
-                pass
+            except Exception as e:
+                debug_print("Title achievements fetch", title=title_prog.name, outcome="failed", error=f"{type(e).__name__}: {e}")
 
         # Sort ALL collected achievements by time_unlocked (descending)
         all_recent_achievements.sort(key=lambda x: x[0].progression.time_unlocked, reverse=True)
@@ -2540,8 +2720,8 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         try:
             import shutil as sh
             term_width = sh.get_terminal_size(fallback=(100, 24)).columns
-        except Exception:
-            pass
+        except Exception as e:
+            debug_print("Terminal width probe", outcome="degraded", reason="the fallback width is used", error=f"{type(e).__name__}: {e}")
 
         w_date = 26
         remaining = term_width - w_date - 4 - 1
@@ -2660,6 +2840,7 @@ def load_config_file(config_path, namespace=None, report_errors=True, advice_out
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        debug_print("Configuration applied", path=str(config_path), settings=len(parsed_values), names=", ".join(sorted(parsed_values)) or "none")
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
@@ -2677,6 +2858,7 @@ def load_config_file(config_path, namespace=None, report_errors=True, advice_out
         detail = f"Config file '{config_path}' contains unsupported content: {exc}"
     except Exception as exc:
         detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {exc}"
+    debug_print("Configuration load", path=str(config_path), outcome="failed", reason=detail)
     advice = classify_recovery_error(context="config.invalid", detail=detail)
     if advice_out is not None:
         advice_out.append(advice)
@@ -2850,7 +3032,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         # Only use this when user appears offline - otherwise presence data is accurate
         if status == "offline":
-            debug_print("User is offline, using already fetched title history fallback data...")
+            debug_print("Title history fallback", state="offline", source="already fetched")
             lastonline_ts, fallback_used = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
             if fallback_used:
                 lastonline_ts = title_history_ts
@@ -2941,6 +3123,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         email_sent = False
         # A poll that keeps failing for the same reason repeats the fix paragraph on every cycle without it
         recovery_hints = RecoveryHintTracker()
+        # Every failed check prints its advice, so the end of a streak is worth one line closing it
+        error_streak = 0
 
         m_subject = m_body = ""
 
@@ -2968,12 +3152,13 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if status == "offline":
                     # Give presence a short grace window when transitioning to offline with missing last_seen
                     if status_old != "offline" and lastonline_ts <= 0:
-                        debug_print(f"Offline transition with missing presence timestamp, retrying presence up to {offline_grace_attempts}x every {offline_grace_delay_seconds}s...")
+                        debug_print("Offline grace retry", reason="the offline transition carried no presence timestamp", attempts=offline_grace_attempts, delay=f"{offline_grace_delay_seconds}s")
                         for retry_num in range(1, offline_grace_attempts + 1):
+                            debug_print("Sleep", seconds=offline_grace_delay_seconds, reason="waiting between offline grace retries")
                             await asyncio.sleep(offline_grace_delay_seconds)
                             retry_presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
                             retry_status, retry_title_name, retry_game_name, retry_platform, retry_lastonline_ts = xbox_process_presence_class(retry_presence)
-                            debug_print(f"Grace retry {retry_num}/{offline_grace_attempts}: state={retry_status}, lastonline={get_debug_date_from_ts(retry_lastonline_ts)}")
+                            debug_print("Offline grace retry attempt", attempt=f"{retry_num}/{offline_grace_attempts}", state=retry_status, lastonline=get_debug_date_from_ts(retry_lastonline_ts))
 
                             # Use refreshed offline payload if it now includes last_seen
                             if retry_status == "offline" and retry_lastonline_ts > 0:
@@ -2982,7 +3167,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                                 platform = retry_platform
                                 lastonline_ts = retry_lastonline_ts
                                 presence_lastonline_cache_ts = retry_lastonline_ts
-                                debug_print("Grace retry succeeded: using refreshed offline presence last_seen timestamp.")
+                                debug_print("Offline grace retry", outcome="OK", source="refreshed presence last_seen")
                                 break
 
                             # If status bounced back online, stop offline fallback for this poll.
@@ -2993,11 +3178,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                                 lastonline_ts = retry_lastonline_ts
                                 if retry_lastonline_ts > 0:
                                     presence_lastonline_cache_ts = retry_lastonline_ts
-                                debug_print("Grace retry indicates user is no longer offline; skipping offline fallback in this poll.")
+                                debug_print("Offline grace retry", outcome="skipped", reason="the user is no longer offline")
                                 break
 
                 if status == "offline":
-                    debug_print("User is offline, checking title history fallback...")
+                    debug_print("Title history fallback", state="offline", source="fresh fetch")
                     title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
                     presence_ts_for_decision = lastonline_ts
                     lastactive_source = "presence_last_seen_live"
@@ -3007,23 +3192,28 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         presence_ts_for_decision = presence_lastonline_cache_ts
                         lastactive_source = "presence_last_seen_cached"
                         lastactive_confidence = "medium"
-                        debug_print(f"Using cached presence last_seen for decision: {get_debug_date_from_ts(presence_ts_for_decision)}")
+                        debug_print("Last active input", source="cached presence last_seen", ts=get_debug_date_from_ts(presence_ts_for_decision))
                     elif presence_ts_for_decision <= 0:
                         lastactive_source = "presence_last_seen_missing"
                         lastactive_confidence = "none"
+                        verbose_notice("Xbox Live reported no last-seen timestamp, so the last active time is taken from the title history instead")
 
                     effective_lastactive_ts, source_is_history = xbox_get_best_lastonline_ts(presence_ts_for_decision, title_history_ts)
                     if source_is_history:
                         lastactive_source = "title_history_fallback"
                         lastactive_confidence = "low"
 
-                    debug_print(f"Current status: {status}")
-                    debug_print(f"Title history: {title_history_ts} ('{title_history_game}')")
-                    debug_print(f"Baseline:      {title_history_ts_old} ('{title_history_game_old}')")
-                    debug_print(f"Last active chosen: source={lastactive_source}, confidence={lastactive_confidence}, ts={get_debug_date_from_ts(effective_lastactive_ts)}")
+                    debug_print("Poll state", status=status)
+                    debug_print("Title history state", ts=title_history_ts, game=title_history_game)
+                    debug_print("Title history baseline", ts=title_history_ts_old, game=title_history_game_old)
+                    debug_print("Last active chosen", source=lastactive_source, confidence=lastactive_confidence, ts=get_debug_date_from_ts(effective_lastactive_ts))
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
+                if error_streak:
+                    debug_print("Recovered", streak=error_streak)
+                    verbose_notice(f"Recovered after {error_streak} failed {'check' if error_streak == 1 else 'checks'} in a row")
+                error_streak = 0
                 email_sent = False
                 recovery_hints.reset()
             except Exception as e:
@@ -3031,7 +3221,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
                 else:
                     sleep_interval = XBOX_CHECK_INTERVAL
+                error_streak += 1
                 advice = classify_recovery_error(e, context="monitor", detail=f"Reading the presence for '{xbox_gamertag}' failed: {e}")
+                debug_print("Presence check", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, streak=error_streak)
                 print_recovery_advice(advice, recovery_hints, retry_note=f"retrying in {display_time(sleep_interval)}")
                 # Credentials do not recover on their own, so this is the one category worth an email
                 if advice.code in AUTH_RECOVERY_CODES and ERROR_NOTIFICATION and not email_sent:
@@ -3041,6 +3233,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     send_email(m_subject, m_body, "", SMTP_SSL)
                     email_sent = True
                 print_cur_ts("Timestamp:\t\t\t")
+                debug_print("Sleep", seconds=sleep_interval, reason="the presence check failed")
                 await asyncio.sleep(sleep_interval)
                 continue
 
@@ -3210,17 +3403,20 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             alive_counter += 1
 
             if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and (status == "offline" or not status):
+                verbose_print(f"Monitoring healthy for {xbox_gamertag}. The user is still offline with no activity change")
                 print_cur_ts("Liveness check, timestamp:\t")
                 alive_counter = 0
 
             if status and status != "offline":
+                debug_print("Sleep", seconds=XBOX_ACTIVE_CHECK_INTERVAL, reason="the user is online")
                 await asyncio.sleep(XBOX_ACTIVE_CHECK_INTERVAL)
             else:
+                debug_print("Sleep", seconds=XBOX_CHECK_INTERVAL, reason="the user is offline")
                 await asyncio.sleep(XBOX_CHECK_INTERVAL)
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, DEBUG_MODE, EXPORTED_SECRET_KEYS
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -3263,7 +3459,7 @@ def main():
     if "--debug" in sys.argv:
         DEBUG_MODE = True
     if CLEAR_SCREEN and DEBUG_MODE:
-        debug_print("Terminal screen clear skipped because debug mode is active")
+        debug_print("Terminal screen clear", outcome="skipped", reason="debug mode is active")
     clear_screen(CLEAR_SCREEN and not DEBUG_MODE)
 
     print_startup_banner()
@@ -3451,11 +3647,18 @@ def main():
         help="Disable logging to xbox_monitor_<gamertag>.log"
     )
     opts.add_argument(
+        "--verbose",
+        dest="verbose_mode",
+        action="store_true",
+        default=None,
+        help="Report rare operational events such as recoveries and degraded features"
+    )
+    opts.add_argument(
         "--debug",
         dest="debug_mode",
         action="store_true",
         default=None,
-        help="Enable debug mode for technical technical logging"
+        help="Enable debug mode for technical logging"
     )
 
     args = parser.parse_args()
@@ -3546,7 +3749,7 @@ def main():
                 SECRET_SOURCES.pop(secret, None)
 
     for secret in SECRET_KEYS:
-        debug_print(f"Secret {secret} resolved from {SECRET_SOURCES.get(secret, 'nowhere')}")
+        debug_print("Secret resolved", name=secret, source=SECRET_SOURCES.get(secret, "nowhere"), value=secret_fingerprint(globals().get(secret), secret))
 
     try:
         validate_connectivity_timer()
@@ -3563,13 +3766,14 @@ def main():
         if get_localzone is not None:
             try:
                 local_tz = get_localzone()
-            except Exception:
-                pass
+            except Exception as e:
+                debug_print("Local timezone detection", outcome="failed", error=f"{type(e).__name__}: {e}")
         if local_tz and is_valid_timezone(str(local_tz)):
             LOCAL_TIMEZONE = str(local_tz)
             LOCAL_TIMEZONE_STATE = "auto"
         elif get_localzone is None:
             LOCAL_TIMEZONE_STATE = "auto_unavailable"
+            verbose_print("Automatic time zone detection is unavailable because the optional tzlocal library is missing")
             timezone_advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide(f"Install tzlocal with: {pip_install_command('tzlocal')} or set LOCAL_TIMEZONE to a pytz timezone name such as 'Europe/Warsaw'", TIMEZONE_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
         else:
             LOCAL_TIMEZONE_STATE = "auto_failed"
@@ -3590,11 +3794,13 @@ def main():
         MS_APP_CLIENT_ID = args.ms_app_client_id
         if secret_is_set(MS_APP_CLIENT_ID):
             SECRET_SOURCES["MS_APP_CLIENT_ID"] = "command line"
+            debug_print("Secret resolved", name="MS_APP_CLIENT_ID", source="command line", value=secret_fingerprint(MS_APP_CLIENT_ID, "MS_APP_CLIENT_ID"))
 
     if args.ms_app_client_secret:
         MS_APP_CLIENT_SECRET = args.ms_app_client_secret
         if secret_is_set(MS_APP_CLIENT_SECRET):
             SECRET_SOURCES["MS_APP_CLIENT_SECRET"] = "command line"
+            debug_print("Secret resolved", name="MS_APP_CLIENT_SECRET", source="command line", value=secret_fingerprint(MS_APP_CLIENT_SECRET, "MS_APP_CLIENT_SECRET"))
 
     if args.check_interval is not None:
         XBOX_CHECK_INTERVAL = args.check_interval
@@ -3642,7 +3848,7 @@ def main():
 
     missing_credentials = [name for name in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET") if not secret_is_set(globals()[name])]
     if missing_credentials:
-        report_recovery_error(context="secret.missing", detail=f"{' and '.join(missing_credentials)} is empty or still set to a placeholder" if len(missing_credentials) == 1 else f"{' and '.join(missing_credentials)} are empty or still set to a placeholder")
+        report_recovery_error(context="secret.missing", detail=f"{join_names(missing_credentials)} is empty or still set to a placeholder" if len(missing_credentials) == 1 else f"{join_names(missing_credentials)} are empty or still set to a placeholder")
         sys.exit(1)
 
     if not MS_AUTH_TOKENS_FILE:
@@ -3689,28 +3895,21 @@ def main():
         FINAL_LOG_PATH = None
 
     # Email cannot be delivered while the mail server, the user or the password is still a shipped placeholder
-    if not (secret_is_set(SMTP_HOST) and secret_is_set(SMTP_USER) and secret_is_set(SMTP_PASSWORD)):
+    unset_smtp = [name for name in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not secret_is_set(globals()[name])]
+    if unset_smtp:
+        verbose_print(f"Email notifications are off because {join_names(unset_smtp)} is still empty or a shipped placeholder" if len(unset_smtp) == 1 else f"Email notifications are off because {join_names(unset_smtp)} are still empty or shipped placeholders")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Xbox polling intervals:\t[offline: {display_time(XBOX_CHECK_INTERVAL)}] [online: {display_time(XBOX_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
-    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
-    print(f"* Xbox token cache file:\t{MS_AUTH_TOKENS_FILE or 'None'}")
-    print(f"* Configuration file:\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
-    print(f"* Debug mode:\t\t\t{DEBUG_MODE}")
-    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}")
-    print(f"* Install method:\t\t{install_method_display_name()}")
+    emit_startup_summary(build_startup_summary(args.xbox_gamertag, cfg_path, env_path, FINAL_LOG_PATH), full_startup_summary_enabled())
 
-    out = f"\nMonitoring user with Xbox gamer tag {args.xbox_gamertag}"
+    # The summary block already ended with one blank line, so this heading starts at the cursor
+    out = f"Monitoring user with Xbox gamer tag {args.xbox_gamertag}"
     print(out)
     print("─" * len(out))
+    mark_monitoring_started()
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':

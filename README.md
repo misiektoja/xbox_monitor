@@ -50,7 +50,7 @@ xbox_monitor --doctor <xbox_gamer_tag>
 | [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) | Microsoft Entra application credentials, the first authorization, the privacy settings the monitored account needs |
 | [Configuration](https://misiektoja.github.io/xbox_monitor/configuration/) | Config file, time zone, SMTP, TLS verification, check intervals, storing secrets |
 | [Usage](https://misiektoja.github.io/xbox_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals |
-| [Troubleshooting](https://misiektoja.github.io/xbox_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--debug` output |
+| [Troubleshooting](https://misiektoja.github.io/xbox_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |
 | [Testing](https://misiektoja.github.io/xbox_monitor/testing/) | Running the offline suite, the linter and the docs build |
 | [About](https://misiektoja.github.io/xbox_monitor/about/) | Change log, contributing, security, license, support |
 

@@ -80,9 +80,9 @@ def test_secret_sources_name_where_each_value_came_from(tmp_path, monkeypatch, c
     assert observed["MS_APP_CLIENT_SECRET"] == "exported-client-secret-value"
     assert observed["SECRET_SOURCES"] == {"MS_APP_CLIENT_ID": "dotenv file", "MS_APP_CLIENT_SECRET": "environment"}
     out = capsys.readouterr().out
-    assert "Secret MS_APP_CLIENT_ID resolved from dotenv file" in out
-    assert "Secret MS_APP_CLIENT_SECRET resolved from environment" in out
-    assert "Secret SMTP_PASSWORD resolved from nowhere" in out
+    assert "Secret resolved: name=MS_APP_CLIENT_ID, source=dotenv file" in out
+    assert "Secret resolved: name=MS_APP_CLIENT_SECRET, source=environment" in out
+    assert "Secret resolved: name=SMTP_PASSWORD, source=nowhere" in out
 
 
 # Verifies a secret kept in the config file is attributed to it and one from the command line overrides that
@@ -115,8 +115,7 @@ def test_email_alerts_follow_the_smtp_placeholders(tmp_path, monkeypatch, capsys
 
     assert observed["ERROR_NOTIFICATION"] is expected
     out = capsys.readouterr().out
-    assert f"[errors = {expected}]" in out
-    assert "* Install method:" in out
+    assert ("errors" in out.split("Notifications (email):")[1].splitlines()[0]) is expected
 
 
 # Verifies a placeholder client secret is rejected before anything talks to Xbox Live

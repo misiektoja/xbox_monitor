@@ -36,6 +36,7 @@ def test_backups_never_overwrite_each_other(tmp_path):
     second = monitor.create_timestamped_backup(destination)
 
     assert first != second
+    assert first is not None and second is not None
     assert Path(first).read_text(encoding="utf-8") == "first\n"
     assert Path(second).read_text(encoding="utf-8") == "second\n"
 

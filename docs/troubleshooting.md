@@ -42,16 +42,26 @@ Every reported problem carries a category, a one-line summary, a `To fix:` parag
 
 While the same failure repeats, the fix paragraph is printed once and then suppressed until the category changes or a check succeeds, so the timestamps that show the tool is alive stay readable.
 
-## Debug Output
+## Verbose and Debug Output
 
-To print full technical logging for authentication, presence tracking and activity detection, use `--debug`:
+Two flags make the tool explain what it is doing. They are independent, so you can use either or both:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --debug
+xbox_monitor <xbox_gamer_tag> --verbose --debug
 ```
 
-Set `DEBUG_MODE` to `True` in the configuration file to keep it on.
+* `VERBOSE_MODE`, `--verbose`: operational events, such as email alerts switched off because their settings are still placeholders, whether an email was actually delivered, when a run recovers from failures it reported, and when a fallback such as the title history is unavailable. It prints nothing per check, so an uneventful run stays quiet. It also expands the startup summary, which is where the configuration file, dotenv file, token cache, time zone and the source of each secret are named
+* `DEBUG_MODE`, `--debug`: technical diagnostics, such as every Xbox Live call, how many settings the configuration file supplied, the parsed presence and title history behind each activity decision, the classification and text of each failure, how long the tool will wait before the next check and why, every read and write of the status and CSV files and where each secret was resolved from
 
-`--debug` applies before the configuration file is read, so a saved `DEBUG_MODE = False` cannot switch off what the command line asked for. The terminal is not cleared while debug mode is on, so nothing scrolls away before you can read it.
+A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
-Debug output is redacted. Known secret values, credential-shaped strings, authorization headers and tokens in URLs are replaced before anything is printed, so the output can be pasted into a public bug report. The technical detail behind an error is printed only in debug mode.
+Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and list its details as comma-separated `key=value` fields, matching the sibling monitors:
+
+```
+[DEBUG 00:03:02] Connectivity check: url=https://xbox.example/probe, outcome=OK
+[DEBUG 00:03:04] Presence check: outcome=failed, error=ConnectError: connection reset by peer, recovery_code=network.unavailable, streak=1
+```
+
+Every outbound call reports `outcome=OK` or `outcome=failed` with an `error=` field. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens and your SMTP password, and report a secret by name and source rather than by value. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
+
+Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file.

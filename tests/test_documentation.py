@@ -118,7 +118,7 @@ def test_no_repository_document_links_at_a_missing_local_target():
 
 
 # An undocumented command may as well not exist
-@pytest.mark.parametrize("flag", ["--doctor", "--debug", "--generate-config", "--send-test-email", "--env-file", "--config-file", "--force", "--disable-logging", "--info", "--friends", "--recent-achievements"])
+@pytest.mark.parametrize("flag", ["--doctor", "--verbose", "--debug", "--generate-config", "--send-test-email", "--env-file", "--config-file", "--force", "--disable-logging", "--info", "--friends", "--recent-achievements"])
 def test_user_facing_flags_are_documented(flag):
     assert flag in all_docs_text(), f"{flag} is not documented on the site"
 
@@ -252,7 +252,7 @@ def test_the_documented_install_methods_match_the_code():
     ("TLS Verification", "configuration.md"),
     ("Check Intervals", "configuration.md"),
     ("Doctor Preflight", "troubleshooting.md"),
-    ("Debug Output", "troubleshooting.md"),
+    ("Verbose and Debug Output", "troubleshooting.md"),
     ("Coloring Log Output with GRC", "usage.md"),
 ])
 # Each section sits where a reader would look for it, matching the sibling tools
