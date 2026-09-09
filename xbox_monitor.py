@@ -23,6 +23,10 @@ VERSION = "2.0"
 # ---------------------------
 
 CONFIG_BLOCK = """
+# Optional Xbox gamer tag to monitor when none is given on the command line
+# A gamer tag passed as an argument always wins over this value
+XBOX_GAMERTAG = ""
+
 # Register a new app in Azure AD:
 # https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
 #
@@ -183,6 +187,7 @@ DEBUG_MODE = False
 
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
+XBOX_GAMERTAG = ""
 MS_APP_CLIENT_ID = ""
 MS_APP_CLIENT_SECRET = ""
 SMTP_HOST = ""
@@ -223,6 +228,9 @@ exec(CONFIG_BLOCK, globals())
 
 # Default name for the optional config file
 DEFAULT_CONFIG_FILENAME = "xbox_monitor.conf"
+
+# Where the OAuth tokens are cached when the setting that names the file is empty
+DEFAULT_TOKENS_FILENAME = "xbox_tokens.json"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET", "SMTP_PASSWORD")
@@ -337,11 +345,13 @@ except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the Python-Xbox library !\n\nTo install it, run:\n    pip install python-xbox\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/tr4nt0r/python-xbox/")
 import shutil
 import shlex
+import getpass
 import textwrap
 from collections import namedtuple
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote
 
 
 # The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
@@ -616,7 +626,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
 
     tokens_path = Path(os.path.expanduser(MS_AUTH_TOKENS_FILE or ""))
     if not tokens_path.is_file():
-        advice = make_recovery_advice("auth.token_cache", "No saved Xbox tokens were found", recovery_fix_with_guide(f"Authorize once by running: {tool_command('<xbox_gamertag>')}. Doctor writes no files, so it cannot run the sign-in flow for you", CREDENTIALS_GUIDE_URL), False, f"Expected the token cache at {tokens_path}")
+        advice = make_recovery_advice("auth.token_cache", "No saved Xbox tokens were found", recovery_fix_with_guide(f"Authorize once by running: {tool_command('--setup')}, or start monitoring with: {tool_command('<xbox_gamertag>')}. Doctor writes no files, so it cannot run the sign-in flow for you", CREDENTIALS_GUIDE_URL), False, f"Expected the token cache at {tokens_path}")
         checks.append(make_doctor_check("Authentication", "WARN", "No saved Xbox tokens were found", f"Path: {tokens_path}", advice))
         return checks + doctor_check_target_identity(report, xbox_gamertag)
 
@@ -1144,6 +1154,935 @@ def write_generated_config(output_file, content, force=False, interactive=None, 
     return backup_path, True
 
 
+# Returns a value fit to show as a prompt default, hiding the shipped placeholders
+def _wizard_default(value):
+    text = str(value or "")
+    return text if text and not text.startswith("your_") else ""
+
+
+# Prints the shared line telling the user how defaults and cancelling work
+def _wizard_print_default_guidance():
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
+
+
+# Reads one setup line. Cancelling propagates to the one handler in run_setup_wizard, which reports
+# that nothing was written
+def _wizard_input(prompt_text, input_func=None):
+    prompt = input if input_func is None else input_func
+    try:
+        return read_interactively(prompt, prompt_text)
+    except (EOFError, KeyboardInterrupt):
+        # The interrupted prompt owns the line break, so every handler prints its message alone
+        print()
+        raise
+
+
+# Asks one free-text question, returning the shown default when the answer is empty
+def _wizard_ask_text(question, default="", required=False, input_func=None):
+    suffix = f" [{default}]" if default else ""
+    while True:
+        answer = _wizard_input(f"{question}{suffix}: ", input_func=input_func).strip()
+        if not answer:
+            answer = default
+        if answer or not required:
+            return answer
+        print("  This value is required.")
+        if not _wizard_offer_retry(question, input_func=input_func):
+            return ""
+
+
+# Asks one yes or no question with a visible default
+def _wizard_ask_yes_no(question, default=True, input_func=None):
+    hint = "[Y/n]" if default else "[y/N]"
+    while True:
+        answer = _wizard_input(f"{question} {hint}: ", input_func=input_func).strip().casefold()
+        if not answer:
+            return default
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("  Please answer 'y' or 'n'.")
+
+
+# Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
+def _wizard_offer_retry(label, consequence="", input_func=None):
+    if consequence:
+        return not _wizard_ask_yes_no(f"Continue without the {label}? {consequence}", default=False, input_func=input_func)
+    return _wizard_ask_yes_no(f"Try entering the {label} again?", default=True, input_func=input_func)
+
+
+# Asks one numbered multiple-choice question and returns the chosen index
+def _wizard_ask_choice(question, options, default_index=0, input_func=None):
+    print()
+    print(question)
+    for index, (label, description) in enumerate(options, 1):
+        marker = " (default)" if index - 1 == default_index else ""
+        print(f"  {index}. {label}{marker}")
+        if description:
+            for line in description.splitlines():
+                print(f"     {line}")
+    while True:
+        answer = _wizard_input(f"Choose [1-{len(options)}]: ", input_func=input_func).strip()
+        if not answer:
+            return default_index
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return int(answer) - 1
+        print(f"  Enter a number between 1 and {len(options)}.")
+
+
+# Asks until the answer is a positive whole number or the default is accepted
+def _wizard_ask_positive_int(question, default, input_func=None):
+    while True:
+        answer = _wizard_ask_text(question, default=str(default), required=True, input_func=input_func)
+        try:
+            parsed = int(answer)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            return parsed
+        print("  Enter a positive whole number.")
+
+
+# Renders a duration as raw seconds plus a readable form, so the value that reaches the config stays visible
+def _wizard_format_duration(seconds):
+    remaining = int(seconds)
+    parts = []
+    for suffix, count in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        value, remaining = divmod(remaining, count)
+        if value:
+            parts.append(f"{value}{suffix}")
+    raw = f"{int(seconds)}s"
+    readable = " ".join(parts) or raw
+    return raw if readable == raw else f"{raw} - {readable}"
+
+
+# Asks one duration, accepting the formats people actually type
+def _wizard_ask_duration(question, default, input_func=None):
+    prompt_text = f"{question} [{_wizard_format_duration(default)}]: "
+    while True:
+        answer = _wizard_input(prompt_text, input_func=input_func).strip()
+        if not answer:
+            return default
+        seconds = parse_duration_input(answer)
+        if seconds is not None:
+            return seconds
+        print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
+
+
+# Asks one secret through a hidden prompt, so it never reaches the screen or the shell history
+def _wizard_ask_secret(question, getpass_func=None):
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        return str(read_interactively(hidden_prompt, f"{question}: ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise
+
+
+# Renders one setting for the generated config, keeping a mapping readable instead of on one very long line
+def render_config_value(value):
+    if isinstance(value, dict) and value:
+        return "{\n" + "".join(f"    {key!r}: {item!r},\n" for key, item in value.items()) + "}"
+    return repr(value)
+
+
+# Renders one configuration file from the built-in template with the chosen values substituted in
+def generate_config_with_current_values(config_values):
+    tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    replacements = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        name = statement.targets[0].id
+        if name not in config_values:
+            continue
+        replacements[name] = (statement.lineno, getattr(statement, "end_lineno", statement.lineno), render_config_value(config_values[name]))
+    lines = CONFIG_BLOCK.strip("\n").split("\n")
+    # The template keeps its own leading blank line, so template line numbers are one ahead of this list
+    offset = 1 if CONFIG_BLOCK.startswith("\n") else 0
+    skip_until = 0
+    output = []
+    for number, line in enumerate(lines, 1):
+        template_line = number + offset
+        if template_line < skip_until:
+            continue
+        replaced = next((name for name, (start, _end, _value) in replacements.items() if start == template_line), None)
+        if replaced is None:
+            output.append(line)
+            continue
+        start, end, rendered = replacements[replaced]
+        output.append(f"{replaced} = {rendered}")
+        skip_until = end + 1
+    return "\n".join(output) + "\n"
+
+
+# Matches one dotenv assignment, tolerating the export prefix used when the same file is also sourced by a shell
+def match_dotenv_assignment(line, key):
+    return re.match(rf"^(\s*(?:export\s+)?){re.escape(key)}\s*=", str(line))
+
+
+# Renders one quoted dotenv assignment, keeping the export prefix of the line it replaces
+def render_dotenv_assignment(key, value, prefix=""):
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'{prefix}{key}="{escaped}"'
+
+
+# Reports whether one dotenv file already assigns the requested key
+def dotenv_contains_key(path, key):
+    target = Path(path).expanduser()
+    if not target.is_file():
+        return False
+    return any(match_dotenv_assignment(line, key) for line in target.read_text(encoding="utf-8").splitlines())
+
+
+# Replaces dotenv assignments in place in one pass, leaving every other line and every comment untouched
+def update_dotenv_values(path, updates):
+    target = Path(path).expanduser()
+    if not target.parent.is_dir():
+        raise FileNotFoundError(f"The directory for '{target}' does not exist")
+    for key in updates:
+        if key not in SECRET_KEYS:
+            raise ValueError(f"Refusing to write an unknown dotenv key: {key}")
+    existing = target.read_text(encoding="utf-8") if target.is_file() else ""
+    lines = []
+    replaced = set()
+    for line in existing.splitlines():
+        rewritten = None
+        for key in updates:
+            match = match_dotenv_assignment(line, key)
+            if not match:
+                continue
+            # A secret the wizard cleared is removed, so a value switched off cannot linger in the file
+            if key in replaced or not updates[key]:
+                rewritten = ""
+                break
+            # An already exported line is rewritten in place. Appending a second assignment would leave the
+            # old credential on disk, with only the load order deciding which one wins
+            rewritten = render_dotenv_assignment(key, updates[key], match.group(1))
+            replaced.add(key)
+            break
+        if rewritten == "":
+            continue
+        lines.append(line if rewritten is None else rewritten)
+    for key, value in updates.items():
+        if key not in replaced and value:
+            lines.append(render_dotenv_assignment(key, value))
+    # Written through a temporary file, so an interrupted write cannot leave the file without its secrets.
+    # No backup is taken here: a copy of the credential being replaced is the one thing not worth keeping
+    write_file_atomically(target, "\n".join(lines) + "\n", mode=0o600)
+    for key in updates:
+        verbose_print(f"Saved {key} in '{target}'")
+    return str(target)
+
+
+# Replaces one dotenv assignment, the single-secret case of the writer above
+def update_dotenv_value(path, key, value):
+    return update_dotenv_values(path, {key: value})
+
+
+# Returns the dotenv file a one-shot secret command writes to, refusing the disabled setting
+def resolve_secret_env_path(env_file, flag):
+    selected = env_file if env_file else DOTENV_FILE
+    if selected and str(selected).casefold() == "none":
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{flag} needs a dotenv file to write to, so it cannot be used with 'none'"))
+    return Path(os.path.expanduser(str(selected))) if selected else Path.cwd() / ".env"
+
+
+# Holds every wizard answer until the user explicitly saves, so nothing is written during questioning
+class WizardSetupState:
+    # Starts from the values already in effect, which become both the defaults and the revert target
+    def __init__(self, config_path, env_path, baseline_values):
+        self.config_path = Path(config_path)
+        self.env_path = Path(env_path)
+        self.baseline_values = dict(baseline_values)
+        self.config_values = dict(baseline_values)
+        self.secret_updates = {}
+        self.token_json = ""
+        self.target = ""
+        self.persist_target = True
+
+
+# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+WIZARD_SMTP_TIMEOUT = 5
+
+# The email alert settings the wizard offers, in the order the questions are asked
+WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "ERROR_NOTIFICATION")
+
+# The recommended preset leaves STATUS_NOTIFICATION off: it also mails every away transition, which is a lot of mail
+WIZARD_RECOMMENDED_EMAIL_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
+
+# Where the Microsoft application the tool signs in through is registered
+ENTRA_PORTAL_URL = "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+
+# Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
+WIZARD_SECTIONS = (
+    ("Target", "Target", "Change the Xbox account that is monitored.", ("XBOX_GAMERTAG",), ()),
+    ("Polling", "Polling intervals", "Change how often Xbox Live is checked.", ("XBOX_CHECK_INTERVAL", "XBOX_ACTIVE_CHECK_INTERVAL"), ()),
+    ("Authentication", "Authentication", "Enter the Microsoft application credentials and authorize again.", (), ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET")),
+    ("Email", "Email notifications", "Change SMTP details and which events are mailed.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Output", "Output files", "Change the log and CSV destinations.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
+)
+
+
+# Restores one section to the values setup started with and drops any secret it had queued
+def _wizard_reset_section(state, config_keys, secret_keys):
+    for key in config_keys:
+        if key in state.baseline_values:
+            state.config_values[key] = state.baseline_values[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
+# Asks which account to watch, accepting the gamertag or a profile link and rejecting the e-mail mistake
+def _wizard_collect_target_section(state, initial_target=None, input_func=None):
+    while True:
+        answer = _wizard_ask_text("Xbox gamertag to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
+        try:
+            state.target = normalize_xbox_target(answer)
+        except ValueError as exc:
+            print(f"  {exc}")
+            continue
+        break
+    state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
+    _wizard_apply_target(state)
+
+
+# Mirrors the settled target into the config values, so an unsaved target is left out of the file
+def _wizard_apply_target(state):
+    state.config_values["XBOX_GAMERTAG"] = state.target if state.persist_target and state.target else ""
+
+
+# Asks how often the tool checks, in whichever duration format the user prefers
+def _wizard_collect_polling_section(state, input_func=None):
+    state.config_values["XBOX_CHECK_INTERVAL"] = _wizard_ask_duration("Polling interval while the user is offline (seconds or use s/m/h/d)", int(state.config_values.get("XBOX_CHECK_INTERVAL") or XBOX_CHECK_INTERVAL), input_func=input_func)
+    state.config_values["XBOX_ACTIVE_CHECK_INTERVAL"] = _wizard_ask_duration("Polling interval while the user is online (seconds or use s/m/h/d)", int(state.config_values.get("XBOX_ACTIVE_CHECK_INTERVAL") or XBOX_ACTIVE_CHECK_INTERVAL), input_func=input_func)
+
+
+# Reports whether both Microsoft application credentials are available, counting the ones just entered
+def _wizard_credentials_ready(state):
+    return all(secret_is_set(state.secret_updates.get(key) or state.config_values.get(key)) for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
+
+
+# Returns the Microsoft application credentials the wizard should sign in with
+def _wizard_credentials(state):
+    return tuple(str(state.secret_updates.get(key) or state.config_values.get(key) or "") for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
+
+
+# Signs in through the interactive OAuth flow and returns the token response as JSON without writing anything
+async def _wizard_request_tokens(client_id, client_secret, input_func=None):
+    async with create_signed_session() as session:
+        auth_mgr = AuthenticationManager(session, client_id, client_secret, "")
+        print(f"\n  Open this URL in a browser and approve the request:\n  {auth_mgr.generate_authorization_url()}\n")
+        code = _wizard_input("Paste the authorization code, the part after '?code=' in the callback URL: ", input_func=input_func).strip()
+        if not code:
+            return ""
+        auth_mgr.oauth = await auth_mgr.request_oauth_token(code)
+        await auth_mgr.refresh_tokens()
+        return str(auth_mgr.oauth.model_dump_json())
+
+
+# Collects the Microsoft application credentials, then authorizes once so monitoring has a token to refresh
+def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, authorizer=None):
+    print(f"* Register an application at {ENTRA_PORTAL_URL}")
+    print("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
+    print(f"  Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
+    if _wizard_credentials_ready(state) and not _wizard_ask_yes_no("Replace the Microsoft application credentials already configured?", default=False, input_func=input_func):
+        _wizard_collect_authorization(state, input_func=input_func, authorizer=authorizer)
+        return
+    while True:
+        client_id = _wizard_ask_secret("Application (client) ID", getpass_func=getpass_func)
+        client_secret = _wizard_ask_secret("Client secret value", getpass_func=getpass_func)
+        if client_id and client_secret:
+            state.secret_updates["MS_APP_CLIENT_ID"] = client_id
+            state.secret_updates["MS_APP_CLIENT_SECRET"] = client_secret
+            break
+        # Monitoring cannot run without both, so leaving them unset has to be a decision rather than a fallthrough
+        if not _wizard_offer_retry("Microsoft application credentials", "Nothing can be monitored until both are set", input_func=input_func):
+            return
+    _wizard_collect_authorization(state, input_func=input_func, authorizer=authorizer)
+
+
+# Offers the one-time browser sign-in, holding the resulting tokens in memory until the user saves
+def _wizard_collect_authorization(state, input_func=None, authorizer=None):
+    if not _wizard_credentials_ready(state):
+        return
+    tokens_path = Path(os.path.expanduser(str(state.config_values.get("MS_AUTH_TOKENS_FILE") or MS_AUTH_TOKENS_FILE or "")))
+    already_authorized = bool(str(tokens_path)) and tokens_path.is_file()
+    question = "Authorize again with your Microsoft account?" if already_authorized else "Authorize with your Microsoft account now?"
+    if not _wizard_ask_yes_no(question, default=not already_authorized, input_func=input_func):
+        return
+    authorize = _wizard_request_tokens if authorizer is None else authorizer
+    client_id, client_secret = _wizard_credentials(state)
+    while True:
+        try:
+            tokens = asyncio.run(authorize(client_id, client_secret, input_func=input_func))
+        except (EOFError, KeyboardInterrupt):
+            raise
+        except Exception as exc:
+            advice = classify_recovery_error(exc, context="auth", detail=f"The Microsoft sign-in did not complete: {exc}")
+            print(f"  {advice.summary}: {advice.detail}" if advice.detail else f"  {advice.summary}")
+            print(f"  To fix: {advice.fix}")
+            tokens = ""
+        if tokens:
+            state.token_json = str(tokens)
+            print(f"  Microsoft accepted the sign-in. The tokens are written to '{tokens_path}' when you save.")
+            return
+        # The tokens are what monitoring refreshes on every run, so skipping this has to be a decision too
+        if not _wizard_offer_retry("Microsoft sign-in", "Monitoring will ask for it on its first run", input_func=input_func):
+            return
+
+
+# Asks whether to send email alerts and collects only the settings that choice needs
+def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=False, input_func=input_func):
+        _wizard_disable_email(state)
+        return
+    while True:
+        state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_HOST"):
+            return
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)), input_func=input_func)
+        state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_USER"):
+            return
+        state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SENDER_EMAIL"):
+            return
+        state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
+            return
+        password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
+        if password:
+            state.secret_updates["SMTP_PASSWORD"] = password
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password, input_func=input_func)
+        if outcome is None:
+            _wizard_disable_email(state)
+            return
+        if outcome:
+            break
+    preset = _wizard_ask_choice("Which email notifications should be enabled?", [
+        ("Status and errors, recommended", "Online and offline changes, game changes and monitoring errors."),
+        ("Every supported event", "Adds a mail for every away transition as well."),
+        ("Custom", "Choose each notification type separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {name: name in WIZARD_RECOMMENDED_EMAIL_KEYS for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("ACTIVE_INACTIVE_NOTIFICATION", "Email when the user goes online or offline?"),
+            ("GAME_CHANGE_NOTIFICATION", "Email when the user starts, changes or stops a game?"),
+            ("STATUS_NOTIFICATION", "Email on every status change, including away?"),
+            ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
+
+
+# Signs in to the collected mail server without sending anything, so a refused login is caught during setup
+def _wizard_verify_smtp(values, password):
+    names = WIZARD_SMTP_CONFIG_KEYS + ("SMTP_PASSWORD",)
+    previous = {name: globals()[name] for name in names}
+    try:
+        globals().update(values)
+        # A blank answer keeps the password already stored, which is the one the sign-in must then prove
+        smtp_sign_in(password or previous["SMTP_PASSWORD"], timeout=WIZARD_SMTP_TIMEOUT)
+        return None
+    except RecoveryError as exc:
+        return exc.advice
+    except Exception as exc:
+        return classify_recovery_error(exc, context="smtp")
+    finally:
+        globals().update(previous)
+
+
+# Reports the outcome of the sign-in check: True to continue, False to ask again, None to switch email off
+def _wizard_smtp_sign_in_accepted(values, password, input_func=None):
+    print("  Checking the sign-in with the mail server ...")
+    advice = _wizard_verify_smtp(values, password)
+    if advice is None:
+        print("  The mail server accepted the sign-in. No email was sent.")
+        return True
+    print(f"  {advice.summary}: {advice.detail}" if advice.detail else f"  {advice.summary}")
+    print(f"  To fix: {advice.fix}")
+    if _wizard_offer_retry("mail server settings", input_func=input_func):
+        return False
+    if advice.retryable:
+        # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
+        print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
+        return True
+    print("  Email notifications stay off until the mail server accepts the settings.")
+    return None
+
+
+# Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
+def _wizard_disable_email(state):
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS:
+        state.config_values[key] = False
+
+
+# Reports whether one required mail server answer was abandoned, switching the channel off when it was
+def _wizard_email_answer_missing(state, key):
+    if state.config_values.get(key):
+        return False
+    print("  Email notifications stay off until every mail server setting is answered.")
+    _wizard_disable_email(state)
+    return True
+
+
+# Collects the files monitoring would write
+def _wizard_collect_output_section(state, input_func=None):
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
+    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func)
+
+
+# Runs one editable section again after resetting only the keys it owns
+def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
+    options = [(label, description) for _name, label, description, _config_keys, _secret_keys in WIZARD_SECTIONS]
+    options.append(("Return to summary", "Keep every current answer."))
+    choice = _wizard_ask_choice("Which setup section should be changed?", options, input_func=input_func)
+    if choice == len(WIZARD_SECTIONS):
+        return
+    name, _label, _description, config_keys, secret_keys = WIZARD_SECTIONS[choice]
+    _wizard_reset_section(state, config_keys, secret_keys)
+    if name == "Target":
+        state.target = ""
+    if name == "Authentication":
+        state.token_json = ""
+    print()
+    collectors = {
+        "Target": lambda: _wizard_collect_target_section(state, input_func=input_func),
+        "Polling": lambda: _wizard_collect_polling_section(state, input_func=input_func),
+        "Authentication": lambda: _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Email": lambda: _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Output": lambda: _wizard_collect_output_section(state, input_func=input_func),
+    }
+    collectors[name]()
+
+
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows):
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {value}")
+
+
+# Shows everything that is about to be written, by name and never by secret value
+def _wizard_print_setup_summary(state):
+    email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status", "ERROR_NOTIFICATION": "errors"}
+    enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
+    rows = [
+        ("Target", state.target or "not set"),
+        ("Persist target", "yes" if state.persist_target else "no"),
+        ("Polling interval while offline", _wizard_format_duration(int(state.config_values.get("XBOX_CHECK_INTERVAL") or 0))),
+        ("Polling interval while online", _wizard_format_duration(int(state.config_values.get("XBOX_ACTIVE_CHECK_INTERVAL") or 0))),
+        ("Application credentials", "complete" if _wizard_credentials_ready(state) else "incomplete"),
+        ("Microsoft sign-in", "authorized in this session" if state.token_json else "not done yet"),
+        ("Email", "enabled" if enabled_email else "disabled"),
+        ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
+        ("Config destination", state.config_path),
+        ("Dotenv destination", state.env_path),
+        ("Install method", install_method_display_name()),
+    ]
+    print("\nSetup summary\n")
+    _wizard_print_summary_rows(rows)
+
+
+# Loops on the summary until the user saves or explicitly discards, so nothing is written by accident
+def _wizard_review_setup(state, input_func=None, getpass_func=None):
+    while True:
+        _wizard_print_setup_summary(state)
+        action = _wizard_ask_choice("What would you like to do?", [
+            ("Save settings", "Write the displayed settings to the selected files."),
+            ("Review or change settings", "Edit one section without losing the other answers."),
+            ("Discard answers and exit", "Leave the destination files unchanged."),
+        ], input_func=input_func)
+        if action == 0:
+            return True
+        if action == 1:
+            _wizard_edit_setup_section(state, input_func=input_func, getpass_func=getpass_func)
+            continue
+        print()
+        if _wizard_ask_yes_no("Discard all entered answers and exit?", default=False, input_func=input_func):
+            return False
+        print("  Setup answers retained.")
+
+
+# Prints where setup will write and which install method the printed commands are written for
+def _wizard_print_setup_destinations(config_path, env_path):
+    print(f"Detected install method: {install_method_display_name()}")
+    print(f"Configuration:           {config_path}")
+    print(f"Dotenv:                  {env_path}\n")
+
+
+# Puts the values setup just saved into effect, so doctor checks the written files instead of the earlier state
+def _wizard_apply_saved_values(state, env_path=None):
+    # Config values first: they carry the unset placeholders for every secret, which would otherwise
+    # overwrite the secrets applied below and make doctor report a working setup as unconfigured
+    globals().update(state.config_values)
+    if env_path:
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(str(env_path), override=True)
+        except Exception as exc:
+            debug_print("Reading the dotenv file back after setup", path=env_path, outcome="failed", error=f"{type(exc).__name__}: {exc}")
+    for key in SECRET_KEYS:
+        value = os.getenv(key)
+        if value is not None:
+            globals()[key] = value
+    # Secrets exported before startup keep winning here, exactly as they will when monitoring runs
+    for key, value in state.secret_updates.items():
+        if key not in EXPORTED_SECRET_KEYS and not secret_is_set(globals().get(key)):
+            globals()[key] = value
+
+
+# Builds the exact local command that starts this monitor, used when setup offers to launch it
+def _wizard_local_command_args(target=None, config_path=None, env_path=None):
+    executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
+    arguments = [executable, str(Path(__file__).resolve())]
+    if target:
+        arguments.append(str(target))
+    if config_path:
+        arguments.extend(["--config-file", str(config_path)])
+    if env_path:
+        arguments.extend(["--env-file", str(env_path)])
+    return arguments
+
+
+# Hands the terminal to the monitor, replacing this process where the platform allows it
+def _wizard_launch_monitor(arguments):
+    command = [str(argument) for argument in arguments]
+    if platform.system() == "Windows":
+        try:
+            return subprocess.run(command, check=False).returncode
+        except KeyboardInterrupt:
+            return 0
+    os.execv(command[0], command)
+    return 0
+
+
+# Runs the guided setup, holding every answer until the user saves
+def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input_func=None, getpass_func=None, interactive=None):
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        print("The setup wizard needs an interactive terminal (TTY).")
+        print(f"Run --setup from an interactive shell, or write a config to edit by hand with: {tool_command('--generate-config', DEFAULT_CONFIG_FILENAME)}")
+        print(f"Guide: {QUICK_START_GUIDE_URL}")
+        return 1
+
+    if env_file and str(env_file).casefold() == "none":
+        print("--setup needs a dotenv destination. Replace '--env-file none' with a writable path.")
+        return 1
+
+    config_path = Path(config_file).expanduser() if config_file else Path.cwd() / DEFAULT_CONFIG_FILENAME
+    env_path = Path(env_file).expanduser() if env_file else Path.cwd() / ".env"
+
+    print("Setup Wizard\n")
+    print("This asks a few questions and writes a ready-to-run configuration.")
+    _wizard_print_default_guidance()
+    print("Secrets go to the dotenv file. Non-secret settings go to the config file.\n")
+    _wizard_print_setup_destinations(config_path, env_path)
+
+    baseline_values = {name: value for name, value in globals().items() if name in _config_allowed_names()}
+    state = WizardSetupState(config_path, env_path, baseline_values)
+    state.config_values["DOTENV_FILE"] = str(env_path)
+
+    try:
+        _wizard_collect_target_section(state, initial_target, input_func=input_func)
+        print()
+        _wizard_collect_polling_section(state, input_func=input_func)
+        print()
+        _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
+        _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
+        _wizard_collect_output_section(state, input_func=input_func)
+        saved = _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func)
+    except (EOFError, KeyboardInterrupt):
+        print("Setup cancelled. Destination files were not changed.")
+        return 1
+
+    if not saved:
+        print("\nSetup cancelled. Destination files were not changed.")
+        return 1
+
+    # Everything above only filled the state, so this is the first and only point anything reaches disk
+    try:
+        config_backup, _written = write_generated_config(state.config_path, generate_config_with_current_values(state.config_values), force=True)
+    except Exception as exc:
+        print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the configuration to '{state.config_path}': {exc}"))
+        return 1
+    secrets_written = False
+    if state.secret_updates:
+        try:
+            update_dotenv_values(state.env_path, state.secret_updates)
+            secrets_written = True
+        except Exception as exc:
+            print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the secrets to '{state.env_path}': {exc}"))
+            return 1
+    tokens_path = Path(os.path.expanduser(str(state.config_values.get("MS_AUTH_TOKENS_FILE") or MS_AUTH_TOKENS_FILE or "")))
+    tokens_written = False
+    if state.token_json:
+        try:
+            # The cache holds a refresh token, so it is private to the owner and never left half-written
+            write_file_atomically(tokens_path, state.token_json, mode=0o600)
+            tokens_written = True
+        except Exception as exc:
+            print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the Xbox tokens to '{tokens_path}': {exc}"))
+            return 1
+
+    print("\nSaved files\n")
+    print(f"  Configuration: {state.config_path}")
+    if config_backup:
+        print(f"  Backup:        {config_backup}")
+    if secrets_written:
+        print(f"  Secrets:       {state.env_path}")
+    if tokens_written:
+        print(f"  Xbox tokens:   {tokens_path}")
+
+    doctor_offered = bool(state.target)
+    doctor_exit = None
+    if doctor_offered:
+        print()
+    try:
+        if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
+            print()
+            _wizard_apply_saved_values(state, env_path=state.env_path if secrets_written else None)
+            doctor_exit = run_doctor(xbox_gamertag=state.target, config_path=str(state.config_path), env_path=str(state.env_path) if secrets_written else None)
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional check
+        print("Setup is saved. Use the commands below when ready.")
+
+    env_arguments = ["--env-file", str(state.env_path)] if secrets_written else []
+    # A saved target is already in the config file, so the printed commands stay short
+    target_arguments = [] if state.persist_target or not state.target else [state.target]
+    paths = ["--config-file", str(state.config_path)] + env_arguments
+    print("\nNext steps\n")
+    print_labelled_command("Check setup again:", tool_command("--doctor", *target_arguments, *paths))
+    start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
+    print_labelled_command(start_label, tool_command(*target_arguments, *paths))
+    print(f"Guide: {QUICK_START_GUIDE_URL}\n")
+
+    try:
+        start_monitoring = bool(state.target and _wizard_credentials_ready(state) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional launch
+        print("Setup is saved. Start monitoring with the command above when ready.")
+        return 0
+    if start_monitoring:
+        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if secrets_written else None)
+        sys.stdout.flush()
+        return _wizard_launch_monitor(launch_arguments)
+    return 0
+
+
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def render_help_examples(groups, guide_url):
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, listing the commands worth knowing rather than every command there is
+def help_examples():
+    prefix = tool_command_prefix()
+    groups = (
+        ("Getting started", (
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
+            ("Or save the Microsoft application credentials and authorize once", f"{prefix} --set-ms-app-credentials"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <xbox_gamertag>"),
+            ("Start monitoring", f"{prefix} <xbox_gamertag>"),
+        )),
+        ("Notifications", (
+            ("Email when the user goes online or offline, and on game changes", f"{prefix} <xbox_gamertag> -a -g"),
+            ("Send one test email", f"{prefix} --send-test-email"),
+        )),
+        ("Information and diagnostics", (
+            ("Show detailed profile information and exit", f"{prefix} -i <xbox_gamertag>"),
+            ("Trace what the tool is doing", f"{prefix} <xbox_gamertag> --debug"),
+        )),
+    )
+    return render_help_examples(groups, QUICK_START_GUIDE_URL)
+
+
+# Prints the commands a newcomer needs next, instead of an argparse usage error nobody can act on
+def print_welcome_screen(input_func=None, interactive=None, config_file=None, env_file=None):
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
+    prefix = tool_command_prefix()
+    print(f"For <xbox_gamertag>, use the {XBOX_TARGET_FORMS}.\n")
+    print_labelled_command("Quickest start (already configured):", f"{prefix} <xbox_gamertag>")
+    # The suffix names the prompt printed below, so it only appears when that prompt does
+    print_labelled_command("Easiest start (guided setup wizard):", f"{prefix} --setup", "   (or just answer Y below)" if terminal_is_interactive else "")
+    print_labelled_command("Check setup before monitoring:", f"{prefix} --doctor <xbox_gamertag>")
+    print_labelled_command("Show profile details and exit:", f"{prefix} -i <xbox_gamertag>")
+    print(f"Full options: {prefix} --help")
+    print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
+    if terminal_is_interactive:
+        try:
+            start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
+        except (EOFError, KeyboardInterrupt):
+            # This prompt sits outside the wizard, which handles its own interrupts
+            print("Setup cancelled.")
+            return 1
+        if start_setup:
+            print()
+            return run_setup_wizard(config_file=config_file, env_file=env_file, input_func=input_func)
+    # Without a terminal there was nothing to answer, so a bare invocation stays the usage error it was
+    return 0 if terminal_is_interactive else 1
+
+
+# The one-shot commands that write a secret, which stay usable when no gamertag was given
+SECRET_ACTION_FLAGS = ("--set-ms-app-credentials", "--set-smtp-password")
+
+
+# Prints the commands to run next, with the file paths this run was given so they can be pasted as they are
+def print_secret_next_steps(env_path, config_path=None, xbox_gamertag=None, test_step=None):
+    paths = []
+    if config_path:
+        paths.extend(("--config-file", str(config_path)))
+    paths.extend(("--env-file", str(env_path)))
+    target = xbox_gamertag or "<xbox_gamertag>"
+    print()
+    if test_step:
+        print_labelled_command(test_step[0], tool_command(test_step[1], *paths))
+    print_labelled_command("Check setup again:", tool_command("--doctor", target, *paths))
+    print_labelled_command("Once the checks pass, start monitoring:", tool_command(target, *paths))
+
+
+# Reads one secret through a hidden prompt, keeping it out of the debug stream that would print it verbatim
+def read_secret_privately(prompt_text, getpass_func=None):
+    global DEBUG_MODE
+
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        return str(read_interactively(hidden_prompt, prompt_text)).strip()
+    finally:
+        DEBUG_MODE = previous_debug_mode
+
+
+# Reports whether the user agreed to replace secrets a dotenv file already holds
+def confirm_secret_replacement(destination, keys, input_func=None):
+    present = [key for key in keys if dotenv_contains_key(destination, key)]
+    if not present:
+        return
+    ask = input if input_func is None else input_func
+    subject = f"{join_names(present)} is already set" if len(present) == 1 else f"{join_names(present)} are already set"
+    try:
+        confirmed = str(read_interactively(ask, f"{subject} in '{destination}'. Replace {'it' if len(present) == 1 else 'them'}? [y/N]: ")).strip().casefold() in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        confirmed = False
+    if not confirmed:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{join_names(present)} was left as it is and the dotenv file was not changed"))
+
+
+# Collects one secret through a hidden prompt, checks it with the given validator and writes it only then
+def run_set_secret(key, flag, guidance, prompt_text, validator, describe_success, env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None, normalize=None, test_step=None):
+    destination = resolve_secret_env_path(env_file, flag)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{flag} needs an interactive terminal so the value stays hidden"))
+
+    confirm_secret_replacement(destination, (key,), input_func=input_func)
+    print(guidance)
+    try:
+        entered = read_secret_privately(prompt_text, getpass_func=getpass_func)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail=f"{key} entry was cancelled and the dotenv file was not changed")) from None
+
+    print(f"* Checking the entered value before writing it to '{destination}' ...")
+    outcome = validator(entered)
+    # What is stored can differ from what was typed, so a shorthand the validator accepted is saved in full
+    stored = str(entered).strip() if normalize is None else normalize(entered)
+    try:
+        update_dotenv_value(destination, key, stored)
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="file.unwritable", detail=f"Cannot save {key} to '{destination}': {exc}"), exc) from None
+
+    print(f"* {describe_success(outcome)}")
+    print(f"* Updated '{destination}', readable only by you")
+    print_secret_next_steps(destination, config_path, xbox_gamertag, test_step)
+    return str(destination)
+
+
+# Stores both Microsoft application credentials and the tokens the one-time browser sign-in returns
+def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None, authorizer=None):
+    keys = ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET")
+    destination = resolve_secret_env_path(env_file, "--set-ms-app-credentials")
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="--set-ms-app-credentials needs an interactive terminal so the values stay hidden"))
+
+    confirm_secret_replacement(destination, keys, input_func=input_func)
+    print(f"* Register an application at {ENTRA_PORTAL_URL}")
+    print("* Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
+    print(f"* Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
+    try:
+        client_id = read_secret_privately("Enter the Application (client) ID (input hidden): ", getpass_func=getpass_func)
+        client_secret = read_secret_privately("Enter the client secret value (input hidden): ", getpass_func=getpass_func)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="Credential entry was cancelled and the dotenv file was not changed")) from None
+    if not client_id or not client_secret:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="Both the client ID and the client secret are needed, so the dotenv file was not changed"))
+
+    print(f"* Checking the entered values before writing them to '{destination}' ...")
+    authorize = _wizard_request_tokens if authorizer is None else authorizer
+    try:
+        tokens = asyncio.run(authorize(client_id, client_secret, input_func=input_func))
+    except (EOFError, KeyboardInterrupt):
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="The Microsoft sign-in was cancelled and the dotenv file was not changed")) from None
+    except RecoveryError:
+        raise
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="auth", detail=f"The Microsoft sign-in did not complete: {exc}"), exc) from None
+    if not tokens:
+        raise RecoveryError(classify_recovery_error(context="secret.entry", detail="No authorization code was entered, so the dotenv file was not changed"))
+
+    try:
+        update_dotenv_values(destination, {"MS_APP_CLIENT_ID": client_id, "MS_APP_CLIENT_SECRET": client_secret})
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="file.unwritable", detail=f"Cannot save the Microsoft application credentials to '{destination}': {exc}"), exc) from None
+    tokens_path = Path(os.path.expanduser(MS_AUTH_TOKENS_FILE or DEFAULT_TOKENS_FILENAME))
+    try:
+        # The cache holds a refresh token, so it is private to the owner and never left half-written
+        write_file_atomically(tokens_path, str(tokens), mode=0o600)
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="file.unwritable", detail=f"Cannot save the Xbox tokens to '{tokens_path}': {exc}"), exc) from None
+
+    print("* Microsoft accepted the sign-in")
+    print(f"* Updated '{destination}', readable only by you")
+    print(f"* Saved the Xbox tokens to '{tokens_path}', readable only by you")
+    print_secret_next_steps(destination, config_path, xbox_gamertag)
+    return str(destination)
+
+
+# Stores one SMTP password in the dotenv file after the mail server has actually accepted it
+def run_set_smtp_password(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
+    return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
+
+
 # Saves the last seen status atomically, so an interrupted write cannot strand a half-written status file
 def save_last_status(status_file, status_ts, status):
     debug_print("Status file write", path=str(status_file), status=status, ts=status_ts)
@@ -1159,6 +2098,59 @@ def join_names(names):
 # Reports whether a setting holds a real value rather than being empty or one of the shipped placeholders
 def secret_is_set(value):
     return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
+
+
+# Accepts a gamertag typed by hand or copied out of a profile link, rejecting the e-mail mistake
+def normalize_xbox_target(value):
+    text = str(value or "").strip().strip('"').strip("'")
+    if not text:
+        raise ValueError(f"Enter the {XBOX_TARGET_FORMS}")
+    if "://" in text or text.startswith("www."):
+        text = unquote(text.rstrip("/").rsplit("/", 1)[-1].split("?")[0].split("#")[0])
+        text = text.strip()
+    if "@" in text:
+        raise ValueError(f"That looks like an e-mail address. Use the {XBOX_TARGET_FORMS}")
+    # Modern gamertags carry a numeric suffix that is part of the name but not part of the length limit
+    name, _, suffix = text.partition("#")
+    if suffix and not (suffix.isdigit() and 1 <= len(suffix) <= 4):
+        raise ValueError("The part after '#' in a gamertag is 1 to 4 digits")
+    if not name.strip() or len(name) > 15 or any(character in name for character in "\\/:*?\"<>|"):
+        raise ValueError("An Xbox gamertag is up to 15 characters and cannot contain \\ / : * ? \" < > |")
+    return text
+
+
+# Prints one labelled command in the shape the welcome screen and the next-steps blocks share
+def print_labelled_command(label, command, suffix=""):
+    print(label)
+    print(f"    {command}{suffix}\n")
+
+
+# Parses a duration the way people type it, accepting bare seconds and s/m/h/d suffixes
+def parse_duration_input(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if value > 0 else None
+    if not isinstance(value, str):
+        return None
+    text = value.strip().casefold().replace(",", ".")
+    if not text:
+        return None
+    units = {"s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+             "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60,
+             "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600,
+             "d": 86400, "day": 86400, "days": 86400}
+    matches = re.findall(r"(\d+(?:\.\d+)?)\s*([a-z]*)", text)
+    # Anything the pattern did not consume is rejected, so "5x" or "abc" cannot read as a bare number
+    if not matches or re.sub(r"(\d+(?:\.\d+)?)\s*([a-z]*)", "", text).strip():
+        return None
+    total = 0.0
+    for amount, unit in matches:
+        if unit and unit not in units:
+            return None
+        total += float(amount) * units.get(unit, 1)
+    seconds = int(round(total))
+    return seconds if seconds > 0 else None
 
 
 # Applies the diagnostic flags given on the command line, before and again after the config file is read
@@ -1593,7 +2585,7 @@ async def oauth_interactive_auth(auth_mgr):
     print("\nAuthorizing via OAuth ...")
     url = auth_mgr.generate_authorization_url()
     print(f"\nOpen this URL in your web browser to authorize:\n{url}")
-    authorization_code = input("\nEnter authorization code (part after '?code=' in callback URL): ").strip()
+    authorization_code = str(read_interactively(input, "\nEnter authorization code (part after '?code=' in callback URL): ")).strip()
     if not authorization_code:
         raise ValueError("Authorization code cannot be empty")
     auth_mgr.oauth = await auth_mgr.request_oauth_token(authorization_code)
@@ -3418,7 +4410,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 def main():
     global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS
 
-    if "--generate-config" in sys.argv:
+    if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # A filename after the flag writes the file directly, which sidesteps the UTF-16 redirect PowerShell
         # produces for a piped template
@@ -3466,7 +4458,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="xbox_monitor",
-        description=("Monitor an Xbox user's playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor an Xbox user's playing status and send customizable email alerts [ https://github.com/misiektoja/xbox_monitor/ ]"), epilog=help_examples(), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -3514,6 +4506,24 @@ def main():
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
+        "--setup",
+        dest="setup",
+        action="store_true",
+        help="Run the guided setup and write a ready-to-run configuration"
+    )
+    conf.add_argument(
+        "--set-ms-app-credentials",
+        dest="set_ms_app_credentials",
+        action="store_true",
+        help="Enter the Microsoft application credentials privately, authorize once and save them to the dotenv file",
+    )
+    conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
+    )
+    conf.add_argument(
         "--doctor",
         dest="doctor",
         action="store_true",
@@ -3537,8 +4547,8 @@ def main():
         type=str
     )
 
-    # Notifications
-    notify = parser.add_argument_group("Notifications")
+    # Email notifications
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-a", "--notify-active-inactive",
         dest="notify_active_inactive",
@@ -3574,8 +4584,8 @@ def main():
         help="Send test email to verify SMTP settings"
     )
 
-    # User information
-    info = parser.add_argument_group("User information")
+    # User information & listing
+    info = parser.add_argument_group("User information & listing")
     info.add_argument(
         "-i", "--info",
         dest="info_mode",
@@ -3663,9 +4673,9 @@ def main():
 
     args = parser.parse_args()
 
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_ms_app_credentials, args.set_smtp_password), strict=True) if selected]
+    if len(selected_secret_actions) > 1:
+        parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
     # Applied before the config file is read so a failing load is already visible, and again after it so a saved
     # DEBUG_MODE = False cannot switch off what the command line asked for
@@ -3681,7 +4691,7 @@ def main():
     config_advice = None
     timezone_advice = None
 
-    if not cfg_path and CLI_CONFIG_PATH:
+    if not cfg_path and CLI_CONFIG_PATH and not args.setup:
         config_advice = classify_recovery_error(context="config.missing", detail=f"Config file '{CLI_CONFIG_PATH}' does not exist")
         if not doctor_mode:
             print_recovery_advice(config_advice)
@@ -3697,6 +4707,15 @@ def main():
 
     # Applied again, so a saved DEBUG_MODE cannot switch off a flag the user just typed
     apply_diagnostic_cli_flags(args)
+
+    # A gamertag given on the command line always wins over the saved one
+    if not args.xbox_gamertag and XBOX_GAMERTAG:
+        args.xbox_gamertag = XBOX_GAMERTAG
+        debug_print("Gamertag resolved", source="configuration file", value=args.xbox_gamertag)
+
+    # Evaluated after the config file is read, so a saved gamertag starts monitoring instead of being welcomed
+    if len(sys.argv) == 1 and not args.xbox_gamertag:
+        sys.exit(print_welcome_screen(config_file=args.config_file, env_file=args.env_file))
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -3833,6 +4852,25 @@ def main():
 
     if not check_internet():
         sys.exit(1)
+
+    if args.setup:
+        sys.exit(run_setup_wizard(initial_target=args.xbox_gamertag, config_file=args.config_file, env_file=args.env_file))
+
+    if args.set_ms_app_credentials:
+        try:
+            run_set_ms_app_credentials(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
+        except Exception as exc:
+            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.set_smtp_password:
+        try:
+            run_set_smtp_password(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
+        except Exception as exc:
+            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            sys.exit(1)
+        sys.exit(0)
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")

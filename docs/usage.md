@@ -57,6 +57,8 @@ To monitor a user, pass their Xbox Live gamertag:
 xbox_monitor <xbox_gamer_tag>
 ```
 
+Set `XBOX_GAMERTAG` in the configuration file to monitor the same account without naming it every time. `--setup` offers to save it for you. A gamertag passed as an argument always wins over the saved one.
+
 If the credentials are not stored anywhere, pass them with `-u` and `-w`:
 
 ```sh

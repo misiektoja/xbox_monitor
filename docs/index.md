@@ -9,6 +9,7 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 - **Detailed user information** display mode covering XUID, online status and last online date, platform, account tier, gamerscore, real name, location, friends count and optionally the friends list, recently played games with last played date and total play time, and recently earned achievements
 - **Activity detection for appear-offline users**, using title history to report gaming activity even when the monitored profile is set to Appear Offline
 - **Email notifications** for various events: the user gets online, away or offline, starts, finishes or changes a game, and monitoring errors
+- **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
 - **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
 - **CSV export** of every reported activity, with **status persistence** across restarts
 - **Built-in OAuth2 authentication** with manual authorization support
@@ -23,13 +24,19 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 pip install xbox_monitor
 ```
 
+Then run the guided setup:
+
+```sh
+xbox_monitor --setup
+```
+
 Check the setup before relying on it:
 
 ```sh
 xbox_monitor --doctor <xbox_gamer_tag>
 ```
 
-[Installation](installation.md) covers the requirements and the manual install. [Setup & First Run](setup-and-first-run.md) covers the Microsoft Entra application credentials, the first authorization and the privacy settings the monitored account needs.
+[Installation](installation.md) covers the requirements and the manual install. [Setup & First Run](setup-and-first-run.md) covers the guided setup, the Microsoft Entra application credentials, the first authorization and the privacy settings the monitored account needs.
 
 ## Screenshots
 

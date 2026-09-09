@@ -20,6 +20,12 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 pip install xbox_monitor
 ```
 
+Then run the guided setup. It asks a few questions, handles the one-time Microsoft authorization and writes a ready-to-run configuration:
+
+```sh
+xbox_monitor --setup
+```
+
 Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
 
 ```sh
@@ -37,6 +43,7 @@ xbox_monitor --doctor <xbox_gamer_tag>
 - **Detailed user information** display mode covering XUID, online status, platform, account tier, gamerscore, friends, recently played games and recently earned achievements
 - **Activity detection for appear-offline users**, using title history to report gaming activity even when the monitored profile is set to Appear Offline
 - **Email notifications** for various events, configurable per event
+- **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
 - **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
 - **CSV export** of every reported activity, with **status persistence** across restarts
 - **Built-in OAuth2 authentication** with manual authorization support
@@ -47,7 +54,7 @@ xbox_monitor --doctor <xbox_gamer_tag>
 | Page | What it covers |
 | --- | --- |
 | [Installation](https://misiektoja.github.io/xbox_monitor/installation/) | Requirements, installing from PyPI or by hand, upgrading |
-| [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) | Microsoft Entra application credentials, the first authorization, the privacy settings the monitored account needs |
+| [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) | The guided setup, Microsoft Entra application credentials, the first authorization, the privacy settings the monitored account needs |
 | [Configuration](https://misiektoja.github.io/xbox_monitor/configuration/) | Config file, time zone, SMTP, TLS verification, check intervals, storing secrets |
 | [Usage](https://misiektoja.github.io/xbox_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals |
 | [Troubleshooting](https://misiektoja.github.io/xbox_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |

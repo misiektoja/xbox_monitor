@@ -23,7 +23,15 @@ Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. A row that is not a
 
 When both the input and the output are a terminal and the email channel passed, the report offers one real test message. Nothing is sent without a separate yes, and the result is counted in the summary.
 
-Doctor never starts the interactive sign-in, because that writes a token file. A missing token cache is reported as a warning naming the command that creates one.
+Doctor never starts the interactive sign-in, because that writes a token file. A missing token cache is reported as a warning naming the command that creates one, which is `--setup` or the first monitoring run.
+
+## Setup and Secret Commands
+
+`--setup`, `--set-ms-app-credentials` and `--set-smtp-password` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
+
+Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed, and during a secret command it reports that the dotenv file was left as it was. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring.
+
+`--setup` needs somewhere to put the secrets, so it refuses `--env-file none`.
 
 ## Error Messages and Recovery
 

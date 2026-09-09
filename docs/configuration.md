@@ -2,7 +2,9 @@
 
 ## Configuration File
 
-Most settings can be set on the command line. To keep them, generate the default template and save it as `xbox_monitor.conf`:
+The quickest way to get a configuration file is [`--setup`](setup-and-first-run.md#quick-start), which fills it in from your answers.
+
+Most settings can also be set on the command line. To keep them, generate the default template and save it as `xbox_monitor.conf`:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -95,6 +97,18 @@ An expired or revoked refresh token is a credential problem rather than a networ
 ## Storing Secrets
 
 Store `MS_APP_CLIENT_ID`, `MS_APP_CLIENT_SECRET` and `SMTP_PASSWORD` as environment variables or in a dotenv file rather than in the configuration file.
+
+The tool can collect them for you through a hidden prompt, check them and save them to the dotenv file. Neither value is echoed and neither ends up in the shell history:
+
+```sh
+# Asks for both Microsoft application credentials, then runs the one-time browser authorization
+xbox_monitor --set-ms-app-credentials
+
+# Asks for the SMTP password and signs in to the mail server before saving it, without sending anything
+xbox_monitor --set-smtp-password
+```
+
+Each command rewrites its assignment in the dotenv file in place, keeps every other line and comment, and asks first when the value is already set. `--setup` does the same as part of the guided run.
 
 Export them on Linux, Unix, macOS and WSL:
 

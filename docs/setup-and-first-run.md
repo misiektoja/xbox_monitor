@@ -2,7 +2,21 @@
 
 ## Quick Start
 
-Register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
+Run the tool with no arguments. It lists the commands worth knowing and offers to start the guided setup:
+
+```sh
+xbox_monitor
+```
+
+The setup wizard asks a few questions, runs the [first authorization](#first-authorization) for you and writes a ready-to-run configuration. Start it directly with:
+
+```sh
+xbox_monitor --setup
+```
+
+It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Nothing is written until you choose **Save settings** on the summary, and Ctrl+C at any question leaves both files untouched.
+
+To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
 
 ```sh
 xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
@@ -14,7 +28,7 @@ Or, if you installed [manually](installation.md#manual-installation):
 python3 xbox_monitor.py <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
 ```
 
-Pass the Xbox gamertag, not the Microsoft account e-mail address and not the real name.
+Pass the Xbox gamertag, not the Microsoft account e-mail address and not the real name. A gamertag copied out of a profile link works too.
 
 Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
 
@@ -64,6 +78,7 @@ Copy the contents of the **Value** column into `MS_APP_CLIENT_SECRET`. The porta
 
 Supply the two secrets in one of these ways:
 
+- Let `--setup` or `--set-ms-app-credentials` ask for them through a hidden prompt and save them to the dotenv file
 - Pass them at runtime with `-u` / `--ms-app-client-id` and `-w` / `--ms-app-client-secret`
 - Export them as [environment variables](configuration.md#storing-secrets)
 - Put them in a [dotenv file](configuration.md#storing-secrets) for persistent use
@@ -76,7 +91,7 @@ If they live in a dotenv file, you can change their values and send `SIGHUP` to 
 
 ## First Authorization
 
-The first run performs OAuth2 authorization with the credentials you supplied. The tool prints a URL to open in a browser.
+The first run performs OAuth2 authorization with the credentials you supplied. `--setup` and `--set-ms-app-credentials` run the same flow right after collecting the credentials, so the tokens are already in place before monitoring starts. The tool prints a URL to open in a browser.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor_oauth1.png" alt="xbox_monitor_oauth1" width="90%"/>

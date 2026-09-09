@@ -205,3 +205,102 @@ def test_generate_config_without_a_file_prints_the_template(monkeypatch, capsysb
 
     assert raised.value.code == 0
     assert capsysbinary.readouterr().out == (monitor.CONFIG_BLOCK.strip("\n") + "\n").encode("utf-8")
+
+
+# Verifies a bare invocation with a saved gamertag starts monitoring instead of printing the welcome screen
+def test_a_saved_gamertag_starts_monitoring_instead_of_the_welcome_screen(tmp_path, monkeypatch, capsys):
+    config, _ = write_startup_files(tmp_path, 'XBOX_GAMERTAG = "SomeTag"\n')
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", str(config))
+    observed = run_startup(monkeypatch, [], observe=("XBOX_GAMERTAG",))
+
+    assert observed["XBOX_GAMERTAG"] == "SomeTag"
+    assert "Run the guided setup wizard now?" not in capsys.readouterr().out
+
+
+# Verifies a gamertag given on the command line wins over the saved one
+def test_a_gamertag_argument_beats_the_saved_one(tmp_path, monkeypatch):
+    config, _ = write_startup_files(tmp_path, 'XBOX_GAMERTAG = "SavedTag"\n')
+    seen = {}
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: seen.update({"target": args[0]}) or 0)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--doctor", "TypedTag", "--config-file", str(config)])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert seen["target"] == "TypedTag"
+
+
+# Verifies --setup is reached without a gamertag, since choosing one is part of what it does
+def test_setup_runs_without_a_gamertag(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **kwargs: seen.update(kwargs) or 0)
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--setup", "--config-file", str(tmp_path / "new.conf"), "--env-file", str(tmp_path / ".env")])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
+    assert seen["config_file"] == str(tmp_path / "new.conf")
+
+
+# Verifies the commands that write a secret are reached without a gamertag, which they exist to help configure
+@pytest.mark.parametrize("flag, runner", (("--set-ms-app-credentials", "run_set_ms_app_credentials"), ("--set-smtp-password", "run_set_smtp_password")))
+def test_a_secret_command_runs_without_a_gamertag(tmp_path, monkeypatch, flag, runner):
+    config, env = write_startup_files(tmp_path)
+    calls = []
+    monkeypatch.setattr(monitor, runner, lambda **kwargs: calls.append(kwargs) or str(env))
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", flag, "--config-file", str(config), "--env-file", str(env)])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
+    assert len(calls) == 1
+    assert calls[0]["env_file"] == str(env)
+
+
+# Verifies two secret commands at once are refused rather than silently running only the first
+def test_two_secret_commands_at_once_are_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--set-ms-app-credentials", "--set-smtp-password"])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 2
+    assert "cannot be combined with" in capsys.readouterr().err
+
+
+# Verifies --generate-config does not swallow a run whose point is writing a secret
+def test_generate_config_does_not_swallow_a_secret_command(tmp_path, monkeypatch):
+    config, env = write_startup_files(tmp_path)
+    calls = []
+    monkeypatch.setattr(monitor, "run_set_smtp_password", lambda **kwargs: calls.append(kwargs) or str(env))
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--generate-config", "--set-smtp-password", "--config-file", str(config), "--env-file", str(env)])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
+    assert len(calls) == 1
+
+
+# Verifies --setup may name a config file that does not exist yet, since creating it is the point
+def test_setup_may_name_a_config_file_that_does_not_exist_yet(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **kwargs: 0)
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--setup", "--config-file", str(tmp_path / "absent.conf")])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
+    assert "does not exist" not in capsys.readouterr().out
