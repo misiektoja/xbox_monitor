@@ -296,7 +296,7 @@ COLORED_OUTPUT = True
 #     "status_offline": "red",
 #     "status_other": "white",
 #     "game": "bright_yellow",
-#     "platform": "bright_blue",
+#     "platform": "blue",
 #     "achievement": "bright_green",
 #     "duration": "green",
 #     "status_change": "yellow",
@@ -307,6 +307,7 @@ COLORED_OUTPUT = True
 #     "error": "red",
 #     "signal": "yellow",
 #     "email": "bright_cyan",
+#     "webhook": "bright_blue",
 #     "date": "magenta",
 #     "date_range": "magenta",
 #     "boolean_true": "green",
@@ -1257,7 +1258,7 @@ DEFAULT_COLOR_THEME = {
     "status_other": "white",
     # Xbox info
     "game": "bright_yellow",
-    "platform": "bright_blue",
+    "platform": "blue",
     "achievement": "bright_green",
     "duration": "green",
     # Activity info
@@ -1270,6 +1271,7 @@ DEFAULT_COLOR_THEME = {
     "error": "red",
     "signal": "yellow",
     "email": "bright_cyan",
+    "webhook": "bright_blue",
     # Dates
     "date": "magenta",
     "date_range": "magenta",
@@ -1607,6 +1609,8 @@ def _colorize_line(line):
         line = _apply_style_nested(line, "signal")
     elif "sending email" in lowered:
         line = _apply_style_nested(line, "email")
+    elif "sending webhook" in lowered:
+        line = _apply_style_nested(line, "webhook")
 
     return line
 

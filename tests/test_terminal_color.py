@@ -276,3 +276,20 @@ def test_the_width_sentinel_expands_to_the_terminal_width(monkeypatch):
 # Verifies truncation stays off while logging is disabled, since the trimmed text would then be lost for good
 def test_truncation_stays_off_while_logging_is_disabled():
     assert monitor.resolve_truncate_chars(80, 0, True) == 0
+
+
+# Verifies both delivery announcements are painted for their channel, so the two theme keys are not settings that do nothing
+@pytest.mark.parametrize("line,part", [
+    ("* Sending email notification to alerts@example.test", "email"),
+    ("* Sending webhook notification", "webhook"),
+])
+def test_a_delivery_announcement_is_painted_for_its_channel(colored, line, part):
+    assert styled_as(monitor._colorize_line(line), line, part)
+
+
+# Verifies the two channels keep the values every sibling monitor ships, and that the console tag stays visible
+# inside a webhook line rather than sharing its colour
+def test_the_delivery_channels_keep_the_shared_colours():
+    assert monitor.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
+    assert monitor.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"
+    assert monitor.DEFAULT_COLOR_THEME["platform"] != monitor.DEFAULT_COLOR_THEME["webhook"]

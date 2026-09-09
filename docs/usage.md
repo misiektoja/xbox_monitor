@@ -217,7 +217,7 @@ COLOR_THEME = {
 | `status_offline` | `red` | An offline presence |
 | `status_other` | `white` | A presence value the tool does not recognise |
 | `game` | `bright_yellow` | Game titles |
-| `platform` | `bright_blue` | Console names and the platform tag beside a game |
+| `platform` | `blue` | Console names and the platform tag beside a game |
 | `achievement` | `bright_green` | Gamerscore and achievement names |
 | `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
 | `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
@@ -228,6 +228,7 @@ COLOR_THEME = {
 | `error` | `red` | `* Error:` lines and `[FAIL]` rows |
 | `signal` | `yellow` | `* Signal ... received` lines |
 | `email` | `bright_cyan` | Lines reporting an email being sent |
+| `webhook` | `bright_blue` | Lines reporting a webhook being sent |
 | `date` | `magenta` | Single dates and times |
 | `date_range` | `magenta` | Date and time ranges |
 | `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
