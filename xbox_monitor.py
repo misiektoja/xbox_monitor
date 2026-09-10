@@ -2402,6 +2402,8 @@ async def _wizard_request_tokens(client_id, client_secret, input_func=None):
         code = _wizard_input("Paste the authorization code, the part after '?code=' in the callback URL: ", input_func=input_func).strip()
         if not code:
             return ""
+        # The code is exchanged for tokens here, which takes long enough to look like a hang without a notice
+        print("  Checking the sign-in with Microsoft ...")
         auth_mgr.oauth = await auth_mgr.request_oauth_token(code)
         await auth_mgr.refresh_tokens()
         return str(auth_mgr.oauth.model_dump_json())

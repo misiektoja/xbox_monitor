@@ -644,3 +644,53 @@ def test_the_saved_timezone_is_resolved_before_doctor_reads_it(monkeypatch):
     assert advice is None
     assert monitor.LOCAL_TIMEZONE == "Europe/Warsaw"
     assert monitor.TIMEZONE_CHECK_LABELS[monitor.LOCAL_TIMEZONE_STATE] == "Local timezone can be detected"
+
+
+# Stands in for the Xbox authentication manager, so the real token exchange is never contacted
+class FakeAuthManager:
+    def __init__(self, session, client_id, client_secret, redirect_uri):
+        self.oauth = types.SimpleNamespace(model_dump_json=lambda: '{"access_token": "test"}')
+
+    def generate_authorization_url(self):
+        return "https://login.example.test/authorize"
+
+    async def request_oauth_token(self, code):
+        return self.oauth
+
+    async def refresh_tokens(self):
+        return None
+
+
+# Verifies the token exchange announces itself, since it blocks after the code is pasted with no output
+def test_the_token_exchange_announces_the_check(monkeypatch, capsys):
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(monitor, "create_signed_session", lambda: FakeSession())
+    monkeypatch.setattr(monitor, "AuthenticationManager", FakeAuthManager)
+
+    tokens = monitor.asyncio.run(monitor._wizard_request_tokens("client", "secret", input_func=lambda _prompt="": "auth-code"))
+
+    assert tokens == '{"access_token": "test"}'
+    lines = capsys.readouterr().out.splitlines()
+    assert "  Checking the sign-in with Microsoft ..." in lines
+
+
+# Verifies a blank authorization code returns before any check is announced, since nothing is exchanged
+def test_a_blank_authorization_code_announces_nothing(monkeypatch, capsys):
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(monitor, "create_signed_session", lambda: FakeSession())
+    monkeypatch.setattr(monitor, "AuthenticationManager", FakeAuthManager)
+
+    assert monitor.asyncio.run(monitor._wizard_request_tokens("client", "secret", input_func=lambda _prompt="": "")) == ""
+    assert "Checking the sign-in with Microsoft" not in capsys.readouterr().out
