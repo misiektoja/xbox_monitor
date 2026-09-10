@@ -18,6 +18,8 @@ It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf
 
 It covers the monitored account, the polling intervals, the application credentials, email alerts, [webhook alerts](configuration.md#webhook-settings) and the files the tool writes. Each section can be skipped and re-entered from the summary. The summary's **File destinations** section changes where the configuration and dotenv files are written. Moving the dotenv file asks the authentication and notification questions again, since a secret you chose to keep was never going to reach the new file.
 
+Every answer setup cannot use is explained and offered again. Declining the retry moves on rather than asking the same question forever: a value question keeps the default it showed and a channel such as email or webhook is switched off with its alerts.
+
 Nothing is written until you choose **Save settings** on the summary. Ctrl+C at any question leaves both files untouched.
 
 To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
