@@ -315,15 +315,40 @@ def test_the_token_cache_is_written_privately(monkeypatch, wizard_paths):
     assert wizard_paths["tokens"].stat().st_mode & 0o077 == 0
 
 
-# Verifies the wizard offers to launch monitoring only once a target and both credentials are settled
-def test_the_launch_offer_needs_a_target_and_credentials(monkeypatch, wizard_paths, capsys):
+# Verifies the wizard offers to launch monitoring only once a target is set and the doctor run passed
+def test_the_launch_offer_needs_a_target_and_a_passed_doctor_run(monkeypatch, wizard_paths, capsys):
     launched = []
+    monkeypatch.setattr(monitor, "run_doctor", lambda **kwargs: 0)
     monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
-    answers = ["SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "y"]
+    answers = ["SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "y", "y"]
     code, _ = run_wizard(monkeypatch, wizard_paths, answers)
     assert code == 0
     assert len(launched) == 1
     assert str(wizard_paths["config"]) in [str(argument) for argument in launched[0]]
+
+
+# Verifies a declined doctor ends at the printed commands, so nothing is launched unchecked
+def test_declining_the_doctor_removes_the_launch_offer(monkeypatch, wizard_paths):
+    launched = []
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
+    answers = ["SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "y"]
+    code, scripted = run_wizard(monkeypatch, wizard_paths, answers)
+    assert code == 0
+    assert launched == []
+    assert not any("Start monitoring now?" in prompt for prompt in scripted.prompts)
+
+
+# Verifies a doctor run that failed keeps the launch offer away and labels the command to run after the fix
+def test_a_failed_doctor_run_removes_the_launch_offer(monkeypatch, wizard_paths, capsys):
+    launched = []
+    monkeypatch.setattr(monitor, "run_doctor", lambda **kwargs: 1)
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
+    answers = ["SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "y", "y"]
+    code, scripted = run_wizard(monkeypatch, wizard_paths, answers)
+    assert code == 0
+    assert launched == []
+    assert not any("Start monitoring now?" in prompt for prompt in scripted.prompts)
+    assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
 
 
 # Verifies the doctor offer runs against the files setup just wrote rather than the state it started from

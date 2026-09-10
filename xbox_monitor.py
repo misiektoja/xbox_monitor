@@ -3030,7 +3030,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     print(f"Guide: {QUICK_START_GUIDE_URL}\n")
 
     try:
-        start_monitoring = bool(state.target and _wizard_credentials_ready(state) and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
+        # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
+        start_monitoring = bool(state.target and doctor_exit == 0 and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional launch
         print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
@@ -6849,11 +6850,11 @@ def main():
         print_doctor_next_steps(args.xbox_gamertag, XBOX_GAMERTAG, doctor_exit)
         sys.exit(doctor_exit)
 
-    if not check_internet():
-        sys.exit(1)
-
     if args.setup:
         sys.exit(run_setup_wizard(initial_target=args.xbox_gamertag, config_file=args.config_file, env_file=args.env_file))
+
+    if not check_internet():
+        sys.exit(1)
 
     if args.set_ms_app_credentials:
         try:

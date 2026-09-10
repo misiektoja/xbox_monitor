@@ -486,3 +486,19 @@ def test_the_liveness_reminder_follows_the_configured_interval(monkeypatch, chec
 # Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
 def test_the_welcome_guide_link_opens_the_shared_setup_page():
     assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
+
+
+# Verifies --setup runs before the connectivity probe, since it writes files and needs no network
+def test_setup_runs_before_the_connectivity_probe(tmp_path, monkeypatch):
+    def refuse_probe(*args, **kwargs):
+        raise AssertionError("the connectivity probe ran before setup")
+
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **kwargs: 0)
+    monkeypatch.setattr(monitor, "check_internet", refuse_probe)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--setup", "--config-file", str(tmp_path / "new.conf"), "--env-file", str(tmp_path / ".env")])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
