@@ -624,7 +624,7 @@ def dependency_is_installed(module_name, spec_finder=None):
 # Returns the raw terminal stream, so the transient progress line is not captured by the log writer
 def doctor_terminal_stream():
     stream = sys.stdout
-    while isinstance(stream, Logger):
+    while isinstance(stream, (Logger, TerminalStream)):
         stream = stream.terminal
     return stream
 
@@ -1090,6 +1090,9 @@ def offer_doctor_delivery_tests(report):
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         offered.append(check)
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        print_doctor_check(check)
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
@@ -1102,8 +1105,6 @@ def offer_doctor_delivery_tests(report):
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         offered.append(check)
-    # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
-    for check in offered:
         report.checks.append(check)
         print_doctor_check(check)
     return offered
@@ -2480,7 +2481,8 @@ async def _wizard_request_tokens(client_id, client_secret, input_func=None):
 def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, authorizer=None):
     print(f"Register an application at {ENTRA_PORTAL_URL}")
     print("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
-    print(f"  Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
+    print("  Then copy its Application (client) ID and a client secret value.")
+    print(f"  Guide: {CREDENTIALS_GUIDE_URL}")
     already_configured = _wizard_credentials_ready(state) or any(_wizard_existing_secret(key, state.env_path) or dotenv_contains_key(state.env_path, key) for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
     if already_configured and not _wizard_ask_yes_no("Replace the Microsoft application credentials already configured?", default=False, input_func=input_func):
         _wizard_collect_authorization(state, input_func=input_func, authorizer=authorizer)
@@ -3267,7 +3269,8 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
     confirm_secret_replacement(destination, keys, "Microsoft application credentials", "--set-ms-app-credentials", CREDENTIALS_GUIDE_URL, input_func=input_func)
     print(f"* Register an application at {ENTRA_PORTAL_URL}")
     print("* Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
-    print(f"* Then copy its Application (client) ID and a client secret value. Steps: {CREDENTIALS_GUIDE_URL}")
+    print("* Then copy its Application (client) ID and a client secret value.")
+    print(f"* Guide: {CREDENTIALS_GUIDE_URL}")
     try:
         client_id = read_secret_privately("Enter the Application (client) ID (input hidden): ", getpass_func=getpass_func)
         client_secret = read_secret_privately("Enter the client secret value (input hidden): ", getpass_func=getpass_func)
@@ -3942,7 +3945,7 @@ STARTUP_BANNER = r"""
 # Prints the ASCII startup banner with its separately aligned version
 def print_startup_banner():
     print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
-    print(f"{'':21}v{VERSION}\n")
+    print(colorize("info", f"{'':21}v{VERSION}") + "\n")
 
 
 # Describes a secret in diagnostic output without revealing any part of it. A password the user chose reports

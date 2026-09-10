@@ -1099,3 +1099,30 @@ def test_webhook_alerts_selected_but_switched_off_warn(monkeypatch):
 
     assert (check.status, check.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
     assert check.advice is not None and "WEBHOOK_ENABLED" in check.advice.fix
+
+
+# The sanitizing terminal wrapper strips a bare carriage return, so progress has to reach the real terminal beneath it
+def test_the_progress_line_reaches_the_terminal_under_the_sanitizing_wrapper(monkeypatch):
+    terminal = FakeTerminal()
+    monkeypatch.setattr(monitor.sys, "stdout", monitor.TerminalStream(terminal))
+    monkeypatch.setattr(monitor, "DOCTOR_PROGRESS_WIDTH", 0)
+
+    monitor.doctor_progress("environment")
+
+    assert "".join(terminal.chunks) == "\r* Checking environment ..."
+
+
+# Two results printed after the last question read as one block that answers neither, so each sits under its own
+def test_a_delivery_result_is_printed_under_its_own_question(monkeypatch, smtp_sign_in_ok):
+    enable_email(monkeypatch)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor.sys, "stdin", FakeTerminal())
+    stdout = FakeTerminal()
+    monkeypatch.setattr(monitor.sys, "stdout", stdout)
+    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: stdout.write(prompt) and "y")
+
+    monitor.offer_doctor_delivery_tests(monitor.DoctorReport(email_ready=True, webhook_ready=True))
+    output = "".join(stdout.chunks)
+
+    assert output.index("[PASS] Doctor test email delivered") < output.index("Send one test webhook")

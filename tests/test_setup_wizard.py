@@ -899,3 +899,12 @@ def test_the_email_question_defaults_to_the_saved_alerts(tmp_path, monkeypatch):
     state.config_values.update({"ERROR_NOTIFICATION": False, "SMTP_HOST": "your_smtp_server_ssl", "GAME_CHANGE_NOTIFICATION": True})
     monitor._wizard_collect_email_section(state)
     assert seen[-1] == ("Configure email notifications?", True)
+
+
+# A guide link tacked onto a full sentence wraps on a normal terminal, so it gets a line of its own
+def test_the_credentials_guide_link_gets_its_own_line(tmp_path, capsys):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+    monitor._wizard_collect_auth_section(state, input_func=ScriptedAnswers(["n", "y"]), getpass_func=lambda prompt: "")
+
+    guide_line = next(line for line in capsys.readouterr().out.splitlines() if monitor.CREDENTIALS_GUIDE_URL in line)
+    assert guide_line.strip() == f"Guide: {monitor.CREDENTIALS_GUIDE_URL}"

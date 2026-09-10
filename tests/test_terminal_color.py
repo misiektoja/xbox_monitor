@@ -293,3 +293,11 @@ def test_the_delivery_channels_keep_the_shared_colours():
     assert monitor.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
     assert monitor.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"
     assert monitor.DEFAULT_COLOR_THEME["platform"] != monitor.DEFAULT_COLOR_THEME["webhook"]
+
+
+# Verifies the version under the banner carries a colour, the way every sibling monitor prints it
+def test_the_banner_version_line_is_coloured(colored, capsys):
+    monitor.print_startup_banner()
+
+    version_line = next(line for line in capsys.readouterr().out.splitlines() if f"v{monitor.VERSION}" in line)
+    assert SGR.search(version_line)
