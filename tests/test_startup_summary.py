@@ -1,5 +1,7 @@
 """Tests for the startup summary rows, where each one is shown and the startup banner."""
 
+import ast
+
 import pytest
 
 import xbox_monitor as monitor
@@ -379,3 +381,29 @@ def test_banner_dynamic_version_line(monkeypatch, capsys):
     monitor.print_startup_banner()
 
     assert capsys.readouterr().out == monitor.STARTUP_BANNER + "\n" + (" " * BODY_COLUMN) + "v9.9-test\n\n"
+
+
+# Collects the string templates one function builds, with every interpolated expression collapsed to a placeholder
+def function_templates(name):
+    tree = ast.parse(monitor.Path(monitor.__file__).read_text(encoding="utf-8"))
+    definition = next(node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+    found = set()
+    for node in ast.walk(definition):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(" ".join(node.value.split()))
+        elif isinstance(node, ast.JoinedStr):
+            found.add(" ".join("".join(part.value if isinstance(part, ast.Constant) and isinstance(part.value, str) else "{}" for part in node.values).split()))
+    return found
+
+
+# Verifies the monitoring startup leaves the gamer tag to its heading instead of repeating it one line below
+def test_the_monitoring_startup_names_the_target_once():
+    templates = function_templates("xbox_monitor_user")
+
+    assert "* Fetching profile details..." in templates
+    assert not [template for template in templates if template.startswith("* Fetching details for Xbox user")]
+
+
+# Verifies the info mode still names the target, since nothing above it does
+def test_info_mode_names_the_target_in_its_own_heading():
+    assert "* Fetching details for Xbox user '{}'..." in function_templates("get_user_info")

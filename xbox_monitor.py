@@ -5924,8 +5924,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         # Initialize with global OAUTH config options (MS_APP_CLIENT_ID & MS_APP_CLIENT_SECRET)
         auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
 
-        # Print detailed user info on startup
-        print("* Fetching details for Xbox user '{}'...\n".format(xbox_gamertag))
+        # The monitoring heading above already named the target, so this line does not repeat it
+        print("* Fetching profile details...\n")
 
         # Helper to print step message
         def _print_step(msg):
