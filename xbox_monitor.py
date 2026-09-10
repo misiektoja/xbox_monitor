@@ -543,6 +543,9 @@ DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 # Doctor sections in the order they are printed
 DOCTOR_SECTIONS = ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
 
+# The theme entry each doctor result marker is drawn in, so a failure reads as one at a glance
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
 # Delivery results are printed as they happen rather than inside a section, but they still count in the summary
 DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
 
@@ -651,6 +654,11 @@ def doctor_progress_clear():
 
 
 # Prints the notice that has to be true before anything runs
+# Renders one doctor result marker in the colour its status calls for
+def render_doctor_marker(status):
+    return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
+
+
 def render_doctor_notice():
     print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
 
@@ -681,7 +689,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
             checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
             advice = missing_dependency_advice(package_name, effect, alternative)
-            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", f"{effect}. Monitoring is unaffected", advice))
+            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", f"{effect}. Every other feature is unaffected", advice))
 
     return checks
 
@@ -775,32 +783,12 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     if MS_AUTH_TOKENS_FILE:
         tokens_path = os.path.expanduser(MS_AUTH_TOKENS_FILE)
         if path_is_writable(tokens_path):
-            checks.append(make_doctor_check("Configuration", "PASS", "Xbox token cache is writable", f"Path: {tokens_path}"))
+            checks.append(make_doctor_check("Configuration", "PASS", "Xbox token cache appears writable", f"Path: {tokens_path}"))
         else:
             advice = classify_recovery_error(context="file.unwritable", detail=f"Xbox token cache '{tokens_path}' cannot be written")
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
     else:
         advice = classify_recovery_error(context="config.invalid", detail="MS_AUTH_TOKENS_FILE is empty, so authorized tokens cannot be saved")
-        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
-
-    if CSV_FILE:
-        csv_path = os.path.expanduser(CSV_FILE)
-        if path_is_writable(csv_path):
-            checks.append(make_doctor_check("Configuration", "PASS", "CSV history file is writable", f"Path: {csv_path}"))
-        else:
-            advice = classify_recovery_error(context="file.unwritable", detail=f"CSV file '{csv_path}' cannot be written")
-            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
-    else:
-        checks.append(make_doctor_check("Configuration", "PASS", "CSV history is disabled"))
-
-    # A configured path is fixed, so it stays checkable without a target. The default name carries the target
-    status_path = os.path.expanduser(XBOX_STATUS_FILE) if XBOX_STATUS_FILE else (resolve_status_file(xbox_gamertag) if xbox_gamertag else "")
-    if not status_path:
-        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: xbox_<xbox_gamertag>_last_status.json in the working directory"))
-    elif path_is_writable(status_path):
-        checks.append(make_doctor_check("Configuration", "PASS", "Status file is writable", f"Path: {status_path}"))
-    else:
-        advice = classify_recovery_error(context="file.unwritable", detail=f"Status file '{status_path}' cannot be written")
         checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
 
     if DISABLE_LOGGING:
@@ -811,10 +799,30 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
         if not log_path:
             checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {Path(os.path.expanduser(XBOX_LOGFILE))}"))
         elif path_is_writable(log_path):
-            checks.append(make_doctor_check("Configuration", "PASS", "Log file is writable", f"Path: {log_path}"))
+            checks.append(make_doctor_check("Configuration", "PASS", "Log destination appears writable", f"Path: {log_path}"))
         else:
-            advice = classify_recovery_error(context="file.unwritable", detail=f"Log file '{log_path}' cannot be written")
+            advice = classify_recovery_error(context="file.unwritable", detail=f"Log destination is not writable: {log_path}")
             checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
+
+    if CSV_FILE:
+        csv_path = os.path.expanduser(CSV_FILE)
+        if path_is_writable(csv_path):
+            checks.append(make_doctor_check("Configuration", "PASS", "CSV destination appears writable", f"Path: {csv_path}"))
+        else:
+            advice = classify_recovery_error(context="file.unwritable", detail=f"CSV destination is not writable: {csv_path}")
+            checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
+
+    # A configured path is fixed, so it stays checkable without a target. The default name carries the target
+    status_path = os.path.expanduser(XBOX_STATUS_FILE) if XBOX_STATUS_FILE else (resolve_status_file(xbox_gamertag) if xbox_gamertag else "")
+    if not status_path:
+        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: xbox_<xbox_gamertag>_last_status.json in the working directory"))
+    elif path_is_writable(status_path):
+        checks.append(make_doctor_check("Configuration", "PASS", "Status destination appears writable", f"Path: {status_path}"))
+    else:
+        advice = classify_recovery_error(context="file.unwritable", detail=f"Status destination is not writable: {status_path}")
+        checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice=advice))
     return checks
 
 
@@ -1040,7 +1048,7 @@ def ask_yes_no(question, default=False):
     hint = "[Y/n]" if default else "[y/N]"
     while True:
         try:
-            answer = read_interactively(input, f"{question} {hint}: ").strip().casefold()
+            answer = read_interactively(input, colorize("info", f"{question} {hint}: ")).strip().casefold()
         except EOFError:
             print("\nDelivery test skipped.")
             return False
@@ -1059,7 +1067,7 @@ def ask_yes_no(question, default=False):
 
 # Prints one result the way the report renders it, so a row printed after the report matches the rows above it
 def print_doctor_check(check):
-    print(f"[{check.status}] {check.label}")
+    print(f"{render_doctor_marker(check.status)} {check.label}")
     if check.detail:
         print(f"  {check.detail}")
 
@@ -1129,12 +1137,13 @@ def render_doctor_sections(report):
             continue
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
-            lines.append(f"[{check.status}] {check.label}")
+            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
             if check.detail:
                 lines.append(f"  {check.detail}")
             if check.advice is not None and check.status != "PASS":
-                # The fix carries its own guide line, so each line is indented on its own
-                lines.extend(f"  {advice_line}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
+                # The fix carries its own guide line, so each line is indented and styled on its own rather
+                # than leaving one colour sequence open across the newline
+                lines.extend(f"  {colorize('info', advice_line)}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
     return sanitize_error_text("\n".join(lines))
 
 
@@ -1143,12 +1152,12 @@ def render_doctor_summary(checks):
     failures = sum(check.status == "FAIL" for check in checks)
     warnings = sum(check.status == "WARN" for check in checks)
     if failures:
-        sentence = f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool."
+        sentence = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
     elif warnings:
-        sentence = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
+        sentence = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
-        sentence = "  All checks passed. You are good to go!"
-    return "\n".join(("", colorize("header", "Summary"), sentence, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+        sentence = colorize("boolean_true", "  All checks passed. You are good to go!")
+    return "\n".join(("", colorize("header", "Summary"), sentence, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
 
 
 # Runs the preflight report plus any approved delivery test and returns the process exit code
@@ -2375,10 +2384,10 @@ ENTRA_PORTAL_URL = "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
 # Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
 WIZARD_SECTIONS = (
     ("Target", "Target", "Change the Xbox account that is monitored.", ("XBOX_GAMERTAG",), ()),
-    ("Polling", "Polling intervals", "Change how often Xbox Live is checked.", ("XBOX_CHECK_INTERVAL", "XBOX_ACTIVE_CHECK_INTERVAL"), ()),
+    ("Polling", "Polling interval", "Change how often Xbox Live is checked.", ("XBOX_CHECK_INTERVAL", "XBOX_ACTIVE_CHECK_INTERVAL"), ()),
     ("Authentication", "Authentication", "Enter the Microsoft application credentials and authorize again.", (), ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET")),
-    ("Email", "Email notifications", "Change SMTP details and which events are mailed.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
-    ("Webhook", "Webhook notifications", "Change the Discord or ntfy destination and which events are sent.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
+    ("Email", "Email notifications", "Change SMTP details and email events.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
     ("Output", "Output files", "Change the log, CSV and status file destinations.", ("DISABLE_LOGGING", "CSV_FILE", "XBOX_STATUS_FILE"), ()),
     ("Destinations", "File destinations", "Change the configuration or dotenv output path.", (), ()),
 )
@@ -2806,11 +2815,28 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
     collectors[name]()
 
 
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Target": "username", "Polling interval while offline": "duration", "Polling interval while online": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
 # Prints one aligned label and value block, so every summary row lines up
 def _wizard_print_summary_rows(rows):
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
-        print(f"  {(label + ':'):<{width}} {value}")
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
 
 
 # Shows everything that is about to be written, by name and never by secret value

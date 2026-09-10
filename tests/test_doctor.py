@@ -291,7 +291,7 @@ def test_a_missing_optional_dependency_warns_and_says_what_breaks(monkeypatch):
     optional = [check for check in checks if "Optional dependency" in check.label]
     assert len(optional) == len(monitor.DOCTOR_OPTIONAL_DEPENDENCIES)
     assert all(check.status == "WARN" for check in optional)
-    assert all("Monitoring is unaffected" in check.detail for check in optional)
+    assert all("Every other feature is unaffected" in check.detail for check in optional)
 
 
 # A warning about a library that cannot affect this machine is noise the reader has to learn to ignore
@@ -390,7 +390,7 @@ def test_disabled_tls_verification_is_warned_about(monkeypatch):
 def test_an_unwritable_csv_path_fails_with_its_path(monkeypatch, tmp_path):
     blocked = tmp_path / "missing-directory" / "history.csv"
     monkeypatch.setattr(monitor, "CSV_FILE", str(blocked))
-    check = check_labelled(monitor.DoctorReport(checks=monitor.doctor_check_configuration()), "CSV file")
+    check = check_labelled(monitor.DoctorReport(checks=monitor.doctor_check_configuration()), "CSV destination")
     assert check.status == "FAIL"
     assert str(blocked) in check.label
 
@@ -398,7 +398,7 @@ def test_an_unwritable_csv_path_fails_with_its_path(monkeypatch, tmp_path):
 # The status file is how a restart resumes, so the report has to name the exact path it would use
 def test_the_report_names_the_status_file(monkeypatch, tmp_path):
     checks = monitor.doctor_check_configuration(xbox_gamertag=GAMERTAG)
-    check = check_labelled(monitor.DoctorReport(checks=checks), "Status file is writable")
+    check = check_labelled(monitor.DoctorReport(checks=checks), "Status destination appears writable")
     assert monitor.resolve_status_file(GAMERTAG) in check.detail
 
 
@@ -982,8 +982,8 @@ def test_the_output_rows_wait_for_a_target(doctor_run, monkeypatch):
     assert "[PASS] Log destination will be finalized after a target is selected" in without_target
     assert "Path: xbox_<xbox_gamertag>_last_status.json" not in without_target
     assert "Path: xbox_monitor_<xbox_gamertag>.log" not in without_target
-    assert "[PASS] Status file is writable" in with_target
-    assert "[PASS] Log file is writable" in with_target
+    assert "[PASS] Status destination appears writable" in with_target
+    assert "[PASS] Log destination appears writable" in with_target
 
 
 # Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
