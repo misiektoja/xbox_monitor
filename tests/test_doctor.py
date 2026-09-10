@@ -646,12 +646,12 @@ def test_a_webhook_channel_with_no_alert_selected_warns(monkeypatch):
     ("WEBHOOK_AVATAR_URL", "not-a-url"),
     ("WEBHOOK_HEADERS", {"Bad Header": "value"}),
 ])
-def test_an_unusable_webhook_setting_warns_with_its_fix(monkeypatch, setting, value):
+def test_an_unusable_webhook_setting_fails_with_its_fix(monkeypatch, setting, value):
     enable_webhook(monkeypatch)
     monkeypatch.setattr(monitor, setting, value)
     report = monitor.DoctorReport()
     checks = monitor.doctor_check_webhook_notifications(report)
-    assert checks[0].status == "WARN"
+    assert checks[0].status == "FAIL"
     assert checks[0].advice is not None
     assert checks[0].advice.code.startswith("webhook.")
     assert report.webhook_ready is False
