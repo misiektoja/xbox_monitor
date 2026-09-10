@@ -5,6 +5,7 @@ drive the whole run and read the transcript a user sees.
 """
 
 import re
+from unittest.mock import Mock
 
 import pytest
 
@@ -659,7 +660,7 @@ def test_a_webhook_channel_with_no_alert_selected_warns(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", False)
     checks = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())
     assert checks[0].status == "WARN"
-    assert "no alert type is selected" in checks[0].label
+    assert checks[0].label == "Webhook alerts are on but no alert types are selected"
 
 
 # Each unusable setting has to be named on its own, since the user can only correct the one that is wrong
@@ -1065,3 +1066,36 @@ def test_invalid_numeric_settings_are_reported_in_one_row(monkeypatch):
 
     assert [item.status for item in rows] == ["FAIL"]
     assert all(name in rows[0].detail for name in ("XBOX_CHECK_INTERVAL", "TOKEN_REFRESH_RETRIES", "SMTP_PORT"))
+
+
+# Verifies configured mail settings with no alert types selected warn, since nothing would ever be emailed
+def test_email_configured_but_nothing_selected_warns(monkeypatch):
+    monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "GAME_CHANGE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "STATUS_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "private-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.test")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "alerts@example.test")
+    monkeypatch.setattr(monitor, "smtp_sign_in", Mock(side_effect=AssertionError("SMTP was contacted")))
+    report = monitor.DoctorReport()
+
+    check = monitor.doctor_check_email_notifications(report)[0]
+
+    assert (check.status, check.label) == ("WARN", "Email is configured but no alert types are selected")
+    assert check.detail == "Nothing would ever be emailed"
+    assert check.advice is not None and check.advice.code == "smtp.invalid"
+    assert report.email_ready is False
+
+
+# Verifies webhook alert types selected while the channel is off warn with the wording every sibling uses
+def test_webhook_alerts_selected_but_switched_off_warn(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", True)
+
+    check = monitor.doctor_check_webhook_notifications(monitor.DoctorReport())[0]
+
+    assert (check.status, check.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
+    assert check.advice is not None and "WEBHOOK_ENABLED" in check.advice.fix
