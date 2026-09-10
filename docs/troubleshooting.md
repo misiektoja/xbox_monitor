@@ -13,7 +13,7 @@ The report covers six sections:
 | Section | What it checks |
 | --- | --- |
 | **Environment** | The Python version against the supported minimum, plus every required and optional dependency |
-| **Configuration** | The config and dotenv files in use, which secrets are loaded and from where, the time zone, TLS verification and every file the tool would write |
+| **Configuration** | The config and dotenv files in use, which secrets are loaded and from where, the time zone, TLS verification, whether the timing and count settings hold usable values and every file the tool would write |
 | **Authentication** | That the application credentials are set, that Xbox Live still accepts the saved tokens and that the token cache is present and private |
 | **Connectivity** | That the connectivity endpoint answers, using the configured URL, timeout and TLS setting |
 | **Target** | That the monitored gamertag resolves and shares its activity |
