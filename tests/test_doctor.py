@@ -5,6 +5,7 @@ drive the whole run and read the transcript a user sees.
 """
 
 import re
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -110,7 +111,7 @@ def xbox_session(monkeypatch):
             if lookup_error is not None:
                 advice = monitor.classify_recovery_error(lookup_error, context="target", detail=f"Looking up the gamertag '{xbox_gamertag}' failed: {lookup_error}")
                 return [monitor.make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
-            return [monitor.make_doctor_check("Target", "PASS", "The monitored profile is reachable", f"Gamertag: {gamertag}, XUID: {xuid}")]
+            return [monitor.make_doctor_check("Target", "PASS", f"Gamertag {gamertag} was found", f"XUID: {xuid}")]
 
         monkeypatch.setattr(monitor, "create_signed_session", lambda: _FakeClosableSession())
         monkeypatch.setattr(monitor, "AuthenticationManager", lambda *args: object())
@@ -1126,3 +1127,15 @@ def test_a_delivery_result_is_printed_under_its_own_question(monkeypatch, smtp_s
     output = "".join(stdout.chunks)
 
     assert output.index("[PASS] Doctor test email delivered") < output.index("Send one test webhook")
+
+
+# Two labelled values crammed into one detail read as one value, and the handle rule coloured the whole run
+def test_the_target_row_separates_the_gamertag_from_the_xuid(monkeypatch):
+    async def profile(tag):
+        return SimpleNamespace(profile_users=[SimpleNamespace(id="2535471663547820")])
+
+    monkeypatch.setattr(monitor, "XboxLiveClient", lambda auth_mgr: SimpleNamespace(profile=SimpleNamespace(get_profile_by_gamertag=profile)))
+
+    check = monitor.asyncio.run(monitor.doctor_check_target(object(), GAMERTAG))[0]
+
+    assert (check.status, check.label, check.detail) == ("PASS", f"Gamertag {GAMERTAG} was found", "XUID: 2535471663547820")

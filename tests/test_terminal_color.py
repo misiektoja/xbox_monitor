@@ -114,7 +114,7 @@ def test_each_doctor_marker_is_coloured_by_status(colored, marker, key):
 
 # Verifies the rest of a doctor row stays plain, so a long label is still readable
 def test_a_doctor_row_keeps_its_label_plain(colored):
-    assert colored._colorize_line("[PASS] The monitored profile is reachable").endswith(f"{monitor.ANSI_RESET} The monitored profile is reachable")
+    assert colored._colorize_line("[PASS] The monitored profile was not checked").endswith(f"{monitor.ANSI_RESET} The monitored profile was not checked")
 
 
 # Verifies links are coloured wherever they appear

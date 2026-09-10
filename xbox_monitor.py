@@ -919,7 +919,7 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
     except Exception as exc:
         advice = classify_recovery_error(exc, context="target", detail=f"Looking up the gamertag '{xbox_gamertag}' failed: {exc}")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
-    return [make_doctor_check("Target", "PASS", "The monitored profile is reachable", f"Gamertag: {xbox_gamertag}, XUID: {xuid}")]
+    return [make_doctor_check("Target", "PASS", f"Gamertag {xbox_gamertag} was found", f"XUID: {xuid}")]
 
 
 # Reports the first unusable email setting as a doctor detail and an action that names the same settings
