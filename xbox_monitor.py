@@ -6737,7 +6737,7 @@ def main():
     opts.add_argument(
         "--truncate",
         dest="truncate",
-        metavar="CHARS",
+        metavar="N",
         type=int,
         help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
     )

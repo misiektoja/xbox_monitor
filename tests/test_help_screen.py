@@ -31,6 +31,14 @@ def test_the_argument_groups_use_the_shared_names_in_order(monkeypatch, capsys):
     assert positions == sorted(positions), "the argument groups are not in the shared order"
 
 
+# Verifies the terminal truncation width is settable from the command line, as in the sibling monitors
+def test_the_truncate_flag_is_offered(monkeypatch, capsys):
+    collapsed = " ".join(help_output(monkeypatch, capsys).split())
+
+    assert "--truncate N" in collapsed
+    assert "use 999 to auto-detect terminal width" in collapsed
+
+
 # Verifies the examples open with the wizard, the one command a first-time reader can run knowing nothing
 def test_the_wizard_is_the_first_example(monkeypatch, capsys):
     block = help_output(monkeypatch, capsys).split("Examples:", 1)[1]
