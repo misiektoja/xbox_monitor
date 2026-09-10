@@ -78,6 +78,15 @@ def test_a_complete_run_writes_every_destination(monkeypatch, wizard_paths, caps
     assert str(wizard_paths["config"]) in out and str(wizard_paths["env"]) in out and str(wizard_paths["tokens"]) in out
 
 
+# Verifies the summary names the status file the run will use, built from the target when no path was given
+def test_the_summary_names_the_default_status_file(monkeypatch, wizard_paths, capsys):
+    code, _ = run_wizard(monkeypatch, wizard_paths, BASIC_ANSWERS)
+
+    summary = capsys.readouterr().out.rsplit("Setup summary", 1)[1]
+    assert code == 0
+    assert "Status file:                    xbox_SomeTag_last_status.json" in summary
+
+
 # Verifies a declined email section clears the mail server, so the written config cannot contradict the summary
 def test_a_declined_email_section_clears_the_mail_server(monkeypatch, wizard_paths):
     code, _ = run_wizard(monkeypatch, wizard_paths, BASIC_ANSWERS)

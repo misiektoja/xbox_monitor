@@ -2875,7 +2875,7 @@ def _wizard_print_setup_summary(state):
         ("Webhook alerts", ", ".join(enabled_webhook) if enabled_webhook else "none"),
         ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
-        ("Status file", state.config_values.get("XBOX_STATUS_FILE") or "default"),
+        ("Status file", state.config_values.get("XBOX_STATUS_FILE") or (default_status_file(state.target) if state.target else "xbox_<xbox_gamertag>_last_status.json")),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", install_method_display_name()),
@@ -3885,6 +3885,11 @@ def tls_context():
 def resolve_status_file(xbox_gamertag):
     if XBOX_STATUS_FILE:
         return os.path.expanduser(XBOX_STATUS_FILE)
+    return default_status_file(xbox_gamertag)
+
+
+# Returns the status file name a target gets when no path is configured
+def default_status_file(xbox_gamertag):
     return f"xbox_{xbox_gamertag}_last_status.json"
 
 
