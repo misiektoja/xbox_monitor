@@ -422,6 +422,16 @@ def test_a_placeholder_argument_is_left_unquoted():
     assert monitor.render_command(["a value"]) == "'a value'"
 
 
+# Verifies the disabled dotenv search reaches the commands that accept it and stays out of the ones that refuse it
+def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypatch):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
+
+    assert monitor.tool_command("--doctor", method="pip") == "xbox_monitor --doctor --env-file none"
+    assert monitor.tool_command("--set-ms-app-credentials", method="pip") == "xbox_monitor --set-ms-app-credentials"
+    assert monitor.tool_command("--setup", method="pip") == "xbox_monitor --setup"
+
+
 # Verifies a caller that already names a file is not given a second copy of it
 def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
