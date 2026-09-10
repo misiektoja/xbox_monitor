@@ -26,6 +26,7 @@ Version **2.0** adds **guided setup with Microsoft authorization**, a read-only 
 - **BUGFIX:** **Private token storage** - The token cache is written with owner-only permissions and replaced atomically. Existing cache permissions are corrected on the next token refresh. Status files are also updated atomically
 - **BUGFIX:** **Safer configuration handling** - Files are parsed as settings instead of executed as Python. Replace imports, function calls and calculations with plain values. `--generate-config FILE` confirms replacement and creates a backup. Non-interactive replacement requires `--force` and shell redirection still bypasses these protections
 - **BUGFIX:** **Reliable startup and notifications** - Exported secrets work without a dotenv file and take precedence at startup. Placeholder credentials are rejected, configured screen settings apply and Xbox text cannot inject terminal controls
+- **BUGFIX:** **Dashboard surfaces are no longer counted as games** - Home, the Xbox app and guide, the **Microsoft Store**, Game Pass, Edge and Settings no longer start a game session, send a game notification or add to the played time in the offline summary. That summary now also reads 1 game instead of 1 games
 - **BUGFIX:** **Accurate liveness messages** - Status reminders follow elapsed time for online and offline targets. Redirected output no longer triggers terminal-clearing errors
 
 Smaller fixes and development changes are listed in the [full change history](https://github.com/misiektoja/xbox_monitor/compare/v1.9.3...v2.0).
