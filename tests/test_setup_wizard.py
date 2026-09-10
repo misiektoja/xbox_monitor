@@ -78,6 +78,27 @@ def test_a_complete_run_writes_every_destination(monkeypatch, wizard_paths, caps
     assert str(wizard_paths["config"]) in out and str(wizard_paths["env"]) in out and str(wizard_paths["tokens"]) in out
 
 
+# Verifies a declined email section clears the mail server, so the written config cannot contradict the summary
+def test_a_declined_email_section_clears_the_mail_server(monkeypatch, wizard_paths):
+    code, _ = run_wizard(monkeypatch, wizard_paths, BASIC_ANSWERS)
+
+    assert code == 0
+    written = wizard_paths["config"].read_text(encoding="utf-8")
+    assert "smtp.example.com" not in written
+    assert "someone@example.com" not in written
+
+
+# Verifies a CSV answer without an extension is saved as a .csv file while an explicit extension is left alone
+def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", str(tmp_path / "activity"), ""]))
+    assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
+
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", str(tmp_path / "activity.txt"), ""]))
+    assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
+
+
 # Verifies the durations people type reach the config as whole seconds
 def test_a_typed_duration_reaches_the_config_as_seconds(monkeypatch, wizard_paths):
     answers = ["SomeTag", "", "1h 30m", "2m", "", "n", "n", "", "", "", "1", "n", "n"]

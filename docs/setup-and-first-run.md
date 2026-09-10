@@ -14,7 +14,7 @@ The setup wizard asks a few questions, runs the [first authorization](#first-aut
 xbox_monitor --setup
 ```
 
-It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it. It offers to write somewhere else instead. A secret already in the dotenv file is never replaced without asking.
+It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it. It offers to write somewhere else instead. A rebuilt file starts from the settings already in place with your answers applied over them. A section you decline is cleared rather than carried over, so declining email leaves no mail server behind. A secret already in the dotenv file is never replaced without asking.
 
 It covers the monitored account, the polling intervals, the application credentials, email alerts, [webhook alerts](configuration.md#webhook-settings) and the files the tool writes. Each section can be skipped and re-entered from the summary.
 
