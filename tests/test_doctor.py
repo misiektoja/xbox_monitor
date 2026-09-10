@@ -66,9 +66,17 @@ class FakeTerminal:
         return "".join(self.chunks)
 
 
+# Replays one line's carriage returns, so a write hides only the columns it actually covers
+def replay_overwrites(line):
+    rendered = ""
+    for segment in line.split("\r"):
+        rendered = segment + rendered[len(segment):]
+    return rendered
+
+
 # Collapses carriage-return overwrites the way a terminal does, so cleared progress does not read as content
 def as_displayed(raw):
-    return "\n".join(line.split("\r")[-1].rstrip() for line in raw.split("\n"))
+    return "\n".join(replay_overwrites(line).rstrip() for line in raw.split("\n"))
 
 
 @pytest.fixture
@@ -179,6 +187,18 @@ def test_the_progress_line_is_cleared_before_the_report(xbox_session, doctor_run
     _, raw = doctor_run(xbox_gamertag=GAMERTAG)
     assert "* Checking" in raw
     assert "* Checking" not in as_displayed(raw)
+
+
+# A carriage return with nothing written after it moves the cursor only, so the line must survive intact
+def test_a_trailing_carriage_return_keeps_the_line():
+    assert as_displayed("Target\r\n[WARN] No profile") == "Target\n[WARN] No profile"
+
+
+# A shorter write hides only the columns it covers, the way a terminal redraws a line
+def test_an_overwrite_replaces_only_the_columns_it_covers():
+    assert replay_overwrites("* Checking configuration ...\rDoctor") == "Doctor" + "* Checking configuration ..."[6:]
+    # A progress line erased by exactly its own width leaves nothing behind
+    assert replay_overwrites("\r* Checking environment ...\r" + " " * 26 + "\r").strip() == ""
 
 
 # A redirected run has nothing to overwrite, so writing progress there would corrupt the saved report
