@@ -3956,11 +3956,11 @@ def missing_dependency_advice(package, effect, alternative=""):
 
 # The ASCII startup banner, kept to plain ASCII so it renders on every console including Windows
 STARTUP_BANNER = r"""
- .---------------.    __  __ ____    ___  __  __
-|       (Y)      |    \ \/ /| __ )  / _ \ \ \/ /
-|    (X)   (B)   |     \  / |  _ \ | | | | \  /
-|       (A)      |     /  \ | |_) || |_| | /  \
-|      o   o     |    /_/\_\|____/  \___/ /_/\_\
+ .---------------.   __  __ ____    ___  __  __
+|       (Y)      |   \ \/ /| __ )  / _ \ \ \/ /
+|    (X)   (B)   |    \  / |  _ \ | | | | \  /
+|       (A)      |    /  \ | |_) || |_| | /  \
+|      o   o     |   /_/\_\|____/  \___/ /_/\_\
  '---------------'
                       __  __             _ _
                      |  \/  | ___  _ __ (_) |_ ___  _ __

@@ -1,8 +1,13 @@
-"""Tests for the startup summary rows and where each one is shown."""
+"""Tests for the startup summary rows, where each one is shown and the startup banner."""
 
 import pytest
 
 import xbox_monitor as monitor
+
+
+# The banner draws a console inside a box 18 columns wide and starts both wordmarks in the column beside it
+BOX_WIDTH = 18
+BODY_COLUMN = 21
 
 
 # Collects what the terminal and the log file were each given, the way the real Logger splits them
@@ -297,3 +302,80 @@ def test_the_generated_files_follow_the_csv_row(summary_rows):
 
     assert labels[labels.index("CSV output") + 1:labels.index("CSV output") + 3] == ["Status file", "Token cache"]
     assert labels.index("Token cache") < labels.index("Terminal truncation")
+
+
+# Verifies the selected Xbox banner remains exact and version independent
+def test_selected_banner_exact_content():
+    assert monitor.STARTUP_BANNER == r"""
+ .---------------.   __  __ ____    ___  __  __
+|       (Y)      |   \ \/ /| __ )  / _ \ \ \/ /
+|    (X)   (B)   |    \  / |  _ \ | | | | \  /
+|       (A)      |    /  \ | |_) || |_| | /  \
+|      o   o     |   /_/\_\|____/  \___/ /_/\_\
+ '---------------'
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
+# Verifies the art is portable, bounded and free of trailing whitespace
+def test_banner_ascii_width_and_whitespace():
+    monitor.STARTUP_BANNER.encode("ascii")
+    lines = monitor.STARTUP_BANNER.splitlines()
+
+    assert max(map(len, lines)) <= 90
+    assert all(line == line.rstrip() for line in lines)
+
+
+# Verifies the XBOX wordmark matches the standard FIGlet rows at the shared body column
+def test_banner_xbox_wordmark_rows():
+    assert [line[BODY_COLUMN:] for line in monitor.STARTUP_BANNER.splitlines()[1:6]] == [
+        "__  __ ____    ___  __  __",
+        "\\ \\/ /| __ )  / _ \\ \\ \\/ /",
+        " \\  / |  _ \\ | | | | \\  /",
+        " /  \\ | |_) || |_| | /  \\",
+        "/_/\\_\\|____/  \\___/ /_/\\_\\",
+    ]
+
+
+# Verifies the Monitor wordmark matches the standard FIGlet rows at the shared body column
+def test_banner_monitor_wordmark_rows():
+    assert [line[BODY_COLUMN:] for line in monitor.STARTUP_BANNER.splitlines()[7:12]] == [
+        " __  __             _ _",
+        "|  \\/  | ___  _ __ (_) |_ ___  _ __",
+        "| |\\/| |/ _ \\| '_ \\| | __/ _ \\| '__|",
+        "| |  | | (_) | | | | | || (_) | |",
+        "|_|  |_|\\___/|_| |_|_|\\__\\___/|_|",
+    ]
+
+
+# Verifies both wordmarks begin in the body column rather than one of them drifting a column away
+def test_banner_wordmarks_share_the_body_column():
+    lines = monitor.STARTUP_BANNER.splitlines()
+    beside_box = [line[BOX_WIDTH:] for line in lines[1:6]]
+    below_box = lines[7:12]
+
+    assert BOX_WIDTH + min(len(row) - len(row.lstrip(" ")) for row in beside_box) == BODY_COLUMN
+    assert min(len(row) - len(row.lstrip(" ")) for row in below_box) == BODY_COLUMN
+
+
+# Verifies the console keeps both side walls under the corners of its border rows
+def test_banner_box_walls_stand_under_the_corners():
+    lines = monitor.STARTUP_BANNER.splitlines()
+
+    assert lines[1][:BOX_WIDTH] == " ." + "-" * (BOX_WIDTH - 3) + "."
+    assert lines[6][:BOX_WIDTH] == " '" + "-" * (BOX_WIDTH - 3) + "'"
+    for line in lines[2:6]:
+        assert line[0] == "|" and line[BOX_WIDTH - 1] == "|", line[:BOX_WIDTH]
+
+
+# Verifies the printed version stays dynamic and followed by one blank line
+def test_banner_dynamic_version_line(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERSION", "9.9-test")
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+
+    monitor.print_startup_banner()
+
+    assert capsys.readouterr().out == monitor.STARTUP_BANNER + "\n" + (" " * BODY_COLUMN) + "v9.9-test\n\n"
