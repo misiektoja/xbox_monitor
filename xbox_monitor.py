@@ -3131,6 +3131,16 @@ def print_labelled_command(label, command, suffix=""):
     print(f"    {command}{suffix}\n")
 
 
+# Prints the command that starts monitoring with the files this run checked, so a report read on its own
+# ends with the next action rather than leaving the reader to assemble the command
+def print_doctor_next_steps(xbox_gamertag=None, doctor_exit=0):
+    print("\n" + colorize("header", "Next steps") + "\n")
+    label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
+    print_labelled_command(label, tool_command(*([str(xbox_gamertag)] if xbox_gamertag else [])))
+    print(f"Guide: {QUICK_START_GUIDE_URL}\n")
+
+
+
 # Parses a duration the way people type it, accepting bare seconds and s/m/h/d suffixes
 def parse_duration_input(value):
     if isinstance(value, bool):
@@ -6547,7 +6557,10 @@ def main():
     apply_webhook_cli_overrides(args, parser)
 
     if doctor_mode:
-        sys.exit(run_doctor(args.xbox_gamertag, cfg_path, env_path, config_advice, timezone_advice))
+        doctor_exit = run_doctor(args.xbox_gamertag, cfg_path, env_path, config_advice, timezone_advice)
+        # A target the config file already carries is left out, so the command stays as short as the wizard's
+        print_doctor_next_steps(None if args.xbox_gamertag == XBOX_GAMERTAG else args.xbox_gamertag, doctor_exit)
+        sys.exit(doctor_exit)
 
     if not check_internet():
         sys.exit(1)

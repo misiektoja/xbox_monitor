@@ -925,3 +925,34 @@ def test_the_output_rows_wait_for_a_target(doctor_run, monkeypatch):
     assert "Path: xbox_monitor_<xbox_gamertag>.log" not in without_target
     assert "[PASS] Status file is writable" in with_target
     assert "[PASS] Log file is writable" in with_target
+
+
+# Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
+def test_the_report_ends_with_the_command_that_starts_monitoring(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
+
+    monitor.print_doctor_next_steps(doctor_exit=0)
+
+    transcript = capsys.readouterr().out
+    assert "Next steps" in transcript
+    assert "Start monitoring:" in transcript
+    assert "xbox_monitor.py --config-file /etc/xbox.conf --env-file /etc/xbox.env" in transcript
+    assert transcript.rstrip().endswith(monitor.QUICK_START_GUIDE_URL)
+
+
+# Verifies a failing report names the order to work in, rather than inviting a run that cannot succeed yet
+def test_a_failing_report_asks_for_the_failures_first(capsys):
+    monitor.print_doctor_next_steps(doctor_exit=1)
+
+    assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
+
+
+# Verifies a target the command line named is carried, so the printed command watches the account just checked
+def test_a_command_line_target_is_carried_into_the_command(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+
+    monitor.print_doctor_next_steps("someone", doctor_exit=0)
+
+    assert "xbox_monitor.py someone" in capsys.readouterr().out
