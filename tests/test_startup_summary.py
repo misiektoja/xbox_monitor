@@ -57,13 +57,12 @@ def row_named(rows, label):
     return matched[0]
 
 
-# Verifies a row is part of the full view and the log file unless it opts out and stays out of the concise view
+# Verifies a row is part of the full view unless it opts out and stays out of the concise view
 def test_a_row_is_full_view_only_until_it_opts_in():
     row = monitor.StartupSummaryRow("Some setting", "some value")
 
     assert row.concise is False
     assert row.full is True
-    assert row.log is True
 
 
 # Verifies the concise view stays short and the full view is a superset of the settings it reports
@@ -82,7 +81,6 @@ def test_the_flag_pointer_is_concise_view_only(summary_rows):
 
     assert pointer.concise is True
     assert pointer.full is False
-    assert pointer.log is False
 
 
 # Verifies every file the tool can be configured to write is named in the full view with its effective path
@@ -284,16 +282,18 @@ def test_an_active_optional_feature_earns_a_concise_row(monkeypatch, label, sett
     assert row_named(rows, label).concise is True
 
 
-# Verifies a row can be shown in the full view and still be kept out of the log, which is a separate decision
-def test_the_log_flag_is_independent_of_the_view_flags():
+# Verifies a row cannot be shown in the full view and kept out of the log, so a log carries every setting a
+# bug report might need
+def test_the_log_keeps_every_row_the_full_view_shows():
     stream = RoutedStream()
-    rows = [monitor.StartupSummaryRow("Shown but not logged", "value", concise=True, full=True, log=False), monitor.StartupSummaryRow("Shown and logged", "value", concise=True, full=True, log=True)]
+    rows = [monitor.StartupSummaryRow("Concise only", "value", concise=True, full=False), monitor.StartupSummaryRow("Full view", "value", concise=False, full=True)]
 
-    monitor.emit_startup_summary(rows, show_full=True, stream=stream)
+    monitor.emit_startup_summary(rows, show_full=False, stream=stream)
 
-    assert "Shown but not logged:" in stream.terminal_text()
-    assert "Shown but not logged:" not in stream.log_text()
-    assert "Shown and logged:" in stream.log_text()
+    assert "Concise only:" in stream.terminal_text()
+    assert "Full view:" not in stream.terminal_text()
+    assert "Full view:" in stream.log_text()
+    assert "Concise only:" not in stream.log_text()
 
 
 # Verifies the two files this tool generates sit with the other generated files rather than beside the dotenv row
