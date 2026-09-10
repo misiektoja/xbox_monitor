@@ -119,7 +119,8 @@ def test_a_target_the_user_declines_to_persist_stays_out_of_the_config(monkeypat
 
 # Verifies a gamertag copied out of a profile link is accepted and an e-mail address is rejected by name
 def test_the_target_question_accepts_a_link_and_rejects_an_email(monkeypatch, wizard_paths, capsys):
-    answers = ["someone@example.com", "https://www.xbox.com/play/user/SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "n"]
+    # the rejected e-mail address is followed by the retry offer, which the blank answer accepts
+    answers = ["someone@example.com", "", "https://www.xbox.com/play/user/SomeTag", "", "5m", "90", "", "n", "n", "", "", "", "1", "n", "n"]
     run_wizard(monkeypatch, wizard_paths, answers)
     out = capsys.readouterr().out
     assert "e-mail address" in out
@@ -765,3 +766,57 @@ def test_declining_the_retry_offer_keeps_the_saved_number(capsys):
     answers = iter(["", "n"])
 
     assert monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers)) == 587
+
+
+# Verifies a rerun that keeps the loaded secrets leaves every one of them out of the rebuilt configuration file
+def test_a_rerun_keeps_loaded_secrets_out_of_the_configuration(monkeypatch, wizard_paths):
+    loaded = {"MS_APP_CLIENT_ID": "loaded-client-id", "MS_APP_CLIENT_SECRET": "loaded-client-secret", "SMTP_PASSWORD": "mail-secret-value", "WEBHOOK_URL": "https://discord.com/api/webhooks/1/loaded-hook-value", "NTFY_ACCESS_TOKEN": "ntfy-secret-value"}
+    for name, value in loaded.items():
+        monkeypatch.setattr(monitor, name, value)
+    wizard_paths["config"].write_text("# earlier config\n", encoding="utf-8")
+    # rebuild, target, persist, both intervals, keep both credentials, no email, no webhook, output files, save, decline doctor and monitoring
+    answers = ["y", "SomeTag", "", "5m", "90", "n", "n", "n", "n", "", "", "", "1", "n", "n"]
+
+    code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=())
+
+    assert code == 0
+    written = wizard_paths["config"].read_text(encoding="utf-8")
+    for value in loaded.values():
+        assert value not in written
+
+
+# Verifies the configuration renderer keeps the template placeholder for every secret whatever the values hold
+def test_the_configuration_renderer_never_writes_a_secret():
+    values = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
+    values["XBOX_CHECK_INTERVAL"] = 4321
+
+    rendered = monitor.generate_config_with_current_values(values)
+
+    assert "XBOX_CHECK_INTERVAL = 4321" in rendered
+    assert not any(value in rendered for value in values.values() if isinstance(value, str))
+
+
+# Verifies a blank target answer whose retry is declined ends the section instead of asking the same question forever
+def test_declining_the_target_retry_ends_the_section_without_a_target(tmp_path, capsys):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", {})
+    scripted = ScriptedAnswers(["", "n"])
+
+    monitor._wizard_collect_target_section(state, input_func=scripted)
+
+    assert state.target == ""
+    assert state.config_values["XBOX_GAMERTAG"] == ""
+    assert not any(prompt.startswith("Persist this target") for prompt in scripted.prompts)
+    assert "No target selected. Nothing can be monitored until one is set." in capsys.readouterr().out
+
+
+# Verifies a rejected target answer offers another attempt and declining it keeps the target already given
+def test_a_rejected_target_answer_offers_a_retry_and_keeps_the_previous_target(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", {})
+    state.target = "SomeTag"
+    scripted = ScriptedAnswers(["someone@example.com", "n", "y"])
+
+    monitor._wizard_collect_target_section(state, input_func=scripted)
+
+    assert state.target == "SomeTag"
+    assert any(prompt.startswith("Try entering the Xbox gamertag to monitor again?") for prompt in scripted.prompts)
+    assert any(prompt.startswith("Persist this target") for prompt in scripted.prompts)
