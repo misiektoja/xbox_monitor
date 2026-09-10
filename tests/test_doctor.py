@@ -937,7 +937,8 @@ def test_the_report_ends_with_the_command_that_starts_monitoring(monkeypatch, ca
     transcript = capsys.readouterr().out
     assert "Next steps" in transcript
     assert "Start monitoring:" in transcript
-    assert "xbox_monitor.py --config-file /etc/xbox.conf --env-file /etc/xbox.env" in transcript
+    # Nothing supplies a target here, so the command keeps the placeholder rather than printing one that cannot run
+    assert "xbox_monitor.py <xbox_gamertag> --config-file /etc/xbox.conf --env-file /etc/xbox.env" in transcript
     assert transcript.rstrip().endswith(monitor.QUICK_START_GUIDE_URL)
 
 

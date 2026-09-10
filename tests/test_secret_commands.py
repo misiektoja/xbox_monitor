@@ -282,14 +282,23 @@ def test_the_credential_progress_line_names_the_dotenv_file_not_its_path(secret_
 
 
 # Verifies the printed next steps carry a target this run was given and no placeholder when there is none
-def test_the_next_steps_carry_a_real_target_or_none(tmp_path, capsys):
+def test_the_next_steps_carry_the_target_the_config_does_not_supply(tmp_path, capsys):
     env_file = tmp_path / ".env"
+    empty_config = tmp_path / "empty.conf"
+    empty_config.write_text('XBOX_GAMERTAG = ""\n', encoding="utf-8")
+    saved_config = tmp_path / "saved.conf"
+    saved_config.write_text('XBOX_GAMERTAG = "someone"\n', encoding="utf-8")
 
-    monitor.print_secret_next_steps(env_file)
+    monitor.print_secret_next_steps(env_file, config_path=empty_config)
     without_target = capsys.readouterr().out
-    monitor.print_secret_next_steps(env_file, xbox_gamertag="someone")
+    monitor.print_secret_next_steps(env_file, config_path=empty_config, xbox_gamertag="someone")
     with_target = capsys.readouterr().out
+    monitor.print_secret_next_steps(env_file, config_path=saved_config, xbox_gamertag="someone")
+    already_saved = capsys.readouterr().out
 
-    assert "<xbox_gamertag>" not in without_target
-    assert "xbox_monitor --doctor --env-file" in without_target.replace("python3 ", "").replace(".py", "")
-    assert "someone" in with_target
+    doctor_part, monitor_part = without_target.split("Once the checks pass", 1)
+    assert "<xbox_gamertag>" not in doctor_part
+    assert "<xbox_gamertag>" in monitor_part
+    assert with_target.count("someone") == 2
+    assert "someone" not in already_saved
+    assert "<xbox_gamertag>" not in already_saved
