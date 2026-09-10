@@ -418,3 +418,15 @@ def test_a_reported_failure_uses_the_shared_line_shape(xbox_loop, capsys):
 
     reported = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("* Error: "))
     assert reported == f"* Error: Xbox Live could not be reached (retrying in {monitor.display_time(monitor.XBOX_CHECK_INTERVAL)})"
+
+
+# Verifies the liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
+def test_the_liveness_banner_explains_itself_without_diagnostics(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 1)
+    xbox_loop([presence_payload(), presence_payload(), presence_payload()])
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    assert f"* Monitoring healthy for {GAMERTAG}. The user is offline with no activity change since the last check" in output
+    assert "Liveness check, timestamp:" in output
