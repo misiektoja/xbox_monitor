@@ -887,7 +887,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
 def doctor_check_target_identity(report, xbox_gamertag=None):
     if not xbox_gamertag:
         advice = classify_recovery_error(context="target.missing", detail="No Xbox gamertag was provided")
-        return [make_doctor_check("Target", "FAIL", advice.summary, advice=advice)]
+        return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
     if not report.authenticated:
         # Authentication already failed and reported why. A second row would repeat one problem as two
         return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "Sign-in did not succeed, so no lookup was attempted")]

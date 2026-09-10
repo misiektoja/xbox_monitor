@@ -458,12 +458,13 @@ def test_the_target_is_skipped_when_authentication_failed(xbox_session):
     assert [check.status for check in target] == ["SKIP"]
 
 
-# A doctor run with no gamertag cannot check the one thing the tool exists to watch
-def test_a_missing_gamertag_fails_the_target(xbox_session):
+# A doctor run with no gamertag warns rather than fails, so a credentials-only run still exits clean
+def test_a_missing_gamertag_warns_on_the_target(xbox_session):
     xbox_session()
     checks = monitor.asyncio.run(monitor.doctor_check_xbox_live(monitor.DoctorReport(), None))
     target = checks_in(monitor.DoctorReport(checks=checks), "Target")
-    assert [check.status for check in target] == ["FAIL"]
+    assert [check.status for check in target] == ["WARN"]
+    assert target[0].detail == "Nothing will be monitored until one is given"
     assert target[0].advice.code == "target.missing"
     assert monitor.XBOX_TARGET_FORMS in target[0].advice.fix
 
