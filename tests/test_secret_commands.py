@@ -257,3 +257,25 @@ def test_a_declined_secret_replacement_reports_the_kept_value(tmp_path, monkeypa
     assert advice.summary == "The saved SMTP password was left as it is and the dotenv file was not changed"
     assert "answer y to replace the saved value" in advice.fix
     assert destination.read_text(encoding="utf-8") == 'SMTP_PASSWORD="original"\n'
+
+
+PROGRESS_COMMANDS = (("run_set_webhook_url", "webhook URL", "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenValue"), ("run_set_smtp_password", "SMTP password", "mail-password"))
+
+
+# Verifies each secret command announces the check the way the siblings do, naming the dotenv file rather than its path
+@pytest.mark.parametrize("command_name, subject, secret", PROGRESS_COMMANDS)
+def test_the_progress_line_names_the_dotenv_file_not_its_path(command_name, subject, secret, secret_paths, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
+
+    getattr(monitor, command_name)(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(secret))
+
+    line = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("* Checking the entered"))
+    assert line == f"* Checking the entered {subject} before changing the dotenv file ..."
+
+
+# Verifies the credential command names the dotenv file the same way, since it collects two values at once
+def test_the_credential_progress_line_names_the_dotenv_file_not_its_path(secret_paths, capsys):
+    monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
+
+    line = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("* Checking the entered"))
+    assert line == "* Checking the entered Microsoft application credentials before changing the dotenv file ..."

@@ -3010,7 +3010,7 @@ def run_set_secret(key, flag, subject, guide_url, guidance, prompt_text, validat
         print()
         raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
 
-    print(f"* Checking the entered value before writing it to '{destination}' ...")
+    print(f"* Checking the entered {subject} before changing the dotenv file ...")
     outcome = validator(entered)
     # What is stored can differ from what was typed, so a shorthand the validator accepted is saved in full
     stored = str(entered).strip() if normalize is None else normalize(entered)
@@ -3046,7 +3046,7 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
     if not client_id or not client_secret:
         raise RecoveryError(classify_recovery_error(context="secret.entry", detail="Both the client ID and the client secret are needed, so the dotenv file was not changed"))
 
-    print(f"* Checking the entered values before writing them to '{destination}' ...")
+    print("* Checking the entered Microsoft application credentials before changing the dotenv file ...")
     authorize = _wizard_request_tokens if authorizer is None else authorizer
     try:
         tokens = asyncio.run(authorize(client_id, client_secret, input_func=input_func))
