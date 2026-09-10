@@ -252,6 +252,24 @@ def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, cap
     assert output.count("Liveness check, timestamp:") == 3
 
 
+# Verifies an alert that lands on a check the outage reporter keeps quiet still ends with a timestamp
+def test_a_delivery_on_a_quiet_check_ends_with_a_timestamp(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 100 * monitor.XBOX_CHECK_INTERVAL)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *args, **kwargs: False)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
+    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(monitor.MONITOR_TRANSIENT_ALERT_AFTER + 2)]])
+
+    run_monitor()
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    deliveries = [index for index, line in enumerate(lines) if line.startswith("Sending email notification")]
+
+    assert deliveries, lines
+    for index in deliveries:
+        assert any(line.startswith("Timestamp:") for line in lines[index + 1:index + 3]), lines[index:index + 3]
+
+
 # Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often
 def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     clock = [1000000.0]

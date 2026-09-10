@@ -6186,6 +6186,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 exhausted = advice.code == "resource.exhausted"
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
                 outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
+                delivery_reported = False
                 if outage_outcome in ("full", "repeat"):
                     print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
                 elif outage_outcome == "degraded":
@@ -6194,7 +6195,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
                     email_sent = email_sent or email_delivered
                     webhook_sent = webhook_sent or webhook_delivered
-                if outage_outcome in ("full", "repeat") or exhausted:
+                    # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
+                    # with nothing under it reads as a run that stopped there
+                    delivery_reported = True
+                if outage_outcome in ("full", "repeat") or exhausted or delivery_reported:
                     print_cur_ts("Timestamp:\t\t\t")
                 # A local file descriptor limit cannot be retried away inside this process
                 if exhausted:
