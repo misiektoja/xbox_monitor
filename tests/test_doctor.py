@@ -309,10 +309,27 @@ def test_the_install_method_is_stated_under_the_heading(monkeypatch):
 
 
 # The most common support question is which files a run is actually reading
-def test_the_configuration_and_dotenv_files_in_use_are_named():
-    checks = monitor.doctor_check_configuration(config_path="/tmp/xbox.conf", env_path="/tmp/.env")
+def test_the_configuration_and_dotenv_files_in_use_are_named(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    checks = monitor.doctor_check_configuration(config_path="/tmp/xbox.conf", env_path=str(env_path))
     assert "Path: /tmp/xbox.conf" in checks[0].detail
-    assert "Path: /tmp/.env" in checks[1].detail
+    assert checks[1].label == "Dotenv file loaded"
+    assert f"Path: {env_path}" in checks[1].detail
+
+
+# Verifies an explicitly selected missing dotenv file is reported as missing rather than loaded
+def test_a_missing_dotenv_file_is_a_warning(tmp_path):
+    missing = tmp_path / "missing.env"
+
+    checks = monitor.doctor_check_configuration(env_path=str(missing))
+    missing_check = next(check for check in checks if check.label == "The requested dotenv file was not found")
+
+    assert missing_check.status == "WARN"
+    assert missing_check.detail == f"Path: {missing}"
+    assert missing_check.advice is not None
+    assert "--env-file" in missing_check.advice.fix
+    assert not any(check.label == "Dotenv file loaded" for check in checks)
 
 
 # Running with no config file at all is a supported setup, not a problem to report
