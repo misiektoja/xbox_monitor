@@ -647,14 +647,6 @@ def test_a_hidden_wizard_answer_is_read_with_debug_output_off(monkeypatch):
     assert monitor.DEBUG_MODE is True
 
 
-# Replays scripted answers the way a terminal does, echoing each prompt so the transcript is what a user sees
-class EchoingAnswers(ScriptedAnswers):
-    def __call__(self, prompt=""):
-        typed = super().__call__(prompt)
-        print(f"{prompt}{typed}")
-        return typed
-
-
 # Verifies the destination block states the raw install method key in the column the siblings print
 def test_the_setup_header_uses_the_shared_destination_column(capsys):
     monitor._wizard_print_setup_destinations("xbox_monitor.conf", ".env")

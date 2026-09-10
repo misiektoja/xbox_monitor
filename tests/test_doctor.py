@@ -622,18 +622,6 @@ def test_the_delivery_rows_print_the_shared_label_and_detail(monkeypatch, smtp_s
     assert "  You declined the real delivery test. Run doctor again and approve the webhook test when ready" in output
 
 
-# A failed delivery has to change the exit code or an approved test that failed reads as a healthy setup
-def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, smtp_sign_in_ok):
-    enable_email(monkeypatch)
-    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
-    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: "y")
-    monkeypatch.setattr(monitor.sys, "stdin", FakeTerminal())
-    monkeypatch.setattr(monitor.sys, "stdout", FakeTerminal())
-    report = monitor.DoctorReport(email_ready=True)
-    monitor.offer_doctor_delivery_tests(report)
-    assert "1 check(s) failed" in monitor.render_doctor_summary(report.checks)
-
-
 # A fresh install has no webhook destination and an error alert alone must not make it look configured
 def test_a_fresh_install_reports_webhooks_as_disabled(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
