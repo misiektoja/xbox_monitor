@@ -5065,6 +5065,32 @@ def xbox_get_platform_mapping(platform, short=True):
     return platform
 
 
+# Zero-width characters Xbox embeds in some title names, such as the joiner inside "Microsoft Store"
+_ZERO_WIDTH_TITLE_CHARS = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
+
+# Xbox surfaces that presence reports like a title even though the user is not playing or watching anything
+XBOX_SYSTEM_TITLES = frozenset({
+    "online",
+    "home",
+    "xbox app",
+    "xbox guide",
+    "microsoft store",
+    "xbox game pass",
+    "microsoft edge",
+    "settings",
+})
+
+
+# Strips the zero-width characters and padding Xbox leaves in a title name so it can be compared and displayed
+def xbox_normalize_title_name(name):
+    return " ".join(str(name or "").translate(_ZERO_WIDTH_TITLE_CHARS).split())
+
+
+# Reports whether a presence title is an Xbox system surface rather than a game or app the user picked
+def xbox_is_system_title(name):
+    return xbox_normalize_title_name(name).casefold() in XBOX_SYSTEM_TITLES
+
+
 # Processes Xbox presence class
 def xbox_process_presence_class(presence, platform_short=True):
     status = ""
@@ -5091,8 +5117,8 @@ def xbox_process_presence_class(presence, platform_short=True):
             last_seen_raw_device = getattr(last_seen_class, "device_type", "")
             if 'title_name' in dir(last_seen_class):
                 if last_seen_class.title_name:
-                    if last_seen_class.title_name not in ("Online", "Home"):
-                        title_name = last_seen_class.title_name
+                    if not xbox_is_system_title(last_seen_class.title_name):
+                        title_name = xbox_normalize_title_name(last_seen_class.title_name)
             if 'device_type' in dir(last_seen_class):
                 if last_seen_class.device_type:
                     platform = last_seen_class.device_type
@@ -5123,8 +5149,8 @@ def xbox_process_presence_class(presence, platform_short=True):
                     t_placement = getattr(title, "placement", "")
                     if t_name:
                         presence_titles_dbg.append(f"{t_name} [{t_placement}]")
-                    if title.name not in ("Online", "Home", "Xbox App") and title.placement != "Background":
-                        game_name = title.name
+                    if not xbox_is_system_title(title.name) and title.placement != "Background":
+                        game_name = xbox_normalize_title_name(title.name)
                         break
 
     debug_print("Presence parsed", state=status, title_name=title_name, game_name=game_name, platform=platform, lastonline=get_debug_date_from_ts(lastonline_ts))
@@ -5156,11 +5182,12 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
                     played_dt = convert_iso_str_to_datetime(title.title_history.last_time_played)
                     if played_dt:
                         ts = int(played_dt.timestamp())
-                        game_name = title.name if hasattr(title, 'name') and title.name else "Unknown"
+                        game_name = xbox_normalize_title_name(title.name) if getattr(title, 'name', "") else "Unknown"
                         debug_print("Title history item", index=i, game=game_name, played=get_date_from_ts(ts))
                         if best_ts == 0:
                             best_ts = ts
-                            best_game = game_name
+                            # A system surface still proves the user was active, so keep the timestamp and drop only the name
+                            best_game = "" if xbox_is_system_title(game_name) else game_name
 
             if best_ts > 0:
                 debug_print("Title history selection", game=best_game, played=get_date_from_ts(best_ts))
