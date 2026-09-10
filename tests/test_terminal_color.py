@@ -50,6 +50,12 @@ def test_the_identity_colours_match_the_shared_palette():
     assert monitor.DEFAULT_COLOR_THEME["timestamp_value"] == "cyan"
 
 
+# Verifies the liveness banner timestamp carries the timestamp colour instead of the generic date colour
+def test_liveness_check_timestamp_uses_timestamp_style(colored):
+    line = monitor._colorize_line("Liveness check, timestamp:\tWed 26 Aug 2026, 20:23:03")
+    assert styled_as(line, "Wed 26 Aug 2026, 20:23:03", "timestamp_value")
+
+
 # Verifies a gamertag is a handle everywhere it appears, so the Target row agrees with the rows under it
 @pytest.mark.parametrize("line, value", [
     ("* Target:                       misiektoja", "misiektoja"),
