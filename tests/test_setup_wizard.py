@@ -99,6 +99,30 @@ def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path):
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
 
 
+# Verifies the status file question names the working directory, since the default is relative to where the tool runs
+def test_the_status_file_question_names_the_working_directory(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+    prompts = []
+
+    def answer(prompt):
+        prompts.append(prompt)
+        return ""
+
+    monitor._wizard_collect_output_section(state, input_func=answer)
+    assert any("Optional status file path (blank uses the default name in the working directory)" in prompt for prompt in prompts)
+
+
+# Verifies a status file answer without an extension is saved as a .json file while an explicit extension is left alone
+def test_the_status_file_answer_gains_a_json_extension_when_it_has_none(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "", str(tmp_path / "profile")]))
+    assert state.config_values["XBOX_STATUS_FILE"] == str(tmp_path / "profile.json")
+
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "", str(tmp_path / "profile.txt")]))
+    assert state.config_values["XBOX_STATUS_FILE"] == str(tmp_path / "profile.txt")
+
+
 # Verifies the durations people type reach the config as whole seconds
 def test_a_typed_duration_reaches_the_config_as_seconds(monkeypatch, wizard_paths):
     answers = ["SomeTag", "", "1h 30m", "2m", "", "n", "n", "", "", "", "1", "n", "n"]
