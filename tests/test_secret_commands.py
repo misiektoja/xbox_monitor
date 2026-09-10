@@ -87,6 +87,20 @@ def test_a_declined_pair_reads_as_a_pair_even_with_one_value_saved(secret_paths)
         monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, input_func=lambda prompt="": "n", getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
 
     assert raised.value.advice.summary == "The saved Microsoft application credentials were left as they are and the dotenv file was not changed"
+    assert "answer y to replace the saved values" in raised.value.advice.fix
+
+
+# Verifies an interrupt at the replace question asks for both values back rather than one
+def test_a_cancelled_pair_asks_for_both_values_back(secret_paths):
+    secret_paths["env"].write_text('MS_APP_CLIENT_ID="old-id"\n', encoding="utf-8")
+
+    def interrupted(prompt=""):
+        raise KeyboardInterrupt
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, input_func=interrupted, getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
+
+    assert "Run --set-ms-app-credentials again when you have the values ready" in raised.value.advice.fix
 
 
 # Verifies a confirmed replacement rewrites the assignment in place rather than appending a second one

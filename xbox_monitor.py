@@ -3246,7 +3246,7 @@ def confirm_secret_replacement(destination, keys, subject, flag, guide_url, inpu
         confirmed = str(read_interactively(ask, f"Replace the saved {subject} in '{destination}'? [y/N]: ")).strip().casefold() in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         print()
-        raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
+        raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url, len(keys) > 1)) from None
     if not confirmed:
         # The subject names every value the command replaces, so its plural cannot follow how many are saved today
         raise RecoveryError(secret_replacement_declined_advice(subject, flag, guide_url, len(keys) > 1))
@@ -3634,14 +3634,14 @@ def recovery_fix_with_guide(fix, guide_url):
 
 
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
-def secret_entry_cancelled_advice(subject, flag, guide_url):
-    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
+def secret_entry_cancelled_advice(subject, flag, guide_url, plural=False):
+    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the {'values' if plural else 'value'} ready", guide_url), False)
 
 
 # Returns the advice a declined secret replacement reports, worded the same way by every one-shot secret command
 def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
     kept = "were left as they are" if plural else "was left as it is"
-    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
+    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved {'values' if plural else 'value'}", guide_url), False)
 
 
 # Renders one piece of advice, adding the fix paragraph and the technical detail only where they help
