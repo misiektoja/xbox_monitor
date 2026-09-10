@@ -4,3 +4,4 @@ httpx
 pytz
 tzlocal
 python-dotenv
+wcwidth
