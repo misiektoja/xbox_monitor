@@ -408,3 +408,13 @@ def test_each_printer_is_silent_while_its_mode_is_off(monkeypatch, printer, caps
 def test_a_secret_is_described_without_revealing_it(key, value, expected):
     assert monitor.secret_fingerprint(value, key) == expected
     assert value not in monitor.secret_fingerprint(value, key) or not value
+
+
+# Verifies a reported failure uses the line shape shared with the sibling monitors
+def test_a_reported_failure_uses_the_shared_line_shape(xbox_loop, capsys):
+    xbox_loop([presence_payload(), httpx.ConnectError("connection reset by peer"), presence_payload()])
+
+    run_monitor()
+
+    reported = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("* Error: "))
+    assert reported == f"* Error: Xbox Live could not be reached (retrying in {monitor.display_time(monitor.XBOX_CHECK_INTERVAL)})"
