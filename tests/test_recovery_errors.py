@@ -67,6 +67,7 @@ CLASSIFIER_EXEMPTIONS = {
     "so this run will ask you to authorize once": "the expected first-run state, answered by the sign-in that follows",
     "Re-authorization is required": "reports the recovery action taken, printed under the classified advice",
     "Email notifications:": "the startup summary, where the word error names a switched-on alert",
+    "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
 }
 
 # Words that mark a printed line as a report of something going wrong
