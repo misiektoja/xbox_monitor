@@ -465,7 +465,7 @@ def test_a_confirmed_dotenv_secret_replacement_is_written(monkeypatch, wizard_pa
 # Verifies credentials already in the dotenv file are noticed even when this run did not load them
 def test_credentials_in_the_dotenv_file_prompt_before_being_replaced(monkeypatch, wizard_paths):
     wizard_paths["env"].write_text('MS_APP_CLIENT_ID="stored-id"\nMS_APP_CLIENT_SECRET="stored-secret"\n', encoding="utf-8")
-    answers = ["SomeTag", "", "5m", "90", "n", "", "n", "n", "", "", "", "1", "n", "n"]
+    answers = ["SomeTag", "", "5m", "90", "n", "n", "n", "n", "", "", "", "1", "n", "n"]
     code, scripted = run_wizard(monkeypatch, wizard_paths, answers)
     assert code == 0
     assert any("Replace the Microsoft application credentials already configured?" in prompt for prompt in scripted.prompts)
@@ -869,3 +869,24 @@ def test_a_rejected_target_answer_offers_a_retry_and_keeps_the_previous_target(t
     assert state.target == "SomeTag"
     assert any(prompt.startswith("Try entering the Xbox gamertag to monitor again?") for prompt in scripted.prompts)
     assert any(prompt.startswith("Persist this target") for prompt in scripted.prompts)
+
+
+# Verifies the email question defaults to the saved alerts, so a rerun over configured email proposes keeping it
+def test_the_email_question_defaults_to_the_saved_alerts(tmp_path, monkeypatch):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or False)
+
+    state.config_values.update({key: False for key in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS})
+    state.config_values.update({"ERROR_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"})
+    monitor._wizard_collect_email_section(state)
+    assert seen == [("Configure email notifications?", False)]
+
+    # A declined answer clears the section, so each case seeds the settings it needs again
+    state.config_values.update({"ERROR_NOTIFICATION": True, "SMTP_HOST": "smtp.example.test"})
+    monitor._wizard_collect_email_section(state)
+    assert seen[-1] == ("Configure email notifications?", True)
+
+    state.config_values.update({"ERROR_NOTIFICATION": False, "SMTP_HOST": "your_smtp_server_ssl", "GAME_CHANGE_NOTIFICATION": True})
+    monitor._wizard_collect_email_section(state)
+    assert seen[-1] == ("Configure email notifications?", True)
