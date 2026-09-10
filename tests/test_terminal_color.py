@@ -50,6 +50,37 @@ def test_the_identity_colours_match_the_shared_palette():
     assert monitor.DEFAULT_COLOR_THEME["timestamp_value"] == "cyan"
 
 
+# Verifies a warning marks its opening word instead of painting the line, so the values inside stay visible
+def test_a_warning_marks_its_opening_word_and_leaves_the_rest(colored):
+    line = monitor._colorize_line("* Warning: the account changed status during the check")
+
+    assert styled_as(line, "Warning:", "warning")
+    assert styled_as(line, "changed status", "status_change")
+    assert not line.startswith(monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME["warning"]))
+
+
+# Verifies a reported signal marks its own name rather than painting the line it arrives on
+def test_a_signal_marks_its_own_name(colored):
+    line = monitor._colorize_line("* Signal SIGUSR1 received")
+
+    assert line == f"* Signal {monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME['signal'])}SIGUSR1{monitor.ANSI_RESET} received"
+
+
+# Verifies a value colour never equals a whole-line style that can enclose it, which would hide the value
+def test_block_styles_never_hide_a_name(colored):
+    resolved = {name: monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME[name]) for name in monitor.BLOCK_STYLE_PARTS + monitor.NAME_STYLE_PARTS}
+    for block in monitor.BLOCK_STYLE_PARTS:
+        for name in monitor.NAME_STYLE_PARTS:
+            assert resolved[name] != resolved[block], f"{name} is invisible inside a {block} line"
+
+
+# Verifies an error still paints its whole line, so the fix that freed warnings did not free every block
+def test_an_error_line_is_still_painted_end_to_end(colored):
+    line = monitor._colorize_line("* Error: the account changed status during the check")
+
+    assert line.startswith(monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME["error"]))
+
+
 # Verifies the liveness banner timestamp carries the timestamp colour instead of the generic date colour
 def test_liveness_check_timestamp_uses_timestamp_style(colored):
     line = monitor._colorize_line("Liveness check, timestamp:\tWed 26 Aug 2026, 20:23:03")

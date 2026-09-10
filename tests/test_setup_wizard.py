@@ -583,6 +583,18 @@ def test_an_unusable_webhook_url_can_be_abandoned(monkeypatch, wizard_paths, cap
     assert "WEBHOOK_URL" not in wizard_paths["env"].read_text(encoding="utf-8")
 
 
+# Verifies a rejected ntfy topic is explained, rather than being reported as though nothing was entered
+def test_a_rejected_ntfy_topic_is_explained(monkeypatch, wizard_paths, capsys):
+    answers = before_webhook_section() + ["y", "2", "n"] + after_webhook_section()
+
+    code, _ = run_wizard(monkeypatch, wizard_paths, answers, secrets=secrets_for("bad topic!!"))
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters" in output
+    assert "Webhook alerts stay off until one is set" not in output
+
+
 # Verifies a blank destination is told apart from a malformed one and that skipping it leaves the channel off
 def test_a_blank_webhook_url_is_worded_as_a_blank_one(monkeypatch, wizard_paths, capsys):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)

@@ -26,6 +26,8 @@ def secret_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(monitor, "MS_AUTH_TOKENS_FILE", str(tokens))
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_USER", "someone@example.com")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "someone@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "alerts@example.com")
     env = tmp_path / ".env"
     env.write_text("", encoding="utf-8")
     return {"env": env, "tokens": tokens}
@@ -224,11 +226,57 @@ def test_a_destination_for_the_other_service_is_refused(secret_paths, monkeypatc
     assert secret_paths["env"].read_text(encoding="utf-8") == ""
 
 
+# Verifies the mail settings are checked before anything is typed, so a password is never entered for nothing
+def test_the_smtp_password_command_checks_the_settings_before_prompting(tmp_path, monkeypatch, capsys):
+    destination = tmp_path / ".env"
+    monkeypatch.setattr(monitor, "SMTP_HOST", "your_smtp_server_ssl")
+
+    def refuse(prompt=""):
+        raise AssertionError("a prompt was shown before the settings were checked")
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_smtp_password(env_file=str(destination), interactive=True, input_func=refuse, getpass_func=refuse)
+
+    advice = raised.value.advice
+    assert advice.summary == "The mail server settings are incomplete: SMTP_HOST is not a valid IP address or hostname"
+    assert "--set-smtp-password" in advice.fix
+    assert monitor.SMTP_GUIDE_URL in advice.fix
+    assert "your_smtp_server_ssl" not in capsys.readouterr().out
+    assert not destination.exists()
+
+
+# Verifies the refusal names the setting that is actually missing rather than listing every mail setting
+def test_the_smtp_password_command_names_the_setting_that_is_missing(tmp_path, monkeypatch):
+    destination = tmp_path / ".env"
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.test")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "your_receiver_email")
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_smtp_password(env_file=str(destination), interactive=True, getpass_func=lambda prompt="": "entered")
+
+    assert raised.value.advice.summary == "The mail server settings are incomplete: SENDER_EMAIL or RECEIVER_EMAIL is not an email address"
+
+
+# Verifies the check ignores the password itself, which is the one setting this command exists to supply
+def test_the_smtp_password_command_runs_when_only_the_password_is_missing(secret_paths, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "your_smtp_password")
+    monkeypatch.setattr(monitor, "smtp_sign_in", lambda password, timeout=15: "someone@example.com")
+
+    monitor.run_set_smtp_password(env_file=str(secret_paths["env"]), interactive=True, getpass_func=lambda prompt="": "mail-password")
+
+    assert 'SMTP_PASSWORD="mail-password"' in secret_paths["env"].read_text(encoding="utf-8")
+    assert "mail-password" not in capsys.readouterr().out
+
+
 # Verifies an interrupted entry reports the cancel itself, with the command that resumes it
 def test_an_interrupted_secret_entry_reports_the_cancel(tmp_path, monkeypatch):
     destination = tmp_path / ".env"
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
     monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.test")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "alerts@example.test")
 
     def interrupt(prompt=""):
         raise KeyboardInterrupt
@@ -249,6 +297,8 @@ def test_a_declined_secret_replacement_reports_the_kept_value(tmp_path, monkeypa
     destination.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
     monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.test")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "alerts@example.test")
 
     with pytest.raises(monitor.RecoveryError) as raised:
         monitor.run_set_smtp_password(env_file=str(destination), interactive=True, input_func=lambda prompt="": "n", getpass_func=lambda prompt="": pytest.fail("hidden prompt used"))

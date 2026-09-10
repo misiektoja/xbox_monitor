@@ -83,7 +83,9 @@ def run_on_terminal(arguments, keystrokes="", interrupt_after=None, environment=
 @pytest.fixture
 def terminal_config(tmp_path):
     config = tmp_path / "xbox_monitor.conf"
-    config.write_text(f'LOCAL_TIMEZONE = "UTC"\nCLEAR_SCREEN = False\nMS_AUTH_TOKENS_FILE = "{tmp_path / "xbox_tokens.json"}"\n', encoding="utf-8")
+    # The mail server settings are complete, so --set-smtp-password reaches its hidden prompt instead of
+    # being refused for an unconfigured server before anything is typed
+    config.write_text(f'LOCAL_TIMEZONE = "UTC"\nCLEAR_SCREEN = False\nMS_AUTH_TOKENS_FILE = "{tmp_path / "xbox_tokens.json"}"\nSMTP_HOST = "smtp.example.com"\nSMTP_USER = "someone@example.com"\nSENDER_EMAIL = "someone@example.com"\nRECEIVER_EMAIL = "alerts@example.com"\n', encoding="utf-8")
     (tmp_path / ".env").write_text("", encoding="utf-8")
     return config, tmp_path / ".env"
 
