@@ -301,3 +301,12 @@ def test_the_banner_version_line_is_coloured(colored, capsys):
 
     version_line = next(line for line in capsys.readouterr().out.splitlines() if f"v{monitor.VERSION}" in line)
     assert SGR.search(version_line)
+
+
+# Verifies a printed command and its hint carry the colours every sibling monitor gives them
+def test_a_labelled_command_and_its_hint_are_coloured(colored, capsys):
+    monitor.print_labelled_command("Easiest start (guided setup wizard):", "xbox_monitor --setup", "   (or just answer Y below)")
+
+    output = capsys.readouterr().out
+    assert styled_as(output, "xbox_monitor --setup", "section")
+    assert styled_as(output, "   (or just answer Y below)", "info")

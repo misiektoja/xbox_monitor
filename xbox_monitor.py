@@ -3380,7 +3380,7 @@ def normalize_xbox_target(value):
 # Prints one labelled command in the shape the welcome screen and the next-steps blocks share
 def print_labelled_command(label, command, suffix=""):
     print(label)
-    print(f"    {command}{suffix}\n")
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
 # Prints the command that starts monitoring with the files this run checked, so a report read on its own
