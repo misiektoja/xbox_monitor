@@ -27,6 +27,11 @@ def _unreachable_smtp(*args, **kwargs):
     raise AssertionError("Doctor must not open an SMTP connection when the sign-in cannot be attempted")
 
 
+# Fails the test if the doctor publishes a webhook the user declined
+def _unreachable_webhook(*args, **kwargs):
+    raise AssertionError("Doctor must not publish a webhook without approval")
+
+
 # Stands in for the signed session, which the checks close whether or not they got that far
 class _FakeClosableSession:
     async def aclose(self):
@@ -569,6 +574,27 @@ def test_an_approved_delivery_test_sends_one_message(monkeypatch, smtp_sign_in_o
     assert len(sent) == 1
     assert [check.status for check in offered] == ["PASS"]
     assert offered[0] in report.checks
+
+
+# The delivery rows have to print the same label and detail the sibling tools print or the wording has drifted
+def test_the_delivery_rows_print_the_shared_label_and_detail(monkeypatch, smtp_sign_in_ok):
+    enable_email(monkeypatch)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor, "send_webhook", _unreachable_webhook)
+    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: "n" if "webhook" in prompt else "y")
+    monkeypatch.setattr(monitor.sys, "stdin", FakeTerminal())
+    stdout = FakeTerminal()
+    monkeypatch.setattr(monitor.sys, "stdout", stdout)
+
+    monitor.offer_doctor_delivery_tests(monitor.DoctorReport(email_ready=True, webhook_ready=True))
+    output = "".join(stdout.chunks)
+    provider = monitor.webhook_provider_display_name()
+
+    assert monitor.DOCTOR_DELIVERY_SECTION in output
+    assert "[PASS] Doctor test email delivered" in output
+    assert "  One real test email was sent after confirmation" in output
+    assert f"[SKIP] Test webhook through {provider} was not sent" in output
+    assert "  You declined the real delivery test. Run doctor again and approve the webhook test when ready" in output
 
 
 # A failed delivery has to change the exit code or an approved test that failed reads as a healthy setup
