@@ -2,15 +2,33 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 1.9.4 (TBD)
+# Changes in 2.0 (TBD)
 
-Version **1.9.4** keeps the tool running through slow or unstable connections to Xbox Live and the Microsoft sign-in endpoint instead of aborting at startup.
+Version **2.0** adds **guided setup with Microsoft authorization**, a read-only **Doctor preflight check** and **Discord and ntfy alerts**. **Coloured output**, startup summaries and clearer diagnostics make monitoring easier to follow. Authentication recovers from temporary failures, configuration files are now parsed as data, secrets are better protected and release downloads include checksums and signed attestations. The release requires **Python 3.11 or newer** and includes a searchable guide.
+
+**Features and improvements**:
+
+- **NEW:** **Guided setup** - `--setup` wizard collects the gamertag, intervals, Microsoft credentials, notifications and output choices, including browser authorization. Review settings before saving and confirm replacements. A first run with no arguments offers the wizard
+- **NEW:** **Doctor preflight check** - `--doctor` checks configuration, authentication, target access, notifications and output destinations. Problems include suggested fixes. It writes no files, does not start interactive sign-in and sends test notifications only after confirmation
+- **NEW:** **Discord and ntfy alerts** - Choose presence, game and error notifications independently of email. Save the destination with `--set-webhook-url` and check delivery with `--send-test-webhook`. Protected ntfy topics are supported
+- **NEW:** **Private credential entry** - `--set-ms-app-credentials` collects hidden application credentials and runs browser authorization. `--set-smtp-password` checks a hidden password with the mail server before saving, without sending a message
+- **NEW:** **Saved gamertag and configurable status file** - Set `XBOX_GAMERTAG` to start monitoring without arguments. Use `XBOX_STATUS_FILE` or `--status-file` to choose where the last seen status is stored
+- **NEW:** **Clearer output and diagnostics** - Coloured output and a short startup summary show the active settings. `--verbose` adds operational updates and `--debug` adds technical traces. Secrets are redacted and logs retain the full summary
+- **IMPROVE:** **Actionable errors and quieter outages** - Failures explain what to fix and link to the guide. Persistent outages produce periodic reminders followed by a recovery notice. Expired credentials trigger immediate error alerts while temporary failures must persist
+- **IMPROVE:** **Screen width and TLS settings** - `--truncate N` limits screen width while logs retain full lines and requires `wcwidth`. `VERIFY_SSL` controls certificate checks across outbound connections, including email. It warns when disabled
+- **IMPROVE:** **Python 3.11 minimum** - Upgrade older Python installations before installing 2.0. The package now enforces the supported minimum and no longer requires the separate `requests` library
+- **IMPROVE:** **Documentation and verifiable downloads** - A [searchable guide](https://misiektoja.github.io/xbox_monitor/) covers setup, usage and troubleshooting. Releases include checksums and signed build attestations. New security and support guidance explains where to report problems
 
 **Bug fixes**:
 
-- **BUGFIX:** **Resilient Xbox authentication** - A slow response from the Microsoft sign-in endpoint no longer aborts the tool with a Python traceback. Requests to Xbox Live and to the sign-in endpoint now use a 30 second timeout instead of the 5 second default of the underlying HTTP library, and a token refresh that fails with a network timeout or a temporary server-side error (HTTP 429 or 5xx) is retried up to three times with an exponentially growing delay. Tune this with the new `XBOX_API_TIMEOUT`, `TOKEN_REFRESH_RETRIES` and `TOKEN_REFRESH_RETRY_DELAY` settings
-- **BUGFIX:** **No spurious re-authorization prompts** - A temporary Microsoft server-side error no longer asks you to repeat the interactive OAuth flow. Only an expired or revoked refresh token starts re-authorization
-- **BUGFIX:** **Readable authentication errors** - When authentication ultimately fails, the tool now reports the reason and exits cleanly instead of printing a raw traceback or an empty error message
+- **BUGFIX:** **Resilient authentication** - Longer timeouts and retries handle temporary Microsoft and Xbox Live failures without unnecessary re-authorization prompts. Failed authentication reports a clear error instead of a traceback
+- **BUGFIX:** **Profile details restored** - Information mode and startup show the Bio and an offline user's last played title again
+- **BUGFIX:** **Private token storage** - The token cache is written with owner-only permissions and replaced atomically. Existing cache permissions are corrected on the next token refresh. Status files are also updated atomically
+- **BUGFIX:** **Safer configuration handling** - Files are parsed as settings instead of executed as Python. Replace imports, function calls and calculations with plain values. `--generate-config FILE` confirms replacement and creates a backup. Non-interactive replacement requires `--force` and shell redirection still bypasses these protections
+- **BUGFIX:** **Reliable startup and notifications** - Exported secrets work without a dotenv file and take precedence at startup. Placeholder credentials are rejected, configured screen settings apply and Xbox text cannot inject terminal controls
+- **BUGFIX:** **Accurate liveness messages** - Status reminders follow elapsed time for online and offline targets. Redirected output no longer triggers terminal-clearing errors
+
+Smaller fixes and development changes are listed in the [full change history](https://github.com/misiektoja/xbox_monitor/compare/v1.9.3...v2.0).
 
 # Changes in 1.9.3 (04 Aug 2026)
 
