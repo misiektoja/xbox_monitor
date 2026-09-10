@@ -279,3 +279,17 @@ def test_the_credential_progress_line_names_the_dotenv_file_not_its_path(secret_
 
     line = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("* Checking the entered"))
     assert line == "* Checking the entered Microsoft application credentials before changing the dotenv file ..."
+
+
+# Verifies the printed next steps carry a target this run was given and no placeholder when there is none
+def test_the_next_steps_carry_a_real_target_or_none(tmp_path, capsys):
+    env_file = tmp_path / ".env"
+
+    monitor.print_secret_next_steps(env_file)
+    without_target = capsys.readouterr().out
+    monitor.print_secret_next_steps(env_file, xbox_gamertag="someone")
+    with_target = capsys.readouterr().out
+
+    assert "<xbox_gamertag>" not in without_target
+    assert "xbox_monitor --doctor --env-file" in without_target.replace("python3 ", "").replace(".py", "")
+    assert "someone" in with_target
