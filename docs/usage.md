@@ -7,13 +7,13 @@ The tool can print a detailed view of an Xbox profile. This mode shows the infor
 Use `-i` or `--info` with the gamertag:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -i
+xbox_monitor <xbox_gamertag> -i
 ```
 
 If `MS_APP_CLIENT_ID` and `MS_APP_CLIENT_SECRET` are not stored anywhere, pass them with `-u` and `-w`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -i -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+xbox_monitor <xbox_gamertag> -i -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
 ```
 
 This displays:
@@ -30,19 +30,19 @@ This displays:
 To also list every friend and their current activity, add `-f` or `--friends`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -i --friends
+xbox_monitor <xbox_gamertag> -i --friends
 ```
 
 To also show the most recently earned achievements, add `-r` or `--recent-achievements`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -i --recent-achievements
+xbox_monitor <xbox_gamertag> -i --recent-achievements
 ```
 
 Limit how many items are shown with `-m` for games and `-n` for achievements:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -i -r -m 10 -n 5
+xbox_monitor <xbox_gamertag> -i -r -m 10 -n 5
 ```
 
 <p align="center">
@@ -54,7 +54,7 @@ xbox_monitor <xbox_gamer_tag> -i -r -m 10 -n 5
 To monitor a user, pass their Xbox Live gamertag:
 
 ```sh
-xbox_monitor <xbox_gamer_tag>
+xbox_monitor <xbox_gamertag>
 ```
 
 Set `XBOX_GAMERTAG` in the configuration file to monitor the same account without naming it every time. `--setup` offers to save it for you. A gamertag passed as an argument always wins over the saved one.
@@ -62,7 +62,7 @@ Set `XBOX_GAMERTAG` in the configuration file to monitor the same account withou
 If the credentials are not stored anywhere, pass them with `-u` and `-w`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+xbox_monitor <xbox_gamertag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
 ```
 
 The first run performs the [OAuth2 authorization](setup-and-first-run.md#first-authorization) once and saves the tokens.
@@ -71,7 +71,7 @@ The tool runs until interrupted with `Ctrl+C`. Use `tmux` or `screen` to keep it
 
 You can monitor several players by running several copies.
 
-Output is written to `xbox_monitor_<gamer_tag>.log`. Change it with `XBOX_LOGFILE` or switch it off with `DISABLE_LOGGING`, `-d` or `--disable-logging`.
+Output is written to `xbox_monitor_<xbox_gamertag>.log`. Change it with `XBOX_LOGFILE` or switch it off with `DISABLE_LOGGING`, `-d` or `--disable-logging`.
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"`, the default, to use ASCII separator-only lines on Windows, `"On"` to use them everywhere or `"Off"` to keep Unicode separators in logs on every system. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
@@ -79,10 +79,10 @@ Set `TRUNCATE_CHARS` or use the `--truncate` flag to cut each screen line to a m
 
 Names that come from Xbox Live, such as game titles and profile text, can contain terminal control sequences. They are removed before the text reaches the screen, the log file, the CSV file or an email, so a crafted name cannot clear your screen or overwrite a line that was already printed. Error messages are also checked for your secrets before they are shown or logged.
 
-The timestamp and last status are saved after every change, so the last status survives a restart. Set `XBOX_STATUS_FILE` or use the `--status-file` flag to keep it somewhere other than `xbox_<gamer_tag>_last_status.json` in the current directory:
+The timestamp and last status are saved after every change, so the last status survives a restart. Set `XBOX_STATUS_FILE` or use the `--status-file` flag to keep it somewhere other than `xbox_<xbox_gamertag>_last_status.json` in the current directory:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --status-file ~/xbox/last_status.json
+xbox_monitor <xbox_gamertag> --status-file ~/xbox/last_status.json
 ```
 
 The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind.
@@ -115,25 +115,25 @@ The log file always receives the complete list, whichever view the terminal was 
 To be told when a user gets online or offline, set `ACTIVE_INACTIVE_NOTIFICATION` to `True` or use `-a`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -a
+xbox_monitor <xbox_gamertag> -a
 ```
 
 To be told when a user starts, stops or changes a game, set `GAME_CHANGE_NOTIFICATION` to `True` or use `-g`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -g
+xbox_monitor <xbox_gamertag> -g
 ```
 
 To be told about every status change, online, away or offline, set `STATUS_NOTIFICATION` to `True` or use `-s`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -s
+xbox_monitor <xbox_gamertag> -s
 ```
 
 To stop the error email, which is on by default, set `ERROR_NOTIFICATION` to `False` or use `-e`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -e
+xbox_monitor <xbox_gamertag> -e
 ```
 
 The error alert fires at once for a failure that cannot clear on its own, such as expired credentials or a profile that stopped sharing its activity. A failure that can clear on its own, such as a timeout or a rate limit, is alerted on only after 20 failed checks in a row, so a short outage does not reach you. Either way the alert is sent once and not repeated until a check succeeds. The same rule governs the webhook error alert.
@@ -153,9 +153,9 @@ Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webh
 The same settings have command-line equivalents for one run. Naming any single alert also switches the channel on:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --webhook-game-change
-xbox_monitor <xbox_gamer_tag> --webhook --no-webhook-error-notify
-xbox_monitor <xbox_gamer_tag> --webhook-url <url>
+xbox_monitor <xbox_gamertag> --webhook-game-change
+xbox_monitor <xbox_gamertag> --webhook --no-webhook-error-notify
+xbox_monitor <xbox_gamertag> --webhook-url <url>
 ```
 
 `--webhook-url` leaves the private URL in your shell history, so prefer `--set-webhook-url` for anything permanent.
@@ -173,7 +173,7 @@ A failed delivery is retried once. A rate limit waits the delay the service aske
 To save every reported activity to a CSV file, set `CSV_FILE` or use `-b`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -b xbox_gamer_tag.csv
+xbox_monitor <xbox_gamertag> -b xbox_gamer_tag.csv
 ```
 
 The file is created if it does not exist.
@@ -194,7 +194,7 @@ Signals change the behaviour of a running copy without a restart.
 Send them with `kill` or `pkill`:
 
 ```sh
-pkill -USR1 -f "xbox_monitor <xbox_gamer_tag>"
+pkill -USR1 -f "xbox_monitor <xbox_gamertag>"
 ```
 
 Windows supports a limited set of signals, so this works only on Linux, Unix and macOS.
@@ -206,7 +206,7 @@ Terminal output is coloured by default. Colour switches itself off when the outp
 Turn it off for one run:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --no-color
+xbox_monitor <xbox_gamertag> --no-color
 ```
 
 Turn it off permanently in the configuration file:
@@ -275,5 +275,5 @@ conf.monitor_logs
 Copy [conf.monitor_logs](https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/grc/conf.monitor_logs) to `~/.grc/` and the log files are coloured when read through `grc`:
 
 ```sh
-grc tail -F -n 100 xbox_monitor_<gamer_tag>.log
+grc tail -F -n 100 xbox_monitor_<xbox_gamertag>.log
 ```

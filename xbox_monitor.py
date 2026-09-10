@@ -763,7 +763,7 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     # A configured path is fixed, so it stays checkable without a target. The default name carries the target
     status_path = os.path.expanduser(XBOX_STATUS_FILE) if XBOX_STATUS_FILE else (resolve_status_file(xbox_gamertag) if xbox_gamertag else "")
     if not status_path:
-        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: xbox_<target>_last_status.json in the working directory"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: xbox_<xbox_gamertag>_last_status.json in the working directory"))
     elif path_is_writable(status_path):
         checks.append(make_doctor_check("Configuration", "PASS", "Status file is writable", f"Path: {status_path}"))
     else:

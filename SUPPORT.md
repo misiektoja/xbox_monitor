@@ -5,7 +5,7 @@ Start with the [documentation site](https://misiektoja.github.io/xbox_monitor/).
 Before opening an issue, run the preflight report and read what it says. It writes nothing:
 
 ```sh
-xbox_monitor --doctor <xbox_gamer_tag>
+xbox_monitor --doctor <xbox_gamertag>
 ```
 
 ## Check your setup first

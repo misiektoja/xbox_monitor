@@ -29,7 +29,7 @@ xbox_monitor --setup
 Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
 
 ```sh
-xbox_monitor --doctor <xbox_gamer_tag>
+xbox_monitor --doctor <xbox_gamertag>
 ```
 
 <p align="center">

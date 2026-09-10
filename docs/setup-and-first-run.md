@@ -23,13 +23,13 @@ Nothing is written until you choose **Save settings** on the summary. Ctrl+C at 
 To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+xbox_monitor <xbox_gamertag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
 ```
 
 Or, if you installed [manually](installation.md#manual-installation):
 
 ```sh
-python3 xbox_monitor.py <xbox_gamer_tag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+python3 xbox_monitor.py <xbox_gamertag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
 ```
 
 Pass the Xbox gamertag, not the Microsoft account e-mail address and not the real name. A gamertag copied out of a profile link works too.
@@ -37,7 +37,7 @@ Pass the Xbox gamertag, not the Microsoft account e-mail address and not the rea
 Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
 
 ```sh
-xbox_monitor --doctor <xbox_gamer_tag>
+xbox_monitor --doctor <xbox_gamertag>
 ```
 
 To get the list of all supported command-line arguments and flags:

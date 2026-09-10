@@ -35,7 +35,7 @@ xbox_monitor --setup
 Check the setup before relying on it:
 
 ```sh
-xbox_monitor --doctor <xbox_gamer_tag>
+xbox_monitor --doctor <xbox_gamertag>
 ```
 
 [Installation](installation.md) covers the requirements and the manual install. [Setup & First Run](setup-and-first-run.md) covers the guided setup, the Microsoft Entra application credentials, the first authorization and the privacy settings the monitored account needs.

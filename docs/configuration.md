@@ -26,7 +26,7 @@ Configuration files are read as data. Only documented `SETTING = value` lines wi
 By default the tool looks for `xbox_monitor.conf` in the current directory, then the home directory, then the directory holding the script. To use a different path:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --config-file /path/xbox_monitor_new.conf
+xbox_monitor <xbox_gamertag> --config-file /path/xbox_monitor_new.conf
 ```
 
 `--config-file none` switches automatic config discovery off for one run.
@@ -39,7 +39,7 @@ Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on 
 xbox_monitor
 ```
 
-`XBOX_STATUS_FILE` and the `--status-file` flag choose where the last seen status is kept, which otherwise defaults to `xbox_<gamer_tag>_last_status.json` in the current directory.
+`XBOX_STATUS_FILE` and the `--status-file` flag choose where the last seen status is kept, which otherwise defaults to `xbox_<xbox_gamertag>_last_status.json` in the current directory.
 
 ## Time Zone
 
@@ -132,7 +132,7 @@ Set it to `False` only on a network that intercepts TLS with its own certificate
 To change the polling intervals, use `-k` and `-c` or the matching settings:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> -k 30 -c 120
+xbox_monitor <xbox_gamertag> -k 30 -c 120
 ```
 
 * `XBOX_ACTIVE_CHECK_INTERVAL`, `-k`: check interval while the user is online or away, in seconds
@@ -196,13 +196,13 @@ NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 By default the tool looks for a file named `.env` in the current directory and then upward from it. Point it somewhere else with `DOTENV_FILE` or `--env-file`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --env-file /path/.env-xbox_monitor
+xbox_monitor <xbox_gamertag> --env-file /path/.env-xbox_monitor
 ```
 
 Switch the search off with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --env-file none
+xbox_monitor <xbox_gamertag> --env-file none
 ```
 
 A secret already exported in the environment wins over the same name in the dotenv file at startup, so a one-off value or one injected by systemd or a container is not silently shadowed. A `SIGHUP` reload is the exception: there the edited file is exactly what should take effect.

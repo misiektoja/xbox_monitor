@@ -5,7 +5,7 @@
 `--doctor` checks the whole setup and exits. It writes no files, so running it costs nothing:
 
 ```sh
-xbox_monitor --doctor <xbox_gamer_tag>
+xbox_monitor --doctor <xbox_gamertag>
 ```
 
 The report covers six sections:
@@ -60,7 +60,7 @@ While the same failure repeats, the fix paragraph is printed once and then suppr
 Two flags make the tool explain what it is doing. They are independent, so you can use either or both:
 
 ```sh
-xbox_monitor <xbox_gamer_tag> --verbose --debug
+xbox_monitor <xbox_gamertag> --verbose --debug
 ```
 
 * `VERBOSE_MODE`, `--verbose`: operational events, such as email alerts switched off because their settings are still placeholders, whether an email was actually delivered, when a run recovers from failures it reported and when a fallback such as the title history is unavailable. It prints nothing per check, so an uneventful run stays quiet. It also expands the startup summary, which is where the configuration file, dotenv file, token cache, time zone and the source of each secret are named
