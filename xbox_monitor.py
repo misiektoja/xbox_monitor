@@ -257,11 +257,11 @@ XBOX_STATUS_FILE = ""
 # Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
-# Base name for the log file. Output will be saved to xbox_monitor_<gamer_tag>.log
+# Base name for the log file. Output will be saved to xbox_monitor_<xbox_gamertag>.log
 # Can include a directory path to specify the location, e.g. ~/some_dir/xbox_monitor
 XBOX_LOGFILE = "xbox_monitor"
 
-# Whether to disable logging to xbox_monitor_<gamer_tag>.log
+# Whether to disable logging to xbox_monitor_<xbox_gamertag>.log
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
@@ -6406,7 +6406,7 @@ def main():
         dest="disable_logging",
         action="store_true",
         default=None,
-        help="Disable logging to xbox_monitor_<gamertag>.log"
+        help="Disable logging to xbox_monitor_<xbox_gamertag>.log"
     )
     opts.add_argument(
         "--no-color",
