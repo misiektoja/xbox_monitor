@@ -1,5 +1,7 @@
 """Tests that drive the setup wizard end to end and assert on what it writes and what it refuses to write."""
 
+import types
+
 import pytest
 
 import xbox_monitor as monitor
@@ -580,3 +582,44 @@ def test_every_question_group_opens_with_one_blank_line(monkeypatch, wizard_path
     assert "* Register an application at" not in transcript
     assert "\n\nConfigure email notifications?" in transcript
     assert "\n\nSet up webhook alerts (Discord, ntfy etc.)?" in transcript
+
+
+# Verifies the doctor setup runs reports the source a restart would report, not the fallback label
+def test_saved_secrets_are_credited_to_the_dotenv_file(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("MS_APP_CLIENT_ID=a-saved-client-id\n", encoding="utf-8")
+    monkeypatch.setattr(monitor, "SECRET_SOURCES", {})
+    monkeypatch.setattr(monitor, "MS_APP_CLIENT_ID", "")
+    state = types.SimpleNamespace(config_values={}, secret_updates={"MS_APP_CLIENT_ID": "a-saved-client-id"})
+
+    monitor._wizard_apply_saved_values(state, env_path=env_path)
+
+    assert monitor.SECRET_SOURCES["MS_APP_CLIENT_ID"] == "dotenv file"
+
+
+# Verifies an exported secret keeps its own source after setup, since the export still wins at the next start
+def test_an_exported_secret_is_not_credited_to_the_dotenv_file(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("MS_APP_CLIENT_ID=a-saved-client-id\n", encoding="utf-8")
+    monkeypatch.setenv("MS_APP_CLIENT_ID", "a-saved-client-id")
+    monkeypatch.setattr(monitor, "SECRET_SOURCES", {})
+    monkeypatch.setattr(monitor, "EXPORTED_SECRET_KEYS", frozenset({"MS_APP_CLIENT_ID"}))
+    state = types.SimpleNamespace(config_values={}, secret_updates={})
+
+    monitor._wizard_apply_saved_values(state, env_path=env_path)
+
+    assert monitor.SECRET_SOURCES["MS_APP_CLIENT_ID"] == "environment"
+
+
+# Verifies an Auto zone in the saved config is resolved before doctor reads it, as it is on a normal start
+def test_the_saved_timezone_is_resolved_before_doctor_reads_it(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE_STATE", "config")
+    monkeypatch.setattr(monitor, "get_localzone", lambda: "Europe/Warsaw")
+    state = types.SimpleNamespace(config_values={"LOCAL_TIMEZONE": "Auto"}, secret_updates={})
+
+    advice = monitor._wizard_apply_saved_values(state, env_path=None)
+
+    assert advice is None
+    assert monitor.LOCAL_TIMEZONE == "Europe/Warsaw"
+    assert monitor.TIMEZONE_CHECK_LABELS[monitor.LOCAL_TIMEZONE_STATE] == "Local timezone can be detected"
