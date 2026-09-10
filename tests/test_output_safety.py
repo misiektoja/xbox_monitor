@@ -83,7 +83,7 @@ def test_the_printed_technical_detail_is_redacted(monkeypatch, capsys):
 
 # The report is written to be shared, so a value must not reach it through a check label or detail either
 def test_a_doctor_row_is_redacted():
-    check = monitor.make_doctor_check("Authentication", "FAIL", f"Rejected {CLIENT_SECRET}", f"Sent {CLIENT_SECRET}")
+    check = monitor.make_doctor_check("Authentication", "FAIL", f"Rejected {CLIENT_SECRET}", f"Sent {CLIENT_SECRET}", monitor.make_recovery_advice("unknown", "a summary", "do the thing", False))
     assert CLIENT_SECRET not in check.label + check.detail
 
 

@@ -18,6 +18,11 @@ MARKERS = ("PASS", "WARN", "FAIL", "SKIP")
 
 MARKER_RE = re.compile(r"^\[([A-Z -]+)\]")
 
+
+# Builds the minimal advice a WARN or FAIL row is required to carry
+def actionable_advice():
+    return monitor.make_recovery_advice("unknown", "a summary", "do the thing", False)
+
 # Captured before the autouse fixture below replaces the name with an offline stub
 REAL_CONNECTIVITY_CHECK = monitor.doctor_check_connectivity
 
@@ -206,7 +211,7 @@ def test_an_unsupported_marker_is_refused():
 
 # A detail that repeats its own label reads as two separate problems
 def test_a_detail_that_repeats_the_label_is_dropped():
-    check = monitor.make_doctor_check("Environment", "FAIL", "Something broke", "Something broke")
+    check = monitor.make_doctor_check("Environment", "FAIL", "Something broke", "Something broke", actionable_advice())
     assert check.detail == ""
 
 
@@ -249,7 +254,7 @@ def test_the_report_ends_with_one_summary_sentence_and_the_guide(xbox_session, d
 ])
 # The summary sentence is what a user reads first, so each count has to say what it means
 def test_the_summary_says_what_the_counts_mean(failures, warnings, sentence):
-    checks = [monitor.make_doctor_check("Environment", "FAIL", "f")] * failures + [monitor.make_doctor_check("Environment", "WARN", "w")] * warnings
+    checks = [monitor.make_doctor_check("Environment", "FAIL", "f", "", actionable_advice())] * failures + [monitor.make_doctor_check("Environment", "WARN", "w", "", actionable_advice())] * warnings
     assert sentence in monitor.render_doctor_summary(checks)
 
 
@@ -851,9 +856,18 @@ def test_a_detail_that_repeats_its_label_is_dropped():
 
 
 # Verifies only the four shared markers can reach a report
+def test_an_actionable_row_is_rejected_without_a_fix():
+    for status in ("WARN", "FAIL"):
+        with pytest.raises(ValueError):
+            monitor.make_doctor_check("Configuration", status, "a label", "some detail")
+
+    assert monitor.make_doctor_check("Configuration", "SKIP", "a label").status == "SKIP"
+
+
+# Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted():
     assert monitor.DOCTOR_STATUSES == MARKERS
-    assert [monitor.make_doctor_check("Configuration", status, "a label").status for status in MARKERS] == list(MARKERS)
+    assert [monitor.make_doctor_check("Configuration", status, "a label", "", actionable_advice()).status for status in MARKERS] == list(MARKERS)
 
     with pytest.raises(ValueError):
         monitor.make_doctor_check("Configuration", "INFO", "a label")
