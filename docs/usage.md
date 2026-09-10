@@ -124,6 +124,8 @@ To be told when a user starts, stops or changes a game, set `GAME_CHANGE_NOTIFIC
 xbox_monitor <xbox_gamertag> -g
 ```
 
+Xbox reports its own dashboard surfaces the same way it reports a game, so Home, the Xbox app and guide, the Microsoft Store, Game Pass, Edge and Settings are ignored. Opening one of them does not start a game session, send a game notification or add to the played time in the offline summary.
+
 To be told about every status change, online, away or offline, set `STATUS_NOTIFICATION` to `True` or use `-s`:
 
 ```sh
