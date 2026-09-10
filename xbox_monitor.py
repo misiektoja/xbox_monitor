@@ -6310,8 +6310,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         if game_name_old and not game_name:
                             game_total_ts += (int(game_ts) - int(game_ts_old))
                             game_total_after_offline_counted = True
-                        m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
-                        print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
+                        games_word = "game" if games_number == 1 else "games"
+                        m_body_played_games = f"\n\nUser played {games_number} {games_word} for total time of {display_time(game_total_ts)}"
+                        print(f"User played {games_number} {games_word} for total time of {display_time(game_total_ts)}")
                     print(f"*** User got OFFLINE ! {online_since_msg}")
                     status_online_start_ts_old = status_online_start_ts
                     status_online_start_ts = 0
