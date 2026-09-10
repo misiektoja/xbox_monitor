@@ -432,6 +432,18 @@ def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypat
     assert monitor.tool_command("--setup", method="pip") == "xbox_monitor --setup"
 
 
+# Verifies the disabled config search reaches the commands that accept it and stays out of the ones that refuse it
+def test_a_disabled_config_search_is_carried_only_where_it_is_accepted(monkeypatch):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+
+    assert monitor.tool_command("--doctor", method="pip") == "xbox_monitor --doctor --config-file none"
+    assert monitor.tool_command("--set-ms-app-credentials", method="pip") == "xbox_monitor --set-ms-app-credentials --config-file none"
+    assert monitor.tool_command("--setup", method="pip") == "xbox_monitor --setup"
+    assert monitor.tool_command("--doctor", method="pip", include_paths=False) == "xbox_monitor --doctor"
+
+
 # Verifies a caller that already names a file is not given a second copy of it
 def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
