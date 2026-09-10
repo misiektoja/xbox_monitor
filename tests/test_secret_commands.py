@@ -302,3 +302,13 @@ def test_the_next_steps_carry_the_target_the_config_does_not_supply(tmp_path, ca
     assert with_target.count("someone") == 2
     assert "someone" not in already_saved
     assert "<xbox_gamertag>" not in already_saved
+
+
+# Verifies the replace question names the secret rather than its dotenv keys, the way the siblings word it
+def test_the_replace_question_names_the_secret_not_the_keys(secret_paths):
+    secret_paths["env"].write_text('MS_APP_CLIENT_ID="old-id"\nMS_APP_CLIENT_SECRET="old-secret"\n', encoding="utf-8")
+    prompts = []
+
+    monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, input_func=lambda prompt: prompts.append(prompt) or "y", getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
+
+    assert prompts == [f"Replace the saved Microsoft application credentials in '{secret_paths['env'].resolve()}'? [y/N]: "]

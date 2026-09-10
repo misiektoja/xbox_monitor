@@ -153,7 +153,7 @@ def test_the_report_is_printed_in_the_documented_order(xbox_session, doctor_run)
     xbox_session()
     _, raw = doctor_run(xbox_gamertag=GAMERTAG)
     notice = raw.index("Running preflight checks")
-    progress = raw.index("* Checking the environment ...")
+    progress = raw.index("* Checking environment ...")
     # The heading is written straight after the progress line is erased, so there is no newline before it
     heading = raw.index("Doctor\nDetected install method:")
     assert notice < progress < heading < raw.index("\nSummary\n")
@@ -482,7 +482,7 @@ def test_a_fresh_install_reports_email_as_disabled(monkeypatch):
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     checks = monitor.doctor_check_email_notifications(monitor.DoctorReport())
     assert [check.status for check in checks] == ["PASS"]
-    assert checks[0].label == "Email alerts are disabled"
+    assert checks[0].label == "Email notifications are disabled"
     assert checks[0].detail == "No SMTP connection was attempted and no email was sent"
 
 

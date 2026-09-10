@@ -860,7 +860,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
 # Reports whether a profile was even named and stays silent once authentication has already explained itself
 def doctor_check_target_identity(report, xbox_gamertag=None):
     if not xbox_gamertag:
-        advice = classify_recovery_error(context="target.missing", detail="No Xbox gamertag was given")
+        advice = classify_recovery_error(context="target.missing", detail="No Xbox gamertag was provided")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice=advice)]
     if not report.authenticated:
         # Authentication already failed and reported why. A second row would repeat one problem as two
@@ -960,7 +960,7 @@ def doctor_check_email_notifications(report):
     # An error alert is on by default, so on its own it cannot make a fresh install look configured
     deliberate = ACTIVE_INACTIVE_NOTIFICATION or GAME_CHANGE_NOTIFICATION or STATUS_NOTIFICATION
     if not deliberate and not (ERROR_NOTIFICATION and problem is None):
-        return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "No SMTP connection was attempted and no email was sent")]
+        return [make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent")]
     if problem is not None:
         return [doctor_email_unusable_check(*problem)]
     try:
@@ -1062,8 +1062,8 @@ def offer_doctor_delivery_tests(report):
 def build_doctor_report(xbox_gamertag=None, config_path=None, env_path=None, config_advice=None, timezone_advice=None, progress=None):
     report = DoctorReport()
     steps = (
-        ("the environment", lambda: doctor_check_environment()),
-        ("the configuration", lambda: doctor_check_configuration(config_path, env_path, config_advice, timezone_advice, xbox_gamertag)),
+        ("environment", lambda: doctor_check_environment()),
+        ("configuration", lambda: doctor_check_configuration(config_path, env_path, config_advice, timezone_advice, xbox_gamertag)),
         ("connectivity", lambda: doctor_check_connectivity()),
         ("authentication", lambda: asyncio.run(doctor_check_xbox_live(report, xbox_gamertag, progress))),
         ("notifications", lambda: doctor_check_email_notifications(report) + doctor_check_webhook_notifications(report)),
@@ -2790,7 +2790,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
     if not terminal_is_interactive:
         print("The setup wizard needs an interactive terminal (TTY).")
-        print(f"Run --setup from an interactive shell, or write a config to edit by hand with: {tool_command('--generate-config', DEFAULT_CONFIG_FILENAME, include_paths=False)}")
+        print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
@@ -3042,9 +3042,8 @@ def confirm_secret_replacement(destination, keys, subject, flag, guide_url, inpu
     if not present:
         return
     ask = input if input_func is None else input_func
-    already_set = f"{join_names(present)} is already set" if len(present) == 1 else f"{join_names(present)} are already set"
     try:
-        confirmed = str(read_interactively(ask, f"{already_set} in '{destination}'. Replace {'it' if len(present) == 1 else 'them'}? [y/N]: ")).strip().casefold() in ("y", "yes")
+        confirmed = str(read_interactively(ask, f"Replace the saved {subject} in '{destination}'? [y/N]: ")).strip().casefold() in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         print()
         raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
@@ -3331,7 +3330,7 @@ def apply_webhook_cli_overrides(args, parser):
         detected = detect_webhook_provider(WEBHOOK_URL)
         if detected and detected != normalized_webhook_provider():
             WEBHOOK_PROVIDER = detected
-            print(f"* Warning: the configured webhook provider does not match the destination URL, using {webhook_provider_display_name(detected)}\n")
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected)}.")
 
 
 # The categories that mean the saved credentials themselves stopped working, which no retry can repair
@@ -3613,7 +3612,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {tool_command('<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>')}", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "target.missing":
-        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was given", recovery_fix_with_guide(f"Pass the account to watch: {tool_command('<xbox_gamertag>')}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was provided", recovery_fix_with_guide(f"Pass the account to watch: {tool_command('<xbox_gamertag>')}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
 
     if context == "secret.entry":
         return make_recovery_advice("secret.entry", safe_detail or "The value was not entered, so nothing was written", recovery_fix_with_guide("Run the command again from an interactive terminal and enter the value when prompted", SECRETS_GUIDE_URL), False, safe_detail)

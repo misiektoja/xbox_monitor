@@ -366,7 +366,7 @@ def test_a_recognised_destination_corrects_the_configured_provider(tmp_path, mon
     config, env = write_startup_files(tmp_path, 'WEBHOOK_PROVIDER = "discord"\n')
     observed = run_startup(monkeypatch, [GAMERTAG, "--webhook-url", NTFY_URL, "--config-file", str(config), "--env-file", str(env)], observe=("WEBHOOK_PROVIDER",))
     assert observed["WEBHOOK_PROVIDER"] == "ntfy"
-    assert "does not match the destination URL, using ntfy" in capsys.readouterr().out
+    assert "Configured webhook provider did not match the URL. Using ntfy." in capsys.readouterr().out
 
 
 # Verifies a provider named on the command line is kept, since it was chosen deliberately for this run
