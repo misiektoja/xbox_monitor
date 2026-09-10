@@ -1005,9 +1005,13 @@ def ask_yes_no(question, default=False):
     while True:
         try:
             answer = read_interactively(input, f"{question} {hint}: ").strip().casefold()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
         if not answer:
             return default
         if answer in ("y", "yes"):
@@ -2958,12 +2962,13 @@ def print_secret_next_steps(env_path, config_path=None, xbox_gamertag=None, test
     if config_path:
         paths.extend(("--config-file", str(config_path)))
     paths.extend(("--env-file", str(env_path)))
-    target = xbox_gamertag or "<xbox_gamertag>"
+    # Only a target this run was given is printed, so the commands stay pasteable rather than carrying a placeholder
+    target_arguments = (xbox_gamertag,) if xbox_gamertag else ()
     print()
     if test_step:
         print_labelled_command(test_step[0], tool_command(test_step[1], *paths))
-    print_labelled_command("Check setup again:", tool_command("--doctor", target, *paths))
-    print_labelled_command("Once the checks pass, start monitoring:", tool_command(target, *paths))
+    print_labelled_command("Check setup again:", tool_command("--doctor", *target_arguments, *paths))
+    print_labelled_command("Once the checks pass, start monitoring:", tool_command(*target_arguments, *paths))
 
 
 # Reads one secret through a hidden prompt, keeping it out of the debug stream that would print it verbatim
