@@ -3248,7 +3248,8 @@ def confirm_secret_replacement(destination, keys, subject, flag, guide_url, inpu
         print()
         raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
     if not confirmed:
-        raise RecoveryError(secret_replacement_declined_advice(subject, flag, guide_url, len(present) > 1))
+        # The subject names every value the command replaces, so its plural cannot follow how many are saved today
+        raise RecoveryError(secret_replacement_declined_advice(subject, flag, guide_url, len(keys) > 1))
 
 
 # Collects one secret through a hidden prompt, checks it with the given validator and writes it only then

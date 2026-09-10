@@ -79,6 +79,16 @@ def test_existing_secrets_are_kept_unless_the_replacement_is_confirmed(secret_pa
     assert secret_paths["env"].read_text(encoding="utf-8") == 'MS_APP_CLIENT_ID="old-id"\n'
 
 
+# Verifies the decline message agrees with the subject rather than with how many of its values happen to be saved
+def test_a_declined_pair_reads_as_a_pair_even_with_one_value_saved(secret_paths):
+    secret_paths["env"].write_text('MS_APP_CLIENT_ID="old-id"\n', encoding="utf-8")
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, input_func=lambda prompt="": "n", getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
+
+    assert raised.value.advice.summary == "The saved Microsoft application credentials were left as they are and the dotenv file was not changed"
+
+
 # Verifies a confirmed replacement rewrites the assignment in place rather than appending a second one
 def test_a_confirmed_replacement_rewrites_the_assignment_in_place(secret_paths):
     secret_paths["env"].write_text('# comment\nexport MS_APP_CLIENT_ID="old-id"\nOTHER=keep\n', encoding="utf-8")
