@@ -215,22 +215,35 @@ def test_debug_reports_each_sleep_with_its_reason(xbox_loop, both_modes_on, caps
     assert "reason=the presence check failed" in output
 
 
-# Verifies recovering from a run of failures is reported, since nothing else marks the end of a streak
-def test_verbose_reports_recovery_after_a_reported_failure_streak(xbox_loop, verbose_only, capsys):
+# Verifies recovering from a run of failures is reported, since a throttled failure stops printing while it lasts
+def test_recovery_after_a_reported_failure_streak_is_reported(xbox_loop, capsys):
     xbox_loop([presence_payload(), httpx.ConnectError("first"), httpx.ConnectError("second"), httpx.ConnectError("third"), presence_payload(), presence_payload()])
 
     run_monitor()
 
-    assert "* Recovered after 3 failed checks in a row" in capsys.readouterr().out
+    assert f"* Monitoring recovered for {GAMERTAG} after " in capsys.readouterr().out
 
 
-# Verifies a reported single failure recovers with a singular check count rather than "1 failed checks"
-def test_a_single_reported_failure_recovers_in_the_singular(xbox_loop, verbose_only, capsys):
+# Verifies a single failure also reports its recovery, so a brief outage is not left open in the transcript
+def test_a_single_reported_failure_reports_its_recovery(xbox_loop, capsys):
     xbox_loop([presence_payload(), httpx.ConnectError("only one"), presence_payload(), presence_payload()])
 
     run_monitor()
 
-    assert "* Recovered after 1 failed check in a row" in capsys.readouterr().out
+    assert f"* Monitoring recovered for {GAMERTAG} after " in capsys.readouterr().out
+
+
+# Verifies a failure that keeps repeating is reported once and then carried by the liveness banner
+def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 2)
+    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(8)], presence_payload()])
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    assert output.count("To fix: ") == 1
+    assert f"* Monitoring degraded for {GAMERTAG}. " in output
+    assert output.count("Liveness check, timestamp:") == 3
 
 
 # Verifies a cycle with nothing rare to report prints no verbose line at all
@@ -240,7 +253,7 @@ def test_verbose_stays_quiet_through_an_uneventful_cycle(xbox_loop, verbose_only
     run_monitor()
 
     output = capsys.readouterr().out
-    assert "Recovered after" not in output
+    assert "Monitoring recovered for" not in output
     assert "[DEBUG " not in output
 
 
@@ -252,7 +265,6 @@ def test_neither_mode_prints_anything_when_both_are_off(xbox_loop, capsys):
 
     output = capsys.readouterr().out
     assert "[DEBUG " not in output
-    assert "Recovered after" not in output
     assert "Sleep:" not in output
 
 

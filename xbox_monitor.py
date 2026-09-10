@@ -3451,6 +3451,54 @@ def report_recovery_error(error=None, context="runtime", detail="", label="Error
     return advice
 
 
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+class OutageReporter:
+    # Starts with no failure recorded, so the first failure of any category is reported in full
+    def __init__(self):
+        self.code = None
+        self.since = 0
+        self.checks = 0
+
+    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
+    def failed(self, advice, liveness_counter):
+        if advice.code != self.code:
+            self.code = advice.code
+            self.since = int(time.time())
+            self.checks = 0
+            return "full"
+        self.checks += 1
+        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
+        if not liveness_counter:
+            return "repeat"
+        if self.checks >= liveness_counter:
+            self.checks = 0
+            return "degraded"
+        return ""
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    def recovered(self):
+        if not self.code:
+            return None
+        lasted = int(time.time()) - self.since
+        self.code = None
+        self.since = 0
+        self.checks = 0
+        return lasted
+
+
+# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target, advice, since):
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target, lasted):
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Suppresses a repeated fix paragraph until the failure category changes or a check succeeds
 class RecoveryHintTracker:
     # Starts with no category recorded, so the first failure is always reported in full
@@ -5774,6 +5822,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         recovery_hints = RecoveryHintTracker()
         # Every failed check prints its advice, so the end of a streak is worth one line closing it
         error_streak = 0
+        outage = OutageReporter()
 
         m_subject = m_body = ""
 
@@ -5859,9 +5908,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
+                outage_lasted = outage.recovered()
                 if error_streak:
                     debug_print("Recovered", streak=error_streak)
-                    verbose_notice(f"Recovered after {error_streak} failed {'check' if error_streak == 1 else 'checks'} in a row")
+                    if outage_lasted is not None:
+                        print_outage_recovery(xbox_gamertag, outage_lasted)
                 error_streak = 0
                 email_sent = False
                 webhook_sent = False
@@ -5877,12 +5928,18 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 # A failure that can clear on its own is worth an alert only once it clearly has not
                 alert_after = MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1
                 exhausted = advice.code == "resource.exhausted"
-                print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
+                # A failure that has not changed is left to the liveness cadence rather than repeated every check
+                outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+                if outage_outcome in ("full", "repeat"):
+                    print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
+                elif outage_outcome == "degraded":
+                    print_outage_liveness(xbox_gamertag, advice, outage.since)
                 if error_streak >= alert_after and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
                     email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
                     email_sent = email_sent or email_delivered
                     webhook_sent = webhook_sent or webhook_delivered
-                print_cur_ts("Timestamp:\t\t\t")
+                if outage_outcome in ("full", "repeat") or exhausted:
+                    print_cur_ts("Timestamp:\t\t\t")
                 # A local file descriptor limit cannot be retried away inside this process
                 if exhausted:
                     sys.exit(2)

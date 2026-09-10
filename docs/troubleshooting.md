@@ -53,7 +53,7 @@ Every reported problem carries a category, a one-line summary and a `To fix:` pa
 | The webhook service refused the delivery | The webhook was deleted or the saved URL is out of date. Create a new one and run `--set-webhook-url` |
 | The webhook service is rate limiting deliveries | Too many alerts for the destination. Enable fewer webhook alert types |
 
-While the same failure repeats, the fix paragraph is printed once and then suppressed until the category changes or a check succeeds, so the timestamps that show the tool is alive stay readable.
+During a long outage the failure is reported in full once, then the liveness banner takes over with `* Monitoring degraded for <xbox_gamertag>` and the summary of what is still failing, so a broken run keeps saying it is alive without repeating the same paragraph. When the failure clears, `* Monitoring recovered for <xbox_gamertag>` reports how long it lasted. Setting `LIVENESS_CHECK_INTERVAL` to 0 removes the banner that carries the reminder, so the one-line summary goes back to printing on every check.
 
 ## Verbose and Debug Output
 
@@ -63,7 +63,7 @@ Two flags make the tool explain what it is doing. They are independent, so you c
 xbox_monitor <xbox_gamertag> --verbose --debug
 ```
 
-* `VERBOSE_MODE`, `--verbose`: operational events, such as email alerts switched off because their settings are still placeholders, whether an email was actually delivered, when a run recovers from failures it reported and when a fallback such as the title history is unavailable. It prints nothing per check, so an uneventful run stays quiet. It also expands the startup summary, which is where the configuration file, dotenv file, token cache, time zone and the source of each secret are named
+* `VERBOSE_MODE`, `--verbose`: operational events, such as email alerts switched off because their settings are still placeholders, whether an email was actually delivered and when a fallback such as the title history is unavailable. It prints nothing per check, so an uneventful run stays quiet. It also expands the startup summary, which is where the configuration file, dotenv file, token cache, time zone and the source of each secret are named
 * `DEBUG_MODE`, `--debug`: technical diagnostics, such as every Xbox Live call, how many settings the configuration file supplied, the parsed presence and title history behind each activity decision, the classification and text of each failure, how long the tool will wait before the next check and why, every read and write of the status and CSV files and where each secret was resolved from
 
 A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
