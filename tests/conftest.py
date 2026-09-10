@@ -12,7 +12,7 @@ import xbox_monitor as monitor
 
 
 # Names startup assigns from the config file, the environment or the command line, restored after every test
-_STARTUP_GLOBALS = tuple(sorted(monitor._config_allowed_names())) + ("CLI_CONFIG_PATH", "EXPORTED_SECRET_KEYS", "LIVENESS_CHECK_COUNTER", "XBOX_AUTH_REFRESH_VERSION", "STDOUT_AT_START_OF_LINE", "MONITORING_ACTIVE")
+_STARTUP_GLOBALS = tuple(sorted(monitor._config_allowed_names())) + ("CLI_CONFIG_PATH", "EXPORTED_SECRET_KEYS", "LIVENESS_REMINDER_SECONDS", "XBOX_AUTH_REFRESH_VERSION", "STDOUT_AT_START_OF_LINE", "MONITORING_ACTIVE")
 
 
 @pytest.fixture(autouse=True)

@@ -448,7 +448,6 @@ TIMEZONE_CHECK_LABELS = {"config": "Local timezone is valid", "auto": "Local tim
 # Version incremented when SIGHUP reloads Xbox application credentials
 XBOX_AUTH_REFRESH_VERSION = 0
 
-LIVENESS_CHECK_COUNTER = 0
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
 LIVENESS_REMINDER_SECONDS = 0
 
@@ -5620,19 +5619,18 @@ def validate_connectivity_timer():
 
 # Validates finalized monitor timer values and refreshes the liveness counter
 def validate_monitor_timers():
-    global LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, XBOX_CHECK_INTERVAL
+    global LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, XBOX_CHECK_INTERVAL
     XBOX_CHECK_INTERVAL = normalize_timer_setting("XBOX_CHECK_INTERVAL", XBOX_CHECK_INTERVAL)
     XBOX_ACTIVE_CHECK_INTERVAL = normalize_timer_setting("XBOX_ACTIVE_CHECK_INTERVAL", XBOX_ACTIVE_CHECK_INTERVAL)
     LIVENESS_CHECK_INTERVAL = normalize_timer_setting("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, allow_zero=True)
     # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
-    LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // XBOX_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL > 0 else 0
-    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 
 
 # Main function that monitors activity of the specified Xbox user
 async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, games_count=10):
 
-    alive_counter = 0
+    alive_since = int(time.time())
     status_ts = 0
     status_ts_old = 0
     status_online_start_ts = 0
@@ -5825,7 +5823,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         print_cur_ts("\nTimestamp:\t\t\t")
 
-        alive_counter = 0
+        alive_since = int(time.time())
         email_sent = False
         webhook_sent = False
         # A poll that keeps failing for the same reason repeats the fix paragraph on every cycle without it
@@ -5923,6 +5921,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     debug_print("Recovered", streak=error_streak)
                     if outage_lasted is not None:
                         print_outage_recovery(xbox_gamertag, outage_lasted)
+                        alive_since = int(time.time())
                 error_streak = 0
                 email_sent = False
                 webhook_sent = False
@@ -6110,7 +6109,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 change = True
 
             if change:
-                alive_counter = 0
+                alive_since = int(time.time())
 
                 try:
                     if csv_file_name:
@@ -6121,11 +6120,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             status_old = status
             game_name_old = game_name
 
-            alive_counter += 1
 
-            if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+            if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
                 print_liveness_banner(f"Monitoring healthy for {xbox_gamertag}. The user is {status or 'unknown'} with no activity change since the last check")
-                alive_counter = 0
+                alive_since = int(time.time())
 
             if status and status != "offline":
                 debug_print("Sleep", seconds=XBOX_ACTIVE_CHECK_INTERVAL, reason="the user is online")
@@ -6136,7 +6134,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"

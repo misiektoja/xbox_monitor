@@ -241,7 +241,6 @@ def test_a_single_reported_failure_reports_its_recovery(xbox_loop, capsys):
 
 # Verifies a failure that keeps repeating is reported once and then carried by the liveness banner
 def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, capsys):
-    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 2)
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
     xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(8)], presence_payload()])
 
@@ -267,6 +266,16 @@ def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
         outcomes.append(reporter.failed(advice, 900))
 
     assert outcomes.count("degraded") == 1
+
+
+# Verifies the banner follows the clock rather than the number of checks behind it
+def test_the_liveness_banner_follows_the_clock_not_the_check_count(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 3 * monitor.XBOX_CHECK_INTERVAL)
+    xbox_loop([presence_payload() for _ in range(5)])
+
+    run_monitor()
+
+    assert capsys.readouterr().out.count("Monitoring healthy for") == 1
 
 
 # Verifies a cycle with nothing rare to report prints no verbose line at all
@@ -445,7 +454,7 @@ def test_a_reported_failure_uses_the_shared_line_shape(xbox_loop, capsys):
 
 # Verifies the liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
 def test_the_liveness_banner_explains_itself_without_diagnostics(xbox_loop, monkeypatch, capsys):
-    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 1)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", monitor.XBOX_CHECK_INTERVAL)
     xbox_loop([presence_payload(), presence_payload(), presence_payload()])
 
     run_monitor()
