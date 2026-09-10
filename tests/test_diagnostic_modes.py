@@ -6,6 +6,7 @@ printers directly, so a path that was never instrumented fails the test instead 
 
 import asyncio
 import contextlib
+import time
 import re
 from types import SimpleNamespace
 
@@ -79,8 +80,11 @@ def monitor_calls(monkeypatch):
 @pytest.fixture
 # Signs the loop in without a network call and replays the scripted presence responses to it
 def xbox_loop(monkeypatch):
+    clock = [float(int(time.time()))]
+
     def install(responses):
         remaining = list(responses)
+        monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
         monkeypatch.setattr(monitor, "MS_APP_CLIENT_ID", "client-id-value")
         monkeypatch.setattr(monitor, "MS_APP_CLIENT_SECRET", "client-secret-value")
 
@@ -97,6 +101,8 @@ def xbox_loop(monkeypatch):
             return answer
 
         async def no_sleep(seconds):
+            # Advance the fake clock, so the timed liveness reminder is deterministic
+            clock[0] += seconds
             if not remaining:
                 raise LoopFinished
 
@@ -236,6 +242,7 @@ def test_a_single_reported_failure_reports_its_recovery(xbox_loop, capsys):
 # Verifies a failure that keeps repeating is reported once and then carried by the liveness banner
 def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 2)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
     xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(8)], presence_payload()])
 
     run_monitor()
@@ -244,6 +251,22 @@ def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, cap
     assert output.count("To fix: ") == 1
     assert f"* Monitoring degraded for {GAMERTAG}. " in output
     assert output.count("Liveness check, timestamp:") == 3
+
+
+# Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often
+def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    reporter = monitor.OutageReporter()
+    advice = monitor.classify_recovery_error(httpx.ConnectError("down"), context="monitor")
+
+    assert reporter.failed(advice, 900) == "full"
+    outcomes = []
+    for _ in range(60):
+        clock[0] += 15
+        outcomes.append(reporter.failed(advice, 900))
+
+    assert outcomes.count("degraded") == 1
 
 
 # Verifies a cycle with nothing rare to report prints no verbose line at all

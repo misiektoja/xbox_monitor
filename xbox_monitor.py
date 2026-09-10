@@ -449,6 +449,8 @@ TIMEZONE_CHECK_LABELS = {"config": "Local timezone is valid", "auto": "Local tim
 XBOX_AUTH_REFRESH_VERSION = 0
 
 LIVENESS_CHECK_COUNTER = 0
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name']
@@ -3457,22 +3459,23 @@ class OutageReporter:
     def __init__(self):
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
 
-    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
     # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice, liveness_counter):
+    def failed(self, advice, liveness_interval):
+        now = int(time.time())
         if advice.code != self.code:
             self.code = advice.code
-            self.since = int(time.time())
-            self.checks = 0
+            self.since = now
+            self.reported_at = now
             return "full"
-        self.checks += 1
         # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_counter:
+        if not liveness_interval:
             return "repeat"
-        if self.checks >= liveness_counter:
-            self.checks = 0
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= liveness_interval:
+            self.reported_at = now
             return "degraded"
         return ""
 
@@ -3483,7 +3486,7 @@ class OutageReporter:
         lasted = int(time.time()) - self.since
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
         return lasted
 
 
@@ -5617,12 +5620,13 @@ def validate_connectivity_timer():
 
 # Validates finalized monitor timer values and refreshes the liveness counter
 def validate_monitor_timers():
-    global LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, XBOX_CHECK_INTERVAL
+    global LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, XBOX_CHECK_INTERVAL
     XBOX_CHECK_INTERVAL = normalize_timer_setting("XBOX_CHECK_INTERVAL", XBOX_CHECK_INTERVAL)
     XBOX_ACTIVE_CHECK_INTERVAL = normalize_timer_setting("XBOX_ACTIVE_CHECK_INTERVAL", XBOX_ACTIVE_CHECK_INTERVAL)
     LIVENESS_CHECK_INTERVAL = normalize_timer_setting("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, allow_zero=True)
     # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
     LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // XBOX_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL > 0 else 0
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
 
 
 # Main function that monitors activity of the specified Xbox user
@@ -5935,7 +5939,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 alert_after = MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1
                 exhausted = advice.code == "resource.exhausted"
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
-                outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+                outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
                 if outage_outcome in ("full", "repeat"):
                     print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
                 elif outage_outcome == "degraded":
@@ -6132,7 +6136,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
 
 def main():
-    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
+    global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
