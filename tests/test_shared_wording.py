@@ -126,6 +126,7 @@ SHARED_WORDING = (
     'Write the normal per-target log file?',
     'mail server settings',
     'use --verbose or --debug',
+    'with no activity change since the last check',
     '{} --send-test-email',
     '{} check(s) failed, {} warning(s). Fix the failures above before relying on the tool.',
 )

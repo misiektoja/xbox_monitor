@@ -5567,7 +5567,8 @@ def validate_monitor_timers():
     XBOX_CHECK_INTERVAL = normalize_timer_setting("XBOX_CHECK_INTERVAL", XBOX_CHECK_INTERVAL)
     XBOX_ACTIVE_CHECK_INTERVAL = normalize_timer_setting("XBOX_ACTIVE_CHECK_INTERVAL", XBOX_ACTIVE_CHECK_INTERVAL)
     LIVENESS_CHECK_INTERVAL = normalize_timer_setting("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, allow_zero=True)
-    LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / XBOX_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+    # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
+    LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // XBOX_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL > 0 else 0
 
 
 # Main function that monitors activity of the specified Xbox user
@@ -6055,8 +6056,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
             alive_counter += 1
 
-            if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and (status == "offline" or not status):
-                verbose_print(f"Monitoring healthy for {xbox_gamertag}. The user is still offline with no activity change")
+            if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+                verbose_print(f"Monitoring healthy for {xbox_gamertag}. The user is {status or 'unknown'} with no activity change since the last check")
                 print_cur_ts("Liveness check, timestamp:\t")
                 alive_counter = 0
 
