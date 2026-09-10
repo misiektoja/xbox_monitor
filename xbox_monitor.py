@@ -923,7 +923,7 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
 
 
 # Reports the first unusable email setting as a doctor detail and an action that names the same settings
-def email_settings_problem():
+def mail_sign_in_settings_problem():
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -943,9 +943,19 @@ def email_settings_problem():
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
         return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
 
-    if not secret_is_set(SMTP_USER) or not secret_is_set(SMTP_PASSWORD):
-        return ("SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder", "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off")
+    if not secret_is_set(SMTP_USER):
+        return ("SMTP_USER is empty or still set to its placeholder", "Set SMTP_USER or turn the email alerts off")
 
+    return None
+
+
+# Reports the first unusable email setting, including the password a delivery needs but a sign-in supplies
+def email_settings_problem():
+    problem = mail_sign_in_settings_problem()
+    if problem is not None:
+        return problem
+    if not secret_is_set(SMTP_PASSWORD):
+        return ("SMTP_PASSWORD is empty or still set to its placeholder", f"Set SMTP_PASSWORD with {tool_command('--set-smtp-password')} or turn the email alerts off")
     return None
 
 
@@ -1358,6 +1368,15 @@ DEFAULT_COLOR_THEME = {
     "link": "blue underline",
 }
 
+# Whole-line styles, listed so the palette test can prove no value colour disappears inside one of them.
+# Warnings and signals are not on this list: both are yellow, which is the colour of the words reporting an
+# activity change, so they mark their own opening words instead of painting the line
+BLOCK_STYLE_PARTS = ("error", "info", "email", "webhook")
+
+# Parts that carry a name supplied by Xbox or by the user, or that report a change, which a block style
+# must never hide
+NAME_STYLE_PARTS = ("username", "id", "game", "platform", "achievement", "status_change", "link")
+
 # COLOR_THEME key names used by older releases. This tool shipped the current names, so there is nothing to alias yet
 _THEME_KEY_ALIASES: dict = {}
 
@@ -1452,6 +1471,10 @@ _OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE)\b")
 _GAME_STARTED_RE = re.compile(r"\bstarted playing\b")
 _GAME_STOPPED_RE = re.compile(r"\bstopped playing\b")
 _STATUS_CHANGE_RE = re.compile(r"\b(?:changed status|changed game)\b")
+
+# The opening word of a warning and the name of a reported signal, marked instead of painting the line
+_WARNING_LABEL_RE = re.compile(r"^\s*\*+\s*(Warning:|Caution:)")
+_SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received$)")
 
 
 # Builds an ANSI escape sequence from a style description string
@@ -1667,20 +1690,18 @@ def _colorize_line(line):
     line = _sub_outside_color(_GAME_STOPPED_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
     line = _sub_outside_color(_STATUS_CHANGE_RE, lambda mo: colorize("status_change", mo.group(0)), line)
 
+    # Mark the opening word of a warning and the name of a reported signal, rather than painting the whole line
+    line = _sub_outside_color(_WARNING_LABEL_RE, lambda mo: mo.group(0)[:mo.start(1) - mo.start(0)] + colorize("warning", mo.group(1)), line)
+    line = _sub_outside_color(_SIGNAL_NAME_RE, lambda mo: colorize("signal", mo.group(0)), line)
+
     # Block highlighting, applied last so the colours added above survive through the nesting logic
     is_debug_line = bool(_DEBUG_LINE_RE.match(lowered))
     is_error = not is_debug_line and (bool(_ERROR_KEYWORD_RE.search(lowered)) or "critical:" in lowered or "* error" in lowered)
-    is_warning = any(word in lowered for word in ("* warning:", "caution:"))
-    is_signal = "* signal" in lowered and "received" in lowered
 
     if lowered.startswith("to fix:"):
         line = _apply_style_nested(line, "info")
     elif is_error:
         line = _apply_style_nested(line, "error")
-    elif is_warning:
-        line = _apply_style_nested(line, "warning")
-    elif is_signal:
-        line = _apply_style_nested(line, "signal")
     elif "sending email" in lowered:
         line = _apply_style_nested(line, "email")
     elif "sending webhook" in lowered:
@@ -2645,8 +2666,10 @@ def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
             if validate_webhook_url(webhook_url):
                 state.secret_updates["WEBHOOK_URL"] = webhook_url
                 break
-            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
-            if not webhook_url:
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt.
+            # The branch is chosen by what was typed rather than by the normalized value, since a rejected ntfy
+            # topic normalizes to an empty string and would otherwise be reported as nothing entered
+            if not str(entered).strip():
                 if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set", input_func=input_func):
                     _wizard_disable_webhook(state)
                     return
@@ -3338,6 +3361,10 @@ def run_set_webhook_url(env_file=None, config_path=None, xbox_gamertag=None, int
 
 # Stores one SMTP password in the dotenv file after the mail server has actually accepted it
 def run_set_smtp_password(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    settings_problem = mail_sign_in_settings_problem()
+    if settings_problem is not None:
+        raise RecoveryError(make_recovery_advice("smtp.invalid", f"The mail server settings are incomplete: {settings_problem[0]}", recovery_fix_with_guide(f"Correct it in the config file or run {tool_command('--setup')}, then run: {tool_command('--set-smtp-password')}", SMTP_GUIDE_URL), False))
     return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", "SMTP password", SMTP_GUIDE_URL, f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
 
 
