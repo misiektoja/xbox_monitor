@@ -31,6 +31,21 @@ def test_the_argument_groups_use_the_shared_names_in_order(monkeypatch, capsys):
     assert positions == sorted(positions), "the argument groups are not in the shared order"
 
 
+# Verifies the examples open with the wizard, the one command a first-time reader can run knowing nothing
+def test_the_wizard_is_the_first_example(monkeypatch, capsys):
+    block = help_output(monkeypatch, capsys).split("Examples:", 1)[1]
+    first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
+
+    assert first == ["# Guided setup, recommended for the first run", "xbox_monitor --setup"]
+
+
+# Verifies the one-line description carries the repository link in the form the sibling monitors print
+def test_the_description_links_the_repository(monkeypatch, capsys):
+    header = help_output(monkeypatch, capsys).split("positional arguments:", 1)[0]
+
+    assert "[ https://github.com/misiektoja/xbox_monitor/ ]" in header
+
+
 # Verifies the commands that write a secret are listed with the files they write
 def test_the_one_shot_commands_are_listed_with_the_files_they_write(monkeypatch, capsys):
     out = help_output(monkeypatch, capsys)
