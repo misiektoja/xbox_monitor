@@ -910,6 +910,22 @@ def test_a_failed_delivery_test_reaches_the_summary(monkeypatch):
     assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
 
 
+# Verifies a failed delivery test fails the whole run, so the exit code and the last sentence agree
+def test_a_failed_delivery_test_changes_the_exit_code(xbox_session, doctor_run, monkeypatch, smtp_sign_in_ok):
+    xbox_session()
+    enable_email(monkeypatch)
+    monkeypatch.setattr(monitor, "read_interactively", lambda prompt_fn, prompt: "y")
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
+
+    code, raw = doctor_run(xbox_gamertag=GAMERTAG)
+
+    displayed = as_displayed(raw)
+    assert code == 1
+    assert "[FAIL] Doctor test email delivery failed" in displayed
+    assert "1 check(s) failed" in displayed
+    assert "All checks passed" not in displayed
+
+
 # Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
 def test_the_summary_is_rendered_after_the_delivery_tests():
     import ast
