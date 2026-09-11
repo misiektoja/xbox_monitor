@@ -75,6 +75,7 @@ and again before anything is published to PyPI.
 | `test_terminal_transcripts.py` | Real pty runs: what a terminal actually receives, with and without `--no-color` |
 | `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
 | `test_webhook_notifications.py` | Webhook delivery: the destination, the request each provider gets, the bounded retry and the loop's call sites |
+| `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
 
 ## Conventions
 
