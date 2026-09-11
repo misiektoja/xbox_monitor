@@ -196,6 +196,23 @@ def test_a_cleared_secret_is_removed_from_the_file(secret_paths):
     assert "OTHER=keep" in written
 
 
+# Verifies a saved value written across several lines is replaced whole, since replacing only its first
+# line left the rest of the old secret behind and the next run could not parse what it wrote
+def test_a_multiline_secret_is_replaced_whole(secret_paths):
+    secret_paths["env"].write_text('SMTP_PASSWORD="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+    monitor.update_dotenv_file(secret_paths["env"], {"SMTP_PASSWORD": "replacement"})
+
+    assert secret_paths["env"].read_text(encoding="utf-8") == 'SMTP_PASSWORD="replacement"\nOTHER=keep\n'
+
+
+# Verifies clearing such a value removes all of it, for the same reason
+def test_a_cleared_multiline_secret_leaves_nothing_behind(secret_paths):
+    secret_paths["env"].write_text('SMTP_PASSWORD="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+    monitor.update_dotenv_file(secret_paths["env"], {"SMTP_PASSWORD": ""})
+
+    assert secret_paths["env"].read_text(encoding="utf-8") == "OTHER=keep\n"
+
+
 # Verifies a value containing quotes and backslashes survives one write and read cycle unchanged
 def test_a_quoted_value_survives_the_round_trip(secret_paths, monkeypatch):
     tricky = 'a"b\\c'
