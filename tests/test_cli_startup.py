@@ -292,6 +292,22 @@ def test_generate_config_does_not_swallow_a_secret_command(tmp_path, monkeypatch
     assert len(calls) == 1
 
 
+# Verifies --setup is not warned that the dotenv file is missing, since the path it was given is where the
+# wizard is about to write the secrets
+def test_setup_is_not_warned_that_the_dotenv_file_it_writes_is_missing(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("dotenv")
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **kwargs: 0)
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", "--setup", "--config-file", str(tmp_path / "absent.conf"), "--env-file", str(tmp_path / "absent.env")])
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    assert raised.value.code == 0
+    assert "does not exist" not in capsys.readouterr().out
+
+
 # Verifies --setup may name a config file that does not exist yet, since creating it is the point
 def test_setup_may_name_a_config_file_that_does_not_exist_yet(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "run_setup_wizard", lambda **kwargs: 0)
