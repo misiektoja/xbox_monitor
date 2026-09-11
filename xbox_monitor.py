@@ -3804,7 +3804,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return error.advice
 
     safe_detail = sanitize_error_text(detail or error or "")
-    message = str(detail or error or "").lower()
+    # Both are matched, since a caller that adds context would otherwise hide the error text the rules read
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).lower()
     monitoring = context == "monitor"
     status = http_status_from(error)
 

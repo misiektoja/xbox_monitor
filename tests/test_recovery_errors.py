@@ -300,3 +300,12 @@ def test_the_loop_exits_on_a_limit_it_cannot_retry_away():
 
     assert "exhausted" in guards
     assert monitor.classify_recovery_error(OSError(24, "Too many open files"), context="monitor").code == "resource.exhausted"
+
+
+# Verifies added context does not replace the error text the rules read, which used to make every such failure unknown
+@pytest.mark.parametrize("message, expected", [("429 rate limit exceeded", "xbox.rate_limited"), ("Connection timed out", "network.timeout")])
+def test_a_caller_supplied_detail_does_not_hide_the_error(message, expected):
+    advice = monitor.classify_recovery_error(Exception(message), detail="Cannot read the Xbox profile")
+
+    assert advice.code == expected
+    assert "Cannot read the Xbox profile" in advice.detail
