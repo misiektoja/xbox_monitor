@@ -55,9 +55,9 @@ def test_the_surrounding_message_survives_redaction():
 
 
 # Which secret is loaded is answered by its name and source, so not even a prefix of a live key is shown
-@pytest.mark.parametrize("value, shown", [(CLIENT_SECRET, "<redacted>"), ("", "(not set)"), ("your_client_secret", "(not set)")])
+@pytest.mark.parametrize("value, shown", [(CLIENT_SECRET, "set"), ("", "not set"), ("your_client_secret", "not set")])
 def test_a_secret_is_reported_as_presence_only(value, shown):
-    assert monitor.mask_secret(value) == shown
+    assert monitor.secret_fingerprint(value) == shown
 
 
 # Debug output is the most likely thing to be pasted in public, so it is redacted at the printer

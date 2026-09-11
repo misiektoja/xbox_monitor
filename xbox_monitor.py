@@ -3624,15 +3624,6 @@ def sanitize_error_text(value):
     return text
 
 
-# Returns a placeholder reporting only whether a secret is set, never any part of its value
-def mask_secret(value):
-    # Diagnostic output is meant to be pasted into public bug reports, so not even a prefix of a live key may
-    # appear. Which secret is loaded is answered by its name and source instead, which SECRET_SOURCES reports
-    if not secret_is_set(value):
-        return "(not set)"
-    return "<redacted>"
-
-
 # Builds one piece of advice, rejecting any code outside the taxonomy and redacting every field
 def make_recovery_advice(code, summary, fix, retryable, detail=""):
     if code not in RECOVERY_CODES:
@@ -5860,18 +5851,6 @@ def load_config_file(config_path, namespace=None, report_errors=True, advice_out
     if report_errors:
         print_recovery_advice(advice)
     return False
-
-
-# Resolves an executable path by checking if it's a valid file or searching in $PATH
-def resolve_executable(path):
-    if os.path.isfile(path) and os.access(path, os.X_OK):
-        return path
-
-    found = shutil.which(path)
-    if found:
-        return found
-
-    raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
 # Parses a command-line interval value as a positive integer

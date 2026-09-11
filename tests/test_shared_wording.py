@@ -55,7 +55,6 @@ SHARED_WORDING = (
     'Configure email notifications?',
     'Continue without the {}? {}',
     "Could not create a unique backup for '",
-    "Could not find executable '{}'",
     "Could not initialize CSV file '{}': {}",
     'Detected install method: {}',
     'Disable coloured output in the terminal',
