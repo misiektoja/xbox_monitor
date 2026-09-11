@@ -42,18 +42,29 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-- **Real-time tracking** of Xbox Live users' gaming activity, including when a user gets online or offline and which games they play
-- **Basic statistics for user activity**: duration in different states, time spent playing a game, overall time and number of games played in a session
-- **Detailed user information** display mode covering XUID, online status, platform, account tier, gamerscore, friends, recently played games and recently earned achievements
-- **Activity detection for appear-offline users**, using title history to report gaming activity even when the monitored profile is set to Appear Offline
-- **Email notifications** for various events, configurable per event
-- **Webhook notifications** to a Discord channel or an ntfy topic, switched on and configured separately from email
-- **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
-- **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
-- **CSV export** of every reported activity, with **status persistence** across restarts
-- **Coloured terminal output** with a configurable theme, switched off automatically when the output is redirected
-- **Built-in OAuth2 authentication** with manual authorization support
-- **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
+### Activity Tracking
+
+* **Gaming activity**: Track status, game starts, finishes and changes.
+* **Appear Offline**: Detect gaming activity from title history when presence is hidden.
+* **Session statistics**: Measure state and game durations, preserving statistics through short offline interruptions.
+
+### Profile Insights
+
+* **Profile details**: View XUID, status, platform, account tier, gamerscore and friends.
+* **Games and achievements**: See recent games, playtime and earned achievements.
+
+### Notifications and History
+
+* **Event alerts**: Configure email, Discord and ntfy notifications independently.
+* **CSV history**: Save reported activity with timestamps.
+* **Saved status**: Retain monitoring state across restarts.
+
+### Setup and Configuration
+
+* **Guided setup**: Configure credentials and complete OAuth2 authorization with `--setup`.
+* **Preflight checks**: Check readiness with `--doctor` without writing files.
+* **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
+* **Terminal and runtime controls**: Customize colours and adjust the running monitor through supported signals.
 
 <a id="common-commands"></a>
 ## Common Commands

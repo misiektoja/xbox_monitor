@@ -26,21 +26,29 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-- **Real-time tracking** of Xbox Live users' gaming activity, including when a user gets online or offline and which games they play
-- **Basic statistics for user activity**: duration in different states, time spent playing a game, overall time and number of games played in a session
-- **Detailed user information** display mode covering XUID, online status and last online date, platform, account tier, gamerscore, real name, location, friends count and optionally the friends list, recently played games with last played date and total play time, plus recently earned achievements
-- **Activity detection for appear-offline users**, using title history to report gaming activity even when the monitored profile is set to Appear Offline
-- **Email notifications** for various events: the user gets online, away or offline, starts, finishes or changes a game, plus monitoring errors
-- **Webhook notifications** to a Discord channel or an ntfy topic, with the same events switched on separately from email
-- **Guided setup** with `--setup`, which collects the credentials, runs the one-time authorization and writes the config and dotenv files
-- **Preflight diagnostics** with `--doctor`, which checks the whole setup without writing anything
-- **CSV export** of every reported activity, with **status persistence** across restarts
-- **Coloured terminal output** with a configurable theme, switched off automatically when the output is redirected
-- **Built-in OAuth2 authentication** with manual authorization support
-- **Smart session continuity**: short offline interruptions are handled and session statistics are preserved
-- **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
-- **Control of the running copy** through signals
-- **Functional, procedural Python** with minimal OOP
+### Activity Tracking
+
+* **Gaming activity**: Track status, game starts, finishes and changes.
+* **Appear Offline**: Detect gaming activity from title history when presence is hidden.
+* **Session statistics**: Measure state and game durations, preserving statistics through short offline interruptions.
+
+### Profile Insights
+
+* **Profile details**: View XUID, status, platform, account tier, gamerscore and friends.
+* **Games and achievements**: See recent games, playtime and earned achievements.
+
+### Notifications and History
+
+* **Event alerts**: Configure email, Discord and ntfy notifications independently.
+* **CSV history**: Save reported activity with timestamps.
+* **Saved status**: Retain monitoring state across restarts.
+
+### Setup and Configuration
+
+* **Guided setup**: Configure credentials and complete OAuth2 authorization with `--setup`.
+* **Preflight checks**: Check readiness with `--doctor` without writing files.
+* **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
+* **Terminal and runtime controls**: Customize colours and adjust the running monitor through supported signals.
 
 ## Screenshots
 
