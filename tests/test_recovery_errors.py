@@ -66,6 +66,7 @@ CLASSIFIER_EXEMPTIONS = {
     "Cannot clear the screen contents": "a cosmetic notice with nothing for the operator to recover from",
     "Token refresh attempt": "reports a retry in progress, with the classified advice printed if every attempt fails",
     "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
+    "Monitoring failure changed for": "a one-line note on a classified outage that already had its full report",
 }
 
 # Words that mark a printed line as a report of something going wrong

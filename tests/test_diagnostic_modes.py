@@ -254,19 +254,24 @@ def test_a_single_reported_failure_reports_its_recovery(xbox_loop, capsys):
     assert f"* Monitoring recovered for {GAMERTAG} after " in capsys.readouterr().out
 
 
-# Verifies a failure that keeps repeating is reported once and then carried by the liveness banner
-def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, capsys):
+# Verifies a failure that keeps repeating is reported once and then carried by the hourly reminder with a count,
+# on a clock of its own, so the liveness banner being off does not silence it or bring back a block per check
+def test_a_lasting_outage_is_carried_by_the_hourly_reminder(xbox_loop, monkeypatch, capsys):
     # The screen cadence is the subject, so the alert that a lasting outage also earns is switched off
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
-    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 0)
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
     xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(8)], presence_payload()])
 
     run_monitor()
 
     output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
     assert output.count("To fix: ") == 1
-    assert f"* Monitoring degraded for {GAMERTAG}. " in output
+    assert output.count(f"* Monitoring degraded for {GAMERTAG}. Xbox Live could not be reached since ") == 3
+    assert ", 3 failed checks\n" in output and ", 7 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 3
+    assert "Monitoring healthy" not in output
 
 
 # Verifies an alert that lands on a check the outage reporter keeps quiet still ends with a timestamp
@@ -321,13 +326,14 @@ def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(httpx.ConnectError("down"), context="monitor")
 
-    assert reporter.failed(advice, 900) == "full"
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 900)
+    assert reporter.failed(advice) == "full"
     outcomes = []
     for _ in range(60):
         clock[0] += 15
-        outcomes.append(reporter.failed(advice, 900))
+        outcomes.append(reporter.failed(advice))
 
-    assert outcomes.count("degraded") == 1
+    assert outcomes.count("reminder") == 1
 
 
 # Verifies a category change mid-outage keeps the outage start, so the alert delay and the reminder still elapse
@@ -339,10 +345,10 @@ def test_an_outage_that_changes_category_keeps_its_start(monkeypatch):
     second = monitor.classify_recovery_error(OSError(24, "Too many open files"), context="monitor")
     assert first.code != second.code
 
-    assert reporter.failed(first, 900) == "full"
+    assert reporter.failed(first) == "full"
     for index in range(60):
         clock[0] += 15
-        reporter.failed(second if index % 2 else first, 900)
+        reporter.failed(second if index % 2 else first)
 
     assert reporter.since == 1000000
     assert reporter.recovered() == 900
@@ -591,3 +597,63 @@ def test_a_placeholder_earns_no_source(monkeypatch):
     assert monitor.SECRET_SOURCES == {}
     with pytest.raises(ValueError, match="Unsupported secret source"):
         monitor.record_secret_source("MS_APP_CLIENT_ID", "a layer that does not exist", "a real value")
+
+
+# Builds the server-side error httpx raises for one rejected status
+def server_error(status):
+    request = httpx.Request("GET", "https://userpresence.xboxlive.com/users")
+    return httpx.HTTPStatusError(str(status), request=request, response=httpx.Response(status, request=request))
+
+
+# Verifies an internet outage that classifies as a timeout on one check and as unreachable on the next is one
+# outage, so it is reported once rather than on every change
+def test_an_internet_outage_that_flaps_is_one_outage(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    flapping = [httpx.ConnectError("down") if index % 2 else httpx.ReadTimeout("slow") for index in range(10)]
+    xbox_loop([presence_payload(), *flapping, presence_payload()])
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
+    assert output.count("To fix: ") == 1
+    assert "Monitoring failure changed" not in output
+    assert f"* Monitoring recovered for {GAMERTAG} after " in output
+
+
+# Verifies a reported outage that starts failing differently is still one outage, so the change is one line
+# rather than a second report
+def test_a_second_failure_category_is_noted_in_one_line(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    unavailable = monitor.classify_recovery_error(server_error(503), context="monitor")
+    assert unavailable.retryable and monitor.outage_family(unavailable.code) != "network"
+    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(3)], *[server_error(503) for _ in range(3)]])
+
+    run_monitor()
+
+    lines = capsys.readouterr().out.splitlines()
+    reports = [line for line in lines if line.startswith("* Error:")]
+    changes = [number for number, line in enumerate(lines) if line.startswith(f"* Monitoring failure changed for {GAMERTAG}. ")]
+    assert len(reports) == 1 and "could not be reached" in reports[0]
+    assert len(changes) == 1 and lines[changes[0]].endswith(unavailable.summary)
+    assert lines[changes[0] + 1].startswith("Timestamp:")
+    assert "\n".join(lines).count("To fix: ") == 1
+
+
+# Verifies the reporter treats every network code as one outage and a change to a failure nothing can retry
+# away as a new report
+def test_the_outage_reporter_merges_network_codes_and_reports_a_terminal_change(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    reporter = monitor.OutageReporter()
+    unreachable = monitor.classify_recovery_error(httpx.ConnectError("down"), context="monitor")
+    timeout = monitor.classify_recovery_error(httpx.ReadTimeout("slow"), context="monitor")
+    rejected = monitor.classify_recovery_error(server_error(401), context="monitor")
+    assert (monitor.outage_family(timeout.code), monitor.outage_family(unreachable.code)) == ("network", "network")
+    assert not rejected.retryable
+
+    assert reporter.failed(unreachable) == "full"
+    assert reporter.failed(timeout) == ""
+    assert reporter.failed(unreachable) == ""
+    assert reporter.failed(rejected) == "full"
+    assert reporter.since == 1000000
