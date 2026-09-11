@@ -200,7 +200,9 @@ def test_a_disabled_dotenv_is_refused_before_anything_is_asked(wizard_paths, cap
     code = monitor.run_setup_wizard(config_file=str(wizard_paths["config"]), env_file="none", interactive=True)
     out = capsys.readouterr().out
     assert code == 1
-    assert "--setup needs a dotenv destination" in out
+    assert "--setup has nowhere to write the secrets" in out
+    assert "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory" in out
+    assert monitor.SECRETS_GUIDE_URL in out
 
 
 # Verifies a failing sign-in can be escaped and that escaping it keeps the credentials the user entered
@@ -426,7 +428,9 @@ def test_a_disabled_config_destination_is_refused(wizard_paths, capsys):
     code = monitor.run_setup_wizard(config_file="none", env_file=str(wizard_paths["env"]), interactive=True)
     out = capsys.readouterr().out
     assert code == 1
-    assert "--setup needs a config destination" in out
+    assert "--setup has nowhere to write the configuration" in out
+    assert "Replace '--config-file none' with a writable path, or drop the flag to write xbox_monitor.conf in the current directory" in out
+    assert monitor.CONFIG_GUIDE_URL in out
 
 
 # Verifies an existing config can be kept by sending the run to another path instead
