@@ -1979,7 +1979,6 @@ class Logger(object):
     def flush(self):
         pass
 
-
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
         try:

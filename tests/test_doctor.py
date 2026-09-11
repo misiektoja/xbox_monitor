@@ -25,6 +25,7 @@ MARKER_RE = re.compile(r"^\[([A-Z -]+)\]")
 def actionable_advice():
     return monitor.make_recovery_advice("unknown", "a summary", "do the thing", False)
 
+
 # Captured before the autouse fixture below replaces the name with an offline stub
 REAL_CONNECTIVITY_CHECK = monitor.doctor_check_connectivity
 

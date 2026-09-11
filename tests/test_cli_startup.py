@@ -503,6 +503,7 @@ def test_the_test_messages_use_the_shared_wording(tmp_path, monkeypatch):
     assert emails[0][:2] == ("xbox_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
     assert webhooks[0][:2] == ("xbox_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
 
+
 @pytest.mark.parametrize("flag, announcement", [("--send-test-email", "Sending test email notification"), ("--send-test-webhook", "Sending test webhook notification")])
 # Verifies a delivery test checks the settings before it announces an attempt it cannot make
 def test_a_delivery_test_checks_the_settings_before_it_announces(tmp_path, monkeypatch, capsys, flag, announcement):
