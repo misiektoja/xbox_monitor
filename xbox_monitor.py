@@ -3653,7 +3653,8 @@ def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, lab
     lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
     if with_fix:
         lines.append(f"To fix: {advice.fix}")
-        if (DEBUG_MODE if debug is None else debug) and advice.detail:
+        # A detail that only repeats the summary spends a line saying nothing
+        if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail != advice.summary:
             lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
@@ -3809,6 +3810,10 @@ def credentials_recovery_fix():
 def token_recovery_fix():
     return f"Delete the token cache file and authorize again by running: {tool_command('<xbox_gamertag>')}"
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix(): return "Check the technical detail below, then open an issue with this output if the problem continues" if DEBUG_MODE else "Rerun with --debug and check the technical detail it prints. If the problem continues, open an issue with that output"
+
+
 
 # Classifies a failure by context, exception type and message into one stable recovery category
 def classify_recovery_error(error=None, context="runtime", detail=""):
@@ -3920,7 +3925,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if isinstance(current, (AttributeError, TypeError, KeyError, IndexError)):
             return make_recovery_advice("xbox.malformed_response", "Xbox Live returned a response in an unexpected shape", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, upgrade python-xbox and rerun with --debug", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
 
-    return make_recovery_advice("unknown", "Something unexpected went wrong", recovery_fix_with_guide("Rerun with --debug and check the technical detail it prints. If the problem continues, open an issue with that output", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+    return make_recovery_advice("unknown", "Something unexpected went wrong", recovery_fix_with_guide(unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL), True, safe_detail)
 
 
 # Returns the TLS context every connection uses, unverified while VERIFY_SSL is off. One builder covers the
