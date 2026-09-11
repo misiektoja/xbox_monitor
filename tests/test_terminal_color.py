@@ -347,3 +347,19 @@ def test_a_labelled_command_and_its_hint_are_coloured(colored, capsys):
     output = capsys.readouterr().out
     assert styled_as(output, "xbox_monitor --setup", "section")
     assert styled_as(output, "   (or just answer Y below)", "info")
+
+
+# Verifies the TLS row colours its state word, the one setting whose off state weakens a security property
+def test_the_tls_row_colours_its_state(colored):
+    on_row = monitor._colorize_line("* TLS verification:             On")
+    off_row = monitor._colorize_line("* TLS verification:             Off, server certificates are not checked")
+
+    assert styled_as(on_row, "On", "boolean_true")
+    assert styled_as(off_row, "Off", "boolean_false")
+
+
+# Verifies the webhook rollup row colours its state like the email row rather than staying plain
+def test_the_webhook_summary_row_colours_its_state(colored):
+    row = monitor._colorize_line("* Notifications (webhook):      On (status changes) through Discord")
+
+    assert row == f"* Notifications (webhook):      {monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME['boolean_true'])}On{monitor.ANSI_RESET} (status changes) through Discord"

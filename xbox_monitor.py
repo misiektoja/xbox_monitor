@@ -1294,7 +1294,6 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
-
 # Any escape sequence, used to keep the log file plain text
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
@@ -1439,7 +1438,10 @@ _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
-_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \(email\):\s+)(On|Off)(.*)$")
+# The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
+# a security property, so the state word is coloured like a boolean
+_TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Words that report a problem. The same word used as a key in a 'key=value' diagnostic detail names a setting
 # such as 'timeout=15' or a counter such as 'failures=3', so it leaves its line unpainted
 _ERROR_KEYWORD_RE = re.compile(r"\b(?:failures?|failed|forbidden|timeout)\b(?!\s*=)")
@@ -1625,6 +1627,12 @@ def _colorize_line(line):
     notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
     if notification_match:
         prefix, state, suffix = notification_match.groups()
+        return f"{prefix}{colorize('boolean_true' if state == 'On' else 'boolean_false', state)}{suffix}"
+
+    # The TLS row reports its state as a word rather than as a boolean
+    tls_match = _TLS_STATE_RE.match(line)
+    if tls_match:
+        prefix, state, suffix = tls_match.groups()
         return f"{prefix}{colorize('boolean_true' if state == 'On' else 'boolean_false', state)}{suffix}"
 
     # Doctor status markers keep the rest of their line plain so long labels stay readable
@@ -2297,8 +2305,6 @@ def update_dotenv_file(destination, updates):
     for key in updates:
         verbose_print(f"Saved {key} in '{target}'")
     return str(target)
-
-
 
 
 # Returns the dotenv file a one-shot secret command writes to, refusing the disabled setting
@@ -3435,7 +3441,6 @@ def print_doctor_next_steps(xbox_gamertag=None, saved_target=None, doctor_exit=0
     print(f"Guide: {QUICK_START_GUIDE_URL}")
 
 
-
 # Parses a duration the way people type it, accepting bare seconds and s/m/h/d suffixes
 def parse_duration_input(value):
     if isinstance(value, bool):
@@ -3471,7 +3476,6 @@ def apply_diagnostic_cli_flags(args):
         VERBOSE_MODE = True
     if getattr(args, "debug_mode", None):
         DEBUG_MODE = True
-
 
 
 # Applies every secret the environment or a loaded dotenv file provides, recording where each value came from.
@@ -3810,9 +3814,10 @@ def credentials_recovery_fix():
 def token_recovery_fix():
     return f"Delete the token cache file and authorize again by running: {render_command(['<xbox_gamertag>'])}"
 
-# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
-def unknown_failure_fix(): return "Check the technical detail below, then open an issue with this output if the problem continues" if DEBUG_MODE else "Rerun with --debug and check the technical detail it prints. If the problem continues, open an issue with that output"
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Check the technical detail below, then open an issue with this output if the problem continues" if DEBUG_MODE else "Rerun with --debug and check the technical detail it prints. If the problem continues, open an issue with that output"
 
 
 # Classifies a failure by context, exception type and message into one stable recovery category
@@ -4010,7 +4015,8 @@ def secret_fingerprint(value, key=None):
 
 
 # Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
-def secret_fields(value, key=None): return {"value": "set" if secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and secret_is_set(value) else None}
+def secret_fields(value, key=None):
+    return {"value": "set" if secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and secret_is_set(value) else None}
 
 
 # Records where one secret resolved from, so a later layer replaces the earlier answer instead of adding to it
@@ -4328,7 +4334,6 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     debug_print("Email delivery", host=SMTP_HOST, outcome="OK", subject=subject)
     verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
-
 
 
 # Webhook notifications, delivered through Discord or ntfy
@@ -4731,7 +4736,6 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         webhook_delivered = send_webhook(subject, body, notification_type, force=True) == 0
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
-
 
 
 # Initializes the CSV file
@@ -6014,7 +6018,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned a profile for '{xbox_gamertag}' with no account in it")
                 sys.exit(1)
 
-
         if xuid == 0:
             print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned no XUID for '{xbox_gamertag}'")
             sys.exit(1)
@@ -6429,7 +6432,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
             status_old = status
             game_name_old = game_name
-
 
             if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
                 print_liveness_banner(f"Monitoring healthy for {xbox_gamertag}. The user is {status or 'unknown'} with no activity change since the last check")
