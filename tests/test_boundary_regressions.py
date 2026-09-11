@@ -1,6 +1,7 @@
 """Exercise notification and configuration boundaries with real dependencies."""
 
 import copy
+import errno
 import os
 import sys
 
@@ -85,25 +86,82 @@ def test_private_password_survives_resolution(tmp_path, monkeypatch):
     assert actual == value
 
 
-@pytest.mark.parametrize("setting", ["CSV_FILE", "DOTENV_FILE"])
-# Reports malformed paths before startup expands or opens them
-def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, setting):
+# Fails unexpected connectivity checks at the HTTPX transport boundary
+def offline_httpx(self, request):
+    raise httpx.ConnectError("Offline boundary check", request=request)
+
+
+# Runs main with a configuration file that sets one path setting to a value that is not a path
+def run_with_invalid_path(tmp_path, monkeypatch, setting, command):
     config = tmp_path / "monitor.conf"
     config.write_text(setting + " = 17\n", encoding="utf-8")
-    args = [monitor.__file__, "--doctor", "--config-file", str(config)]
+    args = [monitor.__file__, command, "--config-file", str(config)]
     if setting != "DOTENV_FILE":
         args.extend(["--env-file", "none"])
     monkeypatch.setattr(sys, "argv", args)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", offline_httpx)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    with pytest.raises(SystemExit) as stopped:
+        monitor.main()
+    return stopped.value.code
 
-    # Fails unexpected connectivity checks at the HTTPX transport boundary
-    def offline_httpx(self, request):
-        raise httpx.ConnectError("Offline boundary check", request=request)
 
+@pytest.mark.parametrize("setting", ["CSV_FILE", "DOTENV_FILE"])
+# Names a malformed path as a doctor row and still reports the rest of the configuration
+def test_doctor_reports_invalid_path_types(tmp_path, monkeypatch, capsys, setting):
+    assert run_with_invalid_path(tmp_path, monkeypatch, setting, "--doctor") == 1
+    output = capsys.readouterr().out
+    assert f"[FAIL] {setting} must be a path string" in output
+    assert "Detected install method" in output
+    assert output.count("[PASS]") > 1
+
+
+@pytest.mark.parametrize("setting", ["CSV_FILE", "DOTENV_FILE"])
+@pytest.mark.parametrize("command", ["--setup", "--set-smtp-password"])
+# Keeps the commands that correct a malformed path usable, since stopping there leaves no way to fix it
+def test_recovery_commands_run_with_an_invalid_path(tmp_path, monkeypatch, capsys, setting, command):
+    run_with_invalid_path(tmp_path, monkeypatch, setting, command)
+    output = capsys.readouterr().out
+    assert f"Warning: Invalid settings: {setting} must be a path string" in output
+    # Whatever stops the command next, it is no longer the setting the command does not use
+    assert "Error: Invalid settings" not in output
+
+
+# Keeps a monitoring run stopping on a path it cannot use
+def test_a_monitoring_run_stops_on_an_invalid_path(tmp_path, monkeypatch, capsys):
+    config = tmp_path / "monitor.conf"
+    config.write_text("CSV_FILE = 17\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [monitor.__file__, "ExampleTag", "--config-file", str(config), "--env-file", "none"])
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", offline_httpx)
     with pytest.raises(SystemExit) as stopped:
         monitor.main()
     assert stopped.value.code == 1
-    assert setting in capsys.readouterr().out
+    assert "Error: Invalid settings: CSV_FILE must be a path string" in capsys.readouterr().out
+
+
+# Treats a provider that repeats the words of the local limit as the remote failure it is
+def test_a_server_reply_cannot_claim_local_resource_exhaustion():
+    request = httpx.Request("GET", "https://userpresence.xboxlive.com/users/xuid(1)/people")
+    response = httpx.Response(503, text="upstream refused: too many open files", request=request)
+    rejected = httpx.HTTPStatusError(f"Server error '503 too many open files' for url '{request.url}'", request=request, response=response)
+    assert not monitor.is_too_many_open_files(rejected)
+    monitor.stop_if_resource_exhausted(rejected)
+    exhausted = httpx.ConnectError("Could not open socket", request=request)
+    exhausted.__cause__ = OSError(errno.EMFILE, "Too many open files")
+    assert monitor.is_too_many_open_files(exhausted)
+
+
+# Names the placeholder a dictionary template cannot fill instead of asking for a dictionary
+def test_an_unfillable_placeholder_is_named(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", {"content": "{title[9]}"})
+    monkeypatch.setattr(monitor, "WEBHOOK_AVATAR_URL", "")
+    error = monitor.validate_webhook_customization("discord")
+    assert error is not None
+    assert "{title[9]}" in error
+    assert "must be a dictionary" not in error
+    monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", "not a json object")
+    assert monitor.validate_webhook_customization("discord") == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
 
 
 @pytest.mark.parametrize("override", [False, True])
