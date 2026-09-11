@@ -449,6 +449,8 @@ def test_the_missing_target_command_carries_the_files_and_the_placeholder(monkey
 def test_a_placeholder_argument_is_left_unquoted():
     assert monitor.render_command(["<xbox_gamertag>", "-u", "<client_id>"], include_paths=False, method="pip") == "xbox_monitor <xbox_gamertag> -u <client_id>"
     assert monitor.render_command(["a value"], include_paths=False, method="pip") == "xbox_monitor 'a value'"
+    # A value only shaped like a placeholder is user input, so pasting the rendered command must not run a substitution
+    assert monitor.render_command(["<$(echo>marker)>"], include_paths=False, method="pip") == "xbox_monitor '<$(echo>marker)>'"
 
 
 # Verifies the disabled dotenv search reaches the commands that accept it and stays out of the ones that refuse it
