@@ -37,6 +37,7 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_documentation_layout.py` | Unique anchors, main screenshot placement and matching entry-page feature summaries |
 | `conftest.py` | Shared fixtures: module globals, exported secrets and signal handlers are reset between tests |
 | `data/config_templates/` | The configuration template every released version shipped, replayed by `test_config_loading.py` |
 | `test_auth_retry.py` | Transient error classification, refresh retry and give-up behavior, no interactive auth on timeout |
