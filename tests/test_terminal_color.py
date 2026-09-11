@@ -299,12 +299,12 @@ def test_a_title_containing_a_url_character_is_still_coloured(colored, title):
     assert styled_as(colored._colorize_line(f"Xbox user x started playing '{title}'"), title, "game")
 
 
-# Verifies truncation is switched off, with a warning, when the package that measures width is missing
-def test_truncation_is_disabled_when_wcwidth_is_missing(monkeypatch, capsys):
+# Verifies truncation stays on, with a warning, when the package that measures width is missing
+def test_truncation_stays_on_with_a_warning_when_wcwidth_is_missing(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "wcwidth", None)
-    assert monitor.resolve_truncate_chars(80, 0, False) == 0
+    assert monitor.resolve_truncate_chars(80, 0, False) == 80
     out = capsys.readouterr().out
-    assert "wcwidth" in out and "Screen truncation is disabled" in out
+    assert "wcwidth" in out and "Screen truncation measures every character as one column" in out
 
 
 # Verifies the width sentinel expands to the real terminal width, the documented meaning of 999

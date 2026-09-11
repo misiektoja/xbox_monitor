@@ -14,7 +14,7 @@ httpx
 pytz
 tzlocal (optional)
 python-dotenv (optional)
-wcwidth (optional, needed by TRUNCATE_CHARS feature)
+wcwidth (optional, measures wide characters correctly when TRUNCATE_CHARS is set)
 colorama (optional, for better colours on Windows terminals)
 """
 
@@ -272,7 +272,7 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 
 # Cut every printed line to this many characters, so long lines do not wrap in a narrow terminal
-# 0 disables it, 999 uses the detected terminal width. Needs the optional wcwidth library
+# 0 disables it, 999 uses the detected terminal width. The optional wcwidth library measures wide characters correctly
 # Log files always keep the untruncated text
 # Can also be set using the --truncate flag
 TRUNCATE_CHARS = 0
@@ -578,7 +578,7 @@ DOCTOR_REQUIRED_DEPENDENCIES = (("pythonxbox", "python-xbox"), ("httpx", "httpx"
 DOCTOR_OPTIONAL_DEPENDENCIES = (
     ("tzlocal", "tzlocal", "Used only to auto-detect the local time zone", "Automatic time zone detection is unavailable", "Or set LOCAL_TIMEZONE to a pytz timezone name in the config file", ""),
     ("dotenv", "python-dotenv", "Used only to read secrets from a dotenv file", "Secrets cannot be read from a dotenv file", "Or export them as environment variables", ""),
-    ("wcwidth", "wcwidth", "Used only to measure display width for screen truncation", "Screen truncation is disabled", "", ""),
+    ("wcwidth", "wcwidth", "Used only to measure display width for screen truncation", "Wide characters count as one column, so a line holding them can run past the limit", "", ""),
     ("colorama", "colorama", "Used only for coloured output in the older Windows Command Prompt", "Coloured output may not render in the older Windows Command Prompt", "Or use Windows Terminal, which needs nothing extra", "Windows"),
 )
 
@@ -1870,7 +1870,8 @@ def truncate_string_per_line(message, truncate_width, tabsize=8):
     try:
         from wcwidth import wcwidth
     except ImportError:
-        return message
+        # Without wcwidth every character costs one column, so truncation still applies and only wide characters are measured short
+        wcwidth = len
     truncated_lines = []
     for line in message.split("\n"):
         expanded_line = line.expandtabs(tabsize)
@@ -1908,9 +1909,9 @@ def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
         try:
             import wcwidth  # noqa: F401
         except ImportError:
-            print_recovery_advice(missing_dependency_advice("wcwidth", "Screen truncation is disabled"), label="Warning")
+            # Truncation still applies without the library, so the run is warned rather than left printing full lines
+            print_recovery_advice(missing_dependency_advice("wcwidth", "Screen truncation measures every character as one column"), label="Warning")
             print()
-            return 0
     if logging_disabled:
         return 0
     if truncate_chars == 999:
@@ -5097,14 +5098,19 @@ def format_payload(template, payload):
 
 # Parses legacy and current Discord templates before validating their object shape
 def render_discord_template(template, values):
-    if isinstance(template, str):
-        try:
-            template = json.loads(template)
-        except json.JSONDecodeError:
-            template = json.loads(str(format_payload(template, values)))
-    if not isinstance(template, dict):
-        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
-    return format_payload(template, values)
+    # A placeholder the payload cannot fill, such as the positional {0}, fails inside str.format rather than as a
+    # value error, so every parsing and rendering failure is reported as the one error callers already handle
+    try:
+        if isinstance(template, str):
+            try:
+                template = json.loads(template)
+            except json.JSONDecodeError:
+                template = json.loads(str(format_payload(template, values)))
+        if isinstance(template, dict):
+            return format_payload(template, values)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
+    raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
 
 
 # Returns a configuration error for unsafe or unsupported webhook customization
@@ -5287,7 +5293,8 @@ def _retain_webhook_secrets(deliver):
         headers = settings.get("WEBHOOK_HEADERS")
         if isinstance(headers, dict):
             values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
-        secrets = tuple(value for value in values if isinstance(value, str) and value and not value.startswith("your_"))
+        # The same minimum length every other redaction path applies, so a short secret cannot blank out ordinary words
+        secrets = tuple(value for value in values if isinstance(value, str) and len(value) >= MIN_REDACTABLE_SECRET_LENGTH and not value.startswith("your_"))
         token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
         try:
             return deliver(*args, **kwargs)
