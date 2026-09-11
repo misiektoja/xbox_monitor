@@ -186,6 +186,13 @@ def test_an_exhausted_descriptor_limit_is_reported_as_a_local_limit():
     assert "ulimit" in advice.fix
 
 
+# Verifies the descriptor limit is matched as a whole errno, so errno 240 or 241 in a message is not mistaken for it
+def test_a_neighbouring_errno_is_not_a_file_descriptor_limit():
+    assert monitor.is_too_many_open_files(RuntimeError("[Errno 24] Too many open files")) is True
+    assert monitor.is_too_many_open_files(RuntimeError("[Errno 240] something else")) is False
+    assert monitor.is_too_many_open_files(RuntimeError("[Errno 241] something else")) is False
+
+
 @pytest.mark.parametrize("error, code", [
     (smtplib.SMTPAuthenticationError(535, b"bad"), "smtp.authentication"),
     (smtplib.SMTPConnectError(421, b"busy"), "smtp.connection"),

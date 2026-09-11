@@ -87,6 +87,17 @@ def test_secret_sources_name_where_each_value_came_from(tmp_path, monkeypatch, c
     assert "name=SMTP_PASSWORD" not in out
 
 
+# Verifies an empty export is treated as absent, so a shell-profile leftover does not blank the dotenv value
+def test_an_empty_export_does_not_shadow_the_dotenv_file(tmp_path, monkeypatch):
+    config, env = write_startup_files(tmp_path, env_text='MS_APP_CLIENT_SECRET="dotenv-client-secret-value"\n')
+    monkeypatch.setenv("MS_APP_CLIENT_SECRET", "")
+
+    observed = run_startup(monkeypatch, ["gamer", "--config-file", config, "--env-file", env], observe=("SECRET_SOURCES", "MS_APP_CLIENT_SECRET"))
+
+    assert observed["MS_APP_CLIENT_SECRET"] == "dotenv-client-secret-value"
+    assert observed["SECRET_SOURCES"]["MS_APP_CLIENT_SECRET"] == "dotenv file"
+
+
 # Verifies a secret kept in the config file is attributed to it and one from the command line overrides that
 def test_config_file_and_command_line_secrets_are_attributed(tmp_path, monkeypatch):
     config, _ = write_startup_files(tmp_path, 'SMTP_PASSWORD = "config-file-password-value"\nMS_APP_CLIENT_ID = "config-file-client-id"\n')
