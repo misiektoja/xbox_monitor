@@ -476,6 +476,7 @@ def test_the_test_messages_use_the_shared_wording(tmp_path, monkeypatch):
     monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: webhooks.append(args) or 0)
     monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
     monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+    monkeypatch.setattr(monitor, "validate_smtp_settings", lambda: None)
 
     for flag in ("--send-test-email", "--send-test-webhook"):
         monkeypatch.setattr(sys, "argv", ["xbox_monitor", flag, "--webhook-url", DISCORD_URL, "--config-file", str(config), "--env-file", str(env)])
@@ -485,6 +486,26 @@ def test_the_test_messages_use_the_shared_wording(tmp_path, monkeypatch):
 
     assert emails[0][:2] == ("xbox_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
     assert webhooks[0][:2] == ("xbox_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+
+@pytest.mark.parametrize("flag, announcement", [("--send-test-email", "Sending test email notification"), ("--send-test-webhook", "Sending test webhook notification")])
+# Verifies a delivery test checks the settings before it announces an attempt it cannot make
+def test_a_delivery_test_checks_the_settings_before_it_announces(tmp_path, monkeypatch, capsys, flag, announcement):
+    config, env = write_startup_files(tmp_path)
+    monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: None)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "not a host")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "")
+    monkeypatch.setattr(sys, "argv", ["xbox_monitor", flag, "--config-file", str(config), "--env-file", str(env)])
+
+    with pytest.raises(SystemExit) as raised:
+        monitor.main()
+
+    output = capsys.readouterr().out
+    assert raised.value.code == 1
+    assert announcement not in output
+    assert "* Error: " in output
+    assert "To fix: " in output
+
 
 # Verifies the liveness reminder follows the configured interval whatever the check interval is
 @pytest.mark.parametrize("check_interval,liveness_interval,expected", [(300, 43200, 43200), (86400, 43200, 43200), (300, 0, 0)])
