@@ -61,6 +61,7 @@ and again before anything is published to PyPI.
 | `test_secret_commands.py` | The one-shot commands that write a secret: what each validates, writes and refuses to write |
 | `test_secret_reload.py` | `SIGHUP` reload bumping the authentication refresh version and following a replaced webhook destination |
 | `test_setup_wizard.py` | `--setup` driven end to end: what it asks, what it writes and what it leaves untouched |
+| `test_partial_setup_save.py` | Real wizard inputs and filesystem failures after configuration replacement |
 | `test_shared_wording.py` | The prompts, labels and headings this tool shares word for word with the sibling monitors |
 | `test_startup_summary.py` | The startup summary rows, their order and the concise and verbose views |
 | `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
