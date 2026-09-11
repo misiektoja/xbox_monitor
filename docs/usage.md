@@ -13,6 +13,8 @@ Examples use the PyPI command. For a downloaded script, run commands from the di
 
 For example, `xbox_monitor --setup` becomes `python3 xbox_monitor.py --setup` on macOS or Linux. Use `python` on Windows. Replace placeholders such as `"<xbox_gamertag>"` with an Xbox gamertag, quoted when it contains spaces.
 
+The manual-script prefix names the file rather than its path, so run it from the directory holding `xbox_monitor.py`. From another directory, use the full path instead, for example `python3 /opt/xbox-monitor/xbox_monitor.py --setup`. The commands the tool prints after setup and Doctor use the same short form.
+
 For first-time configuration, follow [Setup & First Run](setup-and-first-run.md). Use [Doctor Preflight](troubleshooting.md#doctor-preflight) to check a setup before monitoring.
 
 ## User Information Display Mode
