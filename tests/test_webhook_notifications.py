@@ -193,7 +193,7 @@ def test_the_discord_payload_carries_the_alert_and_disables_mentions(discord_ena
     assert embed["footer"]["text"] == f"Xbox Monitor v{monitor.VERSION}"
 
 
-# Verifies a delivered webhook names the provider and quotes the alert, the way the sibling monitors report it
+# Verifies a webhook receipt names its provider
 def test_a_delivered_webhook_is_reported_in_verbose(discord_enabled, webhook_client, monkeypatch, capsys):
     webhook_client()
     monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
@@ -201,7 +201,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(discord_enabled, webhook_cli
     assert monitor.send_webhook("Xbox user is now online", "body text", "status") == 0
 
     printed = capsys.readouterr().out
-    assert "* Webhook delivered through Discord: 'Xbox user is now online'" in printed
+    assert "* Webhook sent through Discord" in printed
     assert DISCORD_URL not in printed
 
 
@@ -213,7 +213,7 @@ def test_delivery_confirmations_can_be_turned_off(discord_enabled, webhook_clien
 
     assert monitor.send_webhook("Xbox user is now online", "body text", "status") == 0
 
-    assert "Webhook delivered" not in capsys.readouterr().out
+    assert "Webhook sent through" not in capsys.readouterr().out
 
 
 # Verifies every status alert is drawn in one colour, so the two status settings do not look like two events

@@ -1264,7 +1264,7 @@ def offer_doctor_delivery_tests(report):
     offered = []
     if report.email_ready:
         if ask_yes_no("Send one test email now? This will deliver a real message"):
-            delivered = send_email("xbox_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=DOCTOR_SMTP_TIMEOUT) == 0
+            delivered = send_email("Xbox Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=DOCTOR_SMTP_TIMEOUT, report_delivery=False) == 0
             if delivered:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
@@ -1279,7 +1279,7 @@ def offer_doctor_delivery_tests(report):
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
-            delivered = send_webhook("xbox_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
+            delivered = send_webhook("Xbox Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True, report_delivery=False) == 0
             if delivered:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
@@ -4366,7 +4366,7 @@ def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, lab
 
 # Builds the subject for one recovery notification, naming what failed rather than the category it fell into
 def recovery_email_subject(advice, xbox_gamertag):
-    return f"xbox_monitor: {advice.summary} (user: {xbox_gamertag})"
+    return f"{advice.summary} (Xbox user: {xbox_gamertag})"
 
 
 # Builds the body for one recovery notification, repeating the fix the operator sees on screen
@@ -5040,8 +5040,22 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
+def send_email(subject, body, body_html, use_ssl, smtp_timeout=15, report_delivery=True):
     settings_advice = validate_smtp_settings()
     if settings_advice is not None:
         debug_print("Email delivery", outcome="skipped", reason="the SMTP settings are unusable")
@@ -5056,6 +5070,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         print_recovery_error(context="smtp.settings", detail="the message has no plain-text and no HTML body")
         return 1
 
+    smtpObj = None
     try:
         if use_ssl:
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
@@ -5080,13 +5095,15 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
             email_msg.attach(part2)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
         debug_print("Email delivery", host=SMTP_HOST, outcome="failed", error=f"{type(e).__name__}: {e}")
         print_recovery_error(e, context="smtp", detail=f"Sending the email through {SMTP_HOST} failed: {e}")
         return 1
+    finally:
+        smtp_quit_quietly(smtpObj)
     debug_print("Email delivery", host=SMTP_HOST, outcome="OK", subject=subject)
-    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -5472,7 +5489,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends one webhook through its own bounded retry path, which never shares the Xbox Live retry policy
-def send_webhook(title, description, notification_type="status", force=False, sleeper=None):
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, report_delivery=True):
     if not force and not webhook_event_enabled(notification_type):
         debug_print("Webhook delivery", outcome="skipped", type=notification_type, reason="alerts are disabled")
         return 1
@@ -5519,7 +5536,8 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                 retryable = response.status_code == 429 or 500 <= response.status_code <= 599
                 debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", status=response.status_code, retryable=retryable)
                 if 200 <= response.status_code <= 299:
-                    verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{webhook_values['title']}'")
+                    if report_delivery:
+                        verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
                     return 0
                 last_error = f"HTTP {response.status_code}: {sanitize_error_text(getattr(response, 'text', ''))[:200]}"
                 if not retryable or attempt_number == WEBHOOK_MAX_ATTEMPTS:
@@ -7978,7 +7996,7 @@ def main():
             sys.exit(1)
         print(f"* Sending test webhook notification through {webhook_provider_display_name()} to {webhook_destination_host()} ...\n")
         # Forced past the alert settings, because the point of the test is the destination, not the choices
-        if send_webhook("xbox_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True) == 0:
+        if send_webhook("Xbox Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True, report_delivery=False) == 0:
             print("* Webhook sent successfully !")
         else:
             sys.exit(1)
@@ -7991,7 +8009,7 @@ def main():
             print_recovery_advice(settings_advice)
             sys.exit(1)
         print("* Sending test email notification ...\n")
-        if send_email("xbox_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5) == 0:
+        if send_email("Xbox Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)

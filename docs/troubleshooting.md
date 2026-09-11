@@ -79,7 +79,9 @@ Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and li
 
 Debug fields depend on the operation. Webhook response traces report the HTTP status and retry decision. Failed requests include error details when available. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL. A secret is reported by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
 
-Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email delivered` and `* Webhook delivered` lines, which is worth doing when alerts are frequent.
+Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email sent to ...` and `* Webhook sent through ...` lines, which is worth doing when alerts are frequent.
+
+Delivery confirmations name the email recipient or webhook provider without repeating the subject or message body. `DELIVERY_CONFIRMATIONS = False` hides those optional success receipts. Event output, send attempts and errors remain visible. Explicit notification tests report their result once. Generated email subjects and webhook titles use readable service names without a program-name prefix.
 
 ## Installation and Command Problems
 

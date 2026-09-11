@@ -500,8 +500,8 @@ def test_the_test_messages_use_the_shared_wording(tmp_path, monkeypatch):
             monitor.main()
         assert raised.value.code == 0
 
-    assert emails[0][:2] == ("xbox_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
-    assert webhooks[0][:2] == ("xbox_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+    assert emails[0][:2] == ("Xbox Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert webhooks[0][:2] == ("Xbox Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
 
 
 @pytest.mark.parametrize("flag, announcement", [("--send-test-email", "Sending test email notification"), ("--send-test-webhook", "Sending test webhook notification")])

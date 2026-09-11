@@ -284,9 +284,9 @@ def test_the_alert_subject_names_the_failure_and_the_account():
 
     subject = monitor.recovery_email_subject(advice, "SomeTag")
 
-    assert subject.startswith("xbox_monitor: ")
+    assert subject.startswith(advice.summary)
     assert advice.summary in subject
-    assert "(user: SomeTag)" in subject
+    assert "(Xbox user: SomeTag)" in subject
 
 
 # The body repeats the fix, since the operator reading the alert is not looking at the terminal
