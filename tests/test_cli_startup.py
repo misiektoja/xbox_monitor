@@ -80,9 +80,9 @@ def test_secret_sources_name_where_each_value_came_from(tmp_path, monkeypatch, c
     assert observed["MS_APP_CLIENT_SECRET"] == "exported-client-secret-value"
     assert observed["SECRET_SOURCES"] == {"MS_APP_CLIENT_ID": "dotenv file", "MS_APP_CLIENT_SECRET": "environment"}
     out = capsys.readouterr().out
-    assert "Secret resolved: name=MS_APP_CLIENT_ID, source=dotenv file" in out
-    assert "Secret resolved: name=MS_APP_CLIENT_SECRET, source=environment" in out
-    assert "Secret resolved: name=SMTP_PASSWORD, source=nowhere" in out
+    assert "Secret resolution: name=MS_APP_CLIENT_ID, source=dotenv file" in out
+    assert "Secret resolution: name=MS_APP_CLIENT_SECRET, source=environment" in out
+    assert "Secret resolution: name=SMTP_PASSWORD, source=nowhere" in out
 
 
 # Verifies a secret kept in the config file is attributed to it and one from the command line overrides that

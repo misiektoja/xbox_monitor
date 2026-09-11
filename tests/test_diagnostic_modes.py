@@ -342,8 +342,8 @@ def test_debug_reports_the_config_load_and_the_secret_source(monkeypatch, monito
 
     output = capsys.readouterr().out
     assert f"Configuration applied: path={config}, settings=2, names=MS_APP_CLIENT_ID, XBOX_CHECK_INTERVAL" in output
-    assert "Secret resolved: name=MS_APP_CLIENT_ID, source=configuration file" in output
-    assert "Secret resolved: name=MS_APP_CLIENT_SECRET, source=command line, value=set, 19 chars" in output
+    assert "Secret resolution: name=MS_APP_CLIENT_ID, source=configuration file" in output
+    assert "Secret resolution: name=MS_APP_CLIENT_SECRET, source=command line, value=set, chars=19" in output
 
 
 # Verifies a secret supplied on the command line is never printed by the line that reports it
@@ -351,7 +351,7 @@ def test_debug_never_prints_the_credential_it_reports(monkeypatch, monitor_calls
     run_main(monkeypatch, ["--debug", "-u", "aVeryLongClientIdValue1234567890", "-w", "aVeryLongClientSecretValue123456", GAMERTAG])
 
     output = capsys.readouterr().out
-    assert "Secret resolved: name=MS_APP_CLIENT_ID, source=command line" in output
+    assert "Secret resolution: name=MS_APP_CLIENT_ID, source=command line" in output
     assert "aVeryLongClientIdValue1234567890" not in output
     assert "aVeryLongClientSecretValue123456" not in output
 
@@ -473,6 +473,25 @@ def test_each_printer_is_silent_while_its_mode_is_off(monkeypatch, printer, caps
 def test_a_secret_is_described_without_revealing_it(key, value, expected):
     assert monitor.secret_fingerprint(value, key) == expected
     assert value not in monitor.secret_fingerprint(value, key) or not value
+
+
+# The diagnostic line is documented as comma-separated key=value fields, so the length travels as its own field
+@pytest.mark.parametrize("key, value, fields", [
+    ("MS_APP_CLIENT_ID", "0123456789abcdef", {"value": "set", "chars": 16}),
+    ("SMTP_PASSWORD", "a-password-the-user-picked", {"value": "set", "chars": None}),
+    ("MS_APP_CLIENT_ID", "", {"value": "not set", "chars": None}),
+])
+def test_no_secret_field_value_carries_a_comma(key, value, fields):
+    assert monitor.secret_fields(value, key) == fields
+    assert all("," not in str(part) for part in fields.values())
+
+
+# The webhook override is applied after the resolution loop, so a webhook given on the command line still reports its source
+def test_a_command_line_webhook_reports_where_it_came_from(monkeypatch, monitor_calls, capsys):
+    run_main(monkeypatch, ["--debug", "--webhook-url", "https://discord.com/api/webhooks/1/" + "a" * 32, GAMERTAG])
+
+    traces = [line for line in capsys.readouterr().out.splitlines() if "Secret resolution: name=WEBHOOK_URL" in line]
+    assert traces[-1].endswith("Secret resolution: name=WEBHOOK_URL, source=command line, value=set")
 
 
 # Verifies a reported failure uses the line shape shared with the sibling monitors
