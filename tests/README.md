@@ -37,6 +37,8 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_boundary_regressions.py` | Real notification transports, literal secret resolution and malformed startup paths |
+| `test_xbox_boundary_flows.py` | Real Xbox authentication, Doctor presence access, token paths and activity classification |
 | `test_release_boundaries.py` | Real HTTP retries, Discord mention safety, unrenderable templates, SMTP password round trips, split terminal writes and the width cap without wcwidth |
 | `test_compact_commands.py` | Literal short command prefixes, real help output and dependency hints |
 | `test_release_safety.py` | Credential preservation, private error rendering, runtime timing validation and saved-state compatibility |

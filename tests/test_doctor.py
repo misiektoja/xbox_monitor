@@ -6,7 +6,6 @@ drive the whole run and read the transcript a user sees.
 
 import inspect
 import re
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -1165,15 +1164,19 @@ def test_a_delivery_result_is_printed_under_its_own_question(monkeypatch, smtp_s
 
 
 # Two labelled values crammed into one detail read as one value, and the handle rule coloured the whole run
-def test_the_target_row_separates_the_gamertag_from_the_xuid(monkeypatch):
-    async def profile(tag):
-        return SimpleNamespace(profile_users=[SimpleNamespace(id="2535471663547820")])
+def test_the_target_row_separates_the_gamertag_from_the_xuid(monkeypatch, tmp_path):
+    from test_xbox_boundary_flows import setup_xbox_transport
+    setup_xbox_transport(monkeypatch, tmp_path, "normal")
 
-    monkeypatch.setattr(monitor, "XboxLiveClient", lambda auth_mgr: SimpleNamespace(profile=SimpleNamespace(get_profile_by_gamertag=profile)))
+    # Builds the target row through real authentication and profile models
+    async def check_target():
+        async with monitor.create_signed_session() as session:
+            auth = monitor.AuthenticationManager(session, monitor.MS_APP_CLIENT_ID, monitor.MS_APP_CLIENT_SECRET, "")
+            await monitor.doctor_refresh_tokens(auth)
+            return (await monitor.doctor_check_target(auth, GAMERTAG))[0]
 
-    check = monitor.asyncio.run(monitor.doctor_check_target(object(), GAMERTAG))[0]
-
-    assert (check.status, check.label, check.detail) == ("PASS", f"Gamertag {GAMERTAG} was found", "XUID: 2535471663547820")
+    check = monitor.asyncio.run(check_target())
+    assert (check.status, check.label, check.detail) == ("PASS", f"Gamertag {GAMERTAG} was found and activity is accessible", "XUID: 1234")
 
 
 # One row shape and one advice shape across the family: the advice rides on the row and its fix carries the

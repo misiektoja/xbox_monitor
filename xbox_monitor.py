@@ -539,6 +539,7 @@ from httpx import HTTPStatusError
 try:
     from pythonxbox.api.client import XboxLiveClient
     from pythonxbox.authentication.manager import AuthenticationManager
+    from pythonxbox.common.exceptions import AuthenticationException
     from pythonxbox.authentication.models import OAuth2TokenResponse
     from pythonxbox.common.signed_session import SignedSession
     from pythonxbox.api.provider.presence.models import PresenceLevel
@@ -763,13 +764,28 @@ def runtime_configuration_errors():
     return errors
 
 
+# Validates effective path settings before startup expands or opens them
+def prepare_configured_paths(args):
+    overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file', 'XBOX_STATUS_FILE': 'status_file'}
+    settings = globals().copy()
+    for name, argument in overrides.items():
+        value = getattr(args, argument, None)
+        if value:
+            settings[name] = value
+    errors = configuration_shape_errors(settings)
+    if errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_GUIDE_URL), False))
+        raise SystemExit(1)
+
+
 # Names malformed path and color settings before diagnostics consume their values
-def configuration_shape_errors():
+def configuration_shape_errors(settings=None):
+    settings = globals() if settings is None else settings
     errors = []
     for name in ('XBOX_LOGFILE', 'XBOX_STATUS_FILE', 'CSV_FILE', 'MS_AUTH_TOKENS_FILE', 'DOTENV_FILE'):
-        if name in globals() and not isinstance(globals()[name], (str, os.PathLike)):
+        if name in settings and not isinstance(settings[name], (str, os.PathLike)):
             errors.append(f"{name} must be a path string")
-    theme = globals().get("COLOR_THEME", {})
+    theme = settings.get("COLOR_THEME", {})
     if not isinstance(theme, dict):
         errors.append("COLOR_THEME must be a dictionary of style strings")
     else:
@@ -898,7 +914,7 @@ def doctor_check_connectivity():
 # same state has to become a diagnosis instead
 async def doctor_refresh_tokens(auth_mgr):
     try:
-        with open(MS_AUTH_TOKENS_FILE, encoding="utf-8") as tokens_file:
+        with open(Path(MS_AUTH_TOKENS_FILE).expanduser(), encoding="utf-8") as tokens_file:
             auth_mgr.oauth = OAuth2TokenResponse.model_validate_json(tokens_file.read())
     except OSError as exc:
         raise RecoveryError(classify_recovery_error(context="file.unreadable", detail=f"The Xbox token cache '{MS_AUTH_TOKENS_FILE}' could not be read: {exc}"), exc) from None
@@ -970,10 +986,12 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
         xbl_client = XboxLiveClient(auth_mgr)
         profile = await xbl_client.profile.get_profile_by_gamertag(str(xbox_gamertag))
         xuid = int(profile.profile_users[0].id)
+        presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
+        xbox_process_presence_class(presence, False)
     except Exception as exc:
         advice = classify_recovery_error(exc, context="target", detail=f"Looking up the gamertag '{xbox_gamertag}' failed: {exc}")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
-    return [make_doctor_check("Target", "PASS", f"Gamertag {xbox_gamertag} was found", f"XUID: {xuid}")]
+    return [make_doctor_check("Target", "PASS", f"Gamertag {xbox_gamertag} was found and activity is accessible", f"XUID: {xuid}")]
 
 
 # Reports the first unusable email setting as a doctor detail and an action that names the same settings
@@ -2666,7 +2684,8 @@ def match_dotenv_assignment(line, key):
 def render_dotenv_assignment(key, value, prefix=""):
     # A line break inside a value would split the assignment, so it is escaped rather than written through
     escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
-    return f'{prefix}{key}="{escaped}"'
+    suffix = ' # monitor:literal' if '${' in str(value) else ''
+    return f'{prefix}{key}="{escaped}"{suffix}'
 
 
 # Reports whether one dotenv file already assigns the requested key
@@ -2727,7 +2746,7 @@ def update_dotenv_file(destination, updates):
         if key not in replaced and value:
             content += f"{render_dotenv_assignment(key, value)}\n"
     # Checked before it replaces the file, so a rewrite can never publish a secret the next run cannot read back
-    rewritten = {binding.key: binding.value for binding in _dotenv_bindings(content) if binding.key is not None}
+    rewritten = resolve_dotenv_values(content, override=True)
     if any(rewritten.get(key, "") != value for key, value in updates.items()):
         raise ValueError(f"Updating '{{target}}' would not store the requested values")
     # Written through a temporary file, so an interrupted write cannot leave the file without its secrets.
@@ -2812,10 +2831,9 @@ def _wizard_choose_config_destination(config_path, input_func=None):
 
 # Reads saved secrets with the same interpolation rules as normal startup
 def _wizard_private_values(env_path):
-    from dotenv.main import DotEnv
     if not env_path or not Path(env_path).exists():
         return {}
-    return DotEnv(str(env_path), interpolate=True, override=False).dict()
+    return resolve_dotenv_values(Path(env_path).read_text(encoding="utf-8"), override=False)
 
 
 # Keeps actual exports separate from values copied into the environment by dotenv
@@ -4080,7 +4098,7 @@ def apply_webhook_cli_overrides(args, parser):
 
 
 # The categories that mean the saved credentials themselves stopped working, which no retry can repair
-AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired", "auth.token_cache"})
+AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired", "auth.token_cache", "auth.authorization"})
 
 # Failed checks in a row before a failure that can clear on its own is worth an alert. A short outage recovers
 # well inside this, so only an outage the operator has to know about reaches them
@@ -4129,7 +4147,7 @@ class ErrorAlertState:
 # Stable recovery categories. Every code here is produced somewhere in this file and nothing else is accepted
 RECOVERY_CODES = frozenset({
     "config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing",
-    "auth.credentials_invalid", "auth.token_expired", "auth.token_cache", "auth.oauth_code",
+    "auth.credentials_invalid", "auth.token_expired", "auth.token_cache", "auth.authorization", "auth.oauth_code",
     "network.unavailable", "network.timeout",
     "xbox.malformed_response", "xbox.rate_limited", "xbox.unavailable", "resource.exhausted",
     "target.missing", "target.not_found", "target.not_visible",
@@ -4413,6 +4431,13 @@ def mentions_status_code(code, message):
     return re.search(rf"(?<![\w/]){code}(?!\w)", message) is not None
 
 
+# Stops optional work when a local file descriptor limit has been reached
+def stop_if_resource_exhausted(error):
+    if is_too_many_open_files(error):
+        print_recovery_error(error)
+        raise SystemExit(1)
+
+
 # Classifies a failure by context, exception type and message into one stable recovery category
 def classify_recovery_error(error=None, context="runtime", detail=""):
     if isinstance(error, RecoveryError):
@@ -4426,6 +4451,9 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if error is not None and is_too_many_open_files(error):
         return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Xbox Live problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+
+    if any(isinstance(item, AuthenticationException) for item in iter_exc_chain(error)):
+        return make_recovery_advice("auth.authorization", "Xbox Live rejected authorization for this account", recovery_fix_with_guide("Check the Microsoft application credentials and Xbox account permissions, including child-account restrictions, then run --doctor again", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "config.missing":
         return make_recovery_advice("config.missing", safe_detail or "The configuration file was not found", recovery_fix_with_guide(f"Check the --config-file path, or create one with: {render_command(['--generate-config', 'xbox_monitor.conf'], include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
@@ -4967,8 +4995,11 @@ def validate_webhook_url(url=None):
     if not isinstance(selected_url, str) or not selected_url.strip():
         return False
     try:
+        httpx.URL(selected_url.strip())
         parsed = urlsplit(selected_url.strip())
-    except ValueError:
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            return False
+    except (ValueError, httpx.InvalidURL):
         return False
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
 
@@ -5292,7 +5323,12 @@ def _retain_webhook_secrets(deliver):
         values = [settings.get(name) for name in SECRET_KEYS]
         headers = settings.get("WEBHOOK_HEADERS")
         if isinstance(headers, dict):
-            values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
+            for name, value in headers.items():
+                if isinstance(name, str) and name.casefold() == "authorization" and isinstance(value, str):
+                    values.append(value)
+                    parts = value.split(None, 1)
+                    if len(parts) == 2 and parts[0].casefold() in ("bearer", "basic"):
+                        values.append(parts[1])
         # The same minimum length every other redaction path applies, so a short secret cannot blank out ordinary words
         secrets = tuple(value for value in values if isinstance(value, str) and len(value) >= MIN_REDACTABLE_SECRET_LENGTH and not value.startswith("your_"))
         token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
@@ -5675,10 +5711,32 @@ def dotenv_reload_source(key):
     return DOTENV_RELOAD_STATE.get("base_sources", {}).get(key, "environment" if key in DOTENV_RELOAD_STATE.get("exported", ()) else SECRET_SOURCE_ORDER[0])
 
 
+# Resolves dotenv references while keeping explicitly marked private values literal
+def resolve_dotenv_values(content, override=False, interpolate=True):
+    from io import StringIO
+    from dotenv.main import with_warn_for_invalid_lines
+    from dotenv.parser import parse_stream
+    from dotenv.variables import parse_variables
+    values = {}
+    for binding in with_warn_for_invalid_lines(parse_stream(StringIO(content))):
+        if binding.key is None:
+            continue
+        value = binding.value
+        literal = binding.key in SECRET_KEYS and binding.original.string.rstrip().endswith("# monitor:literal")
+        if value is not None and interpolate and not literal:
+            environment = dict(os.environ)
+            if override:
+                environment.update(values)
+            else:
+                environment = dict(values, **environment)
+            value = "".join(atom.resolve(environment) for atom in parse_variables(value))
+        values[binding.key] = value
+    return values
+
+
 # Loads dotenv values and reconciles removed file-owned secrets without changing startup precedence
 def load_managed_dotenv(path, override=False, interpolate=True, protected_keys=()):
     from io import StringIO
-    from dotenv.main import DotEnv
     from dotenv.parser import parse_stream
     if not override and not Path(path).is_file():
         return False
@@ -5687,7 +5745,7 @@ def load_managed_dotenv(path, override=False, interpolate=True, protected_keys=(
         malformed = next((binding for binding in parse_stream(StringIO(content)) if binding.error), None)
         if malformed is not None:
             raise ValueError(f"Dotenv syntax error near line {malformed.original.line}. Correct the assignment and reload again")
-    values = DotEnv(dotenv_path=None, stream=StringIO(content), override=override, interpolate=interpolate).dict()
+    values = resolve_dotenv_values(content, override=override, interpolate=interpolate)
     if not override or not DOTENV_RELOAD_STATE:
         DOTENV_RELOAD_STATE.clear()
         DOTENV_RELOAD_STATE.update(base={key: os.environ.get(key, globals().get(key, "")) for key in SECRET_KEYS}, exported=set(os.environ).intersection(SECRET_KEYS), managed=set())
@@ -5922,6 +5980,7 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
                 debug_print("Title history selection", game=best_game, played=get_date_from_ts(best_ts))
             return best_ts, best_game
     except Exception as e:
+        stop_if_resource_exhausted(e)
         debug_print("Title history fetch", outcome="failed", error=f"{type(e).__name__}: {e}")
         verbose_notice("The title history fallback is unavailable, so an appear-offline user's activity may go unreported")
     return 0, ""
@@ -6083,6 +6142,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             debug_print("Friends fetch", source="library", outcome="OK", count=0, response="empty")
 
     except Exception as e:
+        stop_if_resource_exhausted(e)
         debug_print("Friends fetch", source="library", outcome="failed", error=f"{type(e).__name__}: {e}")
         # Fallback to direct API call (works with unfixed library)
         try:
@@ -6126,6 +6186,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     debug_print("Friends fetch", source="summary", outcome="OK", count=friends_count)
 
         except Exception as e2:
+            stop_if_resource_exhausted(e2)
             debug_print("Friends fetch", source="direct API and summary", outcome="failed", error=f"{type(e2).__name__}: {e2}")
             report_degraded_error("The friends list could not be read", e2, label="Warning")
 
@@ -6154,6 +6215,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             if history_response.titles:
                 recent_games = history_response.titles[:]
         except Exception as e:
+            stop_if_resource_exhausted(e)
             report_degraded_error("The game history could not be read", e, label="Warning")
 
         if recent_games:
@@ -6182,6 +6244,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             elif isinstance(ach_response, list):
                 recent_achievements = ach_response
         except Exception as e:
+            stop_if_resource_exhausted(e)
             report_degraded_error("The achievements could not be read", e, label="Warning")
 
         if recent_achievements:
@@ -6293,6 +6356,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             import shutil as sh
             term_width = sh.get_terminal_size(fallback=(100, 24)).columns
         except Exception as e:
+            stop_if_resource_exhausted(e)
             debug_print("Terminal width probe", outcome="degraded", reason="the fallback width is used", error=f"{type(e).__name__}: {e}")
 
         w_num = 3
@@ -6332,6 +6396,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                         mins_rem = int(mins) % 60
                         t_playtime = f"{hours}h {mins_rem}m"
                 except Exception as e:
+                    stop_if_resource_exhausted(e)
                     debug_print("Play time formatting", outcome="failed", error=f"{type(e).__name__}: {e}")
 
             name_fmt = _shorten_middle(t_name, w_title)
@@ -6373,6 +6438,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                     all_recent_achievements.append((ach, title_prog.name))
 
             except Exception as e:
+                stop_if_resource_exhausted(e)
                 debug_print("Title achievements fetch", title=title_prog.name, outcome="failed", error=f"{type(e).__name__}: {e}")
 
         # Sort ALL collected achievements by time_unlocked (descending)
@@ -6384,6 +6450,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             import shutil as sh
             term_width = sh.get_terminal_size(fallback=(100, 24)).columns
         except Exception as e:
+            stop_if_resource_exhausted(e)
             debug_print("Terminal width probe", outcome="degraded", reason="the fallback width is used", error=f"{type(e).__name__}: {e}")
 
         w_date = 26
@@ -7116,15 +7183,18 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 game_ts_old = game_ts
                 print_cur_ts("Timestamp:\t\t\t")
 
-            # Detect gaming activity for "appear offline" users via title history
-            # This triggers when we detect a new game session started while user appears offline
+            # Detect newer activity without treating system surfaces as games
             if status == "offline" and title_history_ts > 0 and title_history_ts_old > 0 and title_history_ts > title_history_ts_old:
                 activity_detected_ts = get_date_from_ts(title_history_ts)
                 game_info = f" '{title_history_game}'" if title_history_game else ""
-                print(f"User detected playing a game{game_info} (via title history)! Started: {activity_detected_ts}")
-
-                m_subject = f"Xbox user {xbox_gamertag} detected playing{game_info} (via title history)"
-                m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game{game_info}.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                if title_history_game:
+                    print(f"User detected playing a game{game_info} (via title history)! Started: {activity_detected_ts}")
+                    m_subject = f"Xbox user {xbox_gamertag} detected playing{game_info} (via title history)"
+                    m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game{game_info}.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                else:
+                    print(f"User activity detected (via title history)! Last active: {activity_detected_ts}")
+                    m_subject = f"Xbox user {xbox_gamertag} activity detected (via title history)"
+                    m_body = f"Xbox user {xbox_gamertag} appears offline but has newer activity in title history.\n\nLast active: {activity_detected_ts}\n\nThis record does not identify a game session.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
 
                 email_activity_enabled = ACTIVE_INACTIVE_NOTIFICATION or STATUS_NOTIFICATION
                 webhook_activity_enabled = webhook_event_enabled("status") or webhook_event_enabled("all_status")
@@ -7595,6 +7665,8 @@ def main():
     # Evaluated after the config file is read, so a saved gamertag starts monitoring instead of being welcomed
     if len(sys.argv) == 1 and not args.xbox_gamertag:
         sys.exit(print_welcome_screen(config_file=args.config_file, env_file=args.env_file))
+
+    prepare_configured_paths(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
