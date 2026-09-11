@@ -360,6 +360,6 @@ def test_the_tls_row_colours_its_state(colored):
 
 # Verifies the webhook rollup row colours its state like the email row rather than staying plain
 def test_the_webhook_summary_row_colours_its_state(colored):
-    row = monitor._colorize_line("* Notifications (webhook):      On (status changes) through Discord")
+    row = monitor._colorize_line("* Notifications (webhook):      On (status changes)")
 
-    assert row == f"* Notifications (webhook):      {monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME['boolean_true'])}On{monitor.ANSI_RESET} (status changes) through Discord"
+    assert row == f"* Notifications (webhook):      {monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME['boolean_true'])}On{monitor.ANSI_RESET} (status changes)"
