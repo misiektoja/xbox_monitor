@@ -3527,6 +3527,7 @@ def apply_webhook_cli_overrides(args, parser):
         WEBHOOK_URL = str(args.webhook_url).strip()
         WEBHOOK_ENABLED = True
         SECRET_SOURCES["WEBHOOK_URL"] = "command line"
+        debug_print("Secret resolution", name="WEBHOOK_URL", source="command line", **secret_fields(WEBHOOK_URL, "WEBHOOK_URL"))
     if args.webhook_enabled is not None:
         WEBHOOK_ENABLED = args.webhook_enabled
     # Naming one alert also switches the channel on, so a single flag is enough to try it out
@@ -3995,9 +3996,12 @@ def print_startup_banner():
 # Describes a secret in diagnostic output without revealing any part of it. A password the user chose reports
 # presence only: its length is a real disclosure in output that ends up pasted into bug reports
 def secret_fingerprint(value, key=None):
-    if not secret_is_set(value):
-        return "not set"
-    return f"set, {len(value)} chars" if key in FIXED_LENGTH_SECRET_KEYS else "set"
+    fields = secret_fields(value, key)
+    return f"{fields['value']}, {fields['chars']} chars" if fields["chars"] else fields["value"]
+
+
+# Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
+def secret_fields(value, key=None): return {"value": "set" if secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and secret_is_set(value) else None}
 
 
 # Renders one diagnostic line as an operation followed by comma-separated key=value fields, dropping unset ones
@@ -6896,7 +6900,7 @@ def main():
     apply_environment_secrets()
 
     for secret in SECRET_KEYS:
-        debug_print("Secret resolved", name=secret, source=SECRET_SOURCES.get(secret, "nowhere"), value=secret_fingerprint(globals().get(secret), secret))
+        debug_print("Secret resolution", name=secret, source=SECRET_SOURCES.get(secret, "nowhere"), **secret_fields(globals().get(secret), secret))
 
     try:
         validate_connectivity_timer()
@@ -6922,13 +6926,13 @@ def main():
         MS_APP_CLIENT_ID = args.ms_app_client_id
         if secret_is_set(MS_APP_CLIENT_ID):
             SECRET_SOURCES["MS_APP_CLIENT_ID"] = "command line"
-            debug_print("Secret resolved", name="MS_APP_CLIENT_ID", source="command line", value=secret_fingerprint(MS_APP_CLIENT_ID, "MS_APP_CLIENT_ID"))
+            debug_print("Secret resolution", name="MS_APP_CLIENT_ID", source="command line", **secret_fields(MS_APP_CLIENT_ID, "MS_APP_CLIENT_ID"))
 
     if args.ms_app_client_secret:
         MS_APP_CLIENT_SECRET = args.ms_app_client_secret
         if secret_is_set(MS_APP_CLIENT_SECRET):
             SECRET_SOURCES["MS_APP_CLIENT_SECRET"] = "command line"
-            debug_print("Secret resolved", name="MS_APP_CLIENT_SECRET", source="command line", value=secret_fingerprint(MS_APP_CLIENT_SECRET, "MS_APP_CLIENT_SECRET"))
+            debug_print("Secret resolution", name="MS_APP_CLIENT_SECRET", source="command line", **secret_fields(MS_APP_CLIENT_SECRET, "MS_APP_CLIENT_SECRET"))
 
     if args.check_interval is not None:
         XBOX_CHECK_INTERVAL = args.check_interval
