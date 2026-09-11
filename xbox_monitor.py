@@ -3561,7 +3561,8 @@ AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired
 
 # Failed checks in a row before a failure that can clear on its own is worth an alert. A short outage recovers
 # well inside this, so only an outage the operator has to know about reaches them
-MONITOR_TRANSIENT_ALERT_AFTER = 20
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 
 
 # Stable recovery categories. Every code here is produced somewhere in this file and nothing else is accepted
@@ -6242,17 +6243,17 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 error_streak += 1
                 advice = classify_recovery_error(e, context="monitor", detail=f"Reading the presence for '{xbox_gamertag}' failed: {e}")
                 debug_print("Presence check", check=f"#{check_count}", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, retryable=advice.retryable, streak=error_streak)
-                # A failure that can clear on its own is worth an alert only once it clearly has not
-                alert_after = MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1
                 exhausted = advice.code == "resource.exhausted"
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
                 outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
+                # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+                alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
                 delivery_reported = False
                 if outage_outcome in ("full", "repeat"):
                     print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
                 elif outage_outcome == "degraded":
                     print_outage_liveness(xbox_gamertag, advice, outage.since)
-                if error_streak >= alert_after and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
+                if alert_due and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
                     email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
                     email_sent = email_sent or email_delivered
                     webhook_sent = webhook_sent or webhook_delivered

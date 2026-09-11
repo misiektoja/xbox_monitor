@@ -256,6 +256,8 @@ def test_a_single_reported_failure_reports_its_recovery(xbox_loop, capsys):
 
 # Verifies a failure that keeps repeating is reported once and then carried by the liveness banner
 def test_a_lasting_outage_rides_the_liveness_cadence(xbox_loop, monkeypatch, capsys):
+    # The screen cadence is the subject, so the alert that a lasting outage also earns is switched off
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
     xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(8)], presence_payload()])
 
@@ -273,7 +275,7 @@ def test_a_delivery_on_a_quiet_check_ends_with_a_timestamp(xbox_loop, monkeypatc
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 100 * monitor.XBOX_CHECK_INTERVAL)
     monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *args, **kwargs: False)
     monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
-    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(monitor.MONITOR_TRANSIENT_ALERT_AFTER + 2)]])
+    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(4)]])
 
     run_monitor()
 
@@ -283,6 +285,33 @@ def test_a_delivery_on_a_quiet_check_ends_with_a_timestamp(xbox_loop, monkeypatc
     assert deliveries, lines
     for index in deliveries:
         assert any(line.startswith("Timestamp:") for line in lines[index + 1:index + 3]), lines[index:index + 3]
+
+
+# Verifies a failure the tool can retry away is alerted only once the outage has lasted the alert delay, so a
+# blip of a check reaches nobody while a real outage still does
+@pytest.mark.parametrize("failures,expected", [(1, 0), (2, 1)])
+def test_a_retryable_failure_is_alerted_once_the_outage_has_lasted(xbox_loop, monkeypatch, capsys, failures, expected):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 100 * monitor.XBOX_CHECK_INTERVAL)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    # Five minute polls put the second failing check at the five minute delay
+    xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(failures)], presence_payload()])
+
+    run_monitor()
+
+    assert capsys.readouterr().out.count("Sending email notification") == expected
+
+
+# Verifies a failure nothing here can retry away is alerted on the first check, since waiting would change nothing
+def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    request = httpx.Request("GET", "https://profile.xboxlive.com/users")
+    xbox_loop([presence_payload(), httpx.HTTPStatusError("401", request=request, response=httpx.Response(401, request=request)), presence_payload()])
+
+    run_monitor()
+
+    assert capsys.readouterr().out.count("Sending email notification") == 1
 
 
 # Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often

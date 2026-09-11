@@ -302,14 +302,14 @@ def test_a_single_failure_body_omits_the_streak(monkeypatch):
     assert "Failed checks in a row" not in monitor.recovery_email_body(advice, error_streak=1)
 
 
-# A blip must not mail anyone and a failure nothing can retry away must not wait for a streak that never comes
+# A blip must not mail anyone and a failure nothing can retry away must not wait for an outage that never lasts
 def test_the_loop_alerts_at_once_only_for_a_failure_that_cannot_clear_itself():
     loop = monitoring_loop_tree()
-    assignments = [node for node in ast.walk(loop) if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "alert_after"]
+    assignments = [node for node in ast.walk(loop) if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "alert_due"]
 
     assert len(assignments) == 1
-    assert ast.unparse(assignments[0].value) == "MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1"
-    assert monitor.MONITOR_TRANSIENT_ALERT_AFTER > 1
+    assert ast.unparse(assignments[0].value) == "not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS"
+    assert monitor.ERROR_ALERT_AFTER_SECONDS > 0
 
 
 # Retrying a local file descriptor limit forever would spin without ever recovering, so the loop has to stop
