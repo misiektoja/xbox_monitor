@@ -1874,7 +1874,7 @@ def check_internet(url=None, timeout=None):
             client.get(check_url)
     except Exception as e:
         debug_print("Connectivity check", url=check_url, outcome="failed", error=f"{type(e).__name__}: {e}")
-        report_recovery_error(e, context="connectivity", detail=f"The connectivity endpoint {check_url} could not be reached: {e}")
+        print_recovery_error(e, context="connectivity", detail=f"The connectivity endpoint {check_url} could not be reached: {e}")
         return False
     debug_print("Connectivity check", url=check_url, outcome="OK")
     return True
@@ -3008,7 +3008,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     try:
         config_path, env_path = _wizard_destinations(config_file, env_file)
     except ValueError as exc:
-        print_recovery_advice(classify_recovery_error(context="file.unwritable", detail=str(exc)))
+        print_recovery_error(context="file.unwritable", detail=str(exc))
         return 1
 
     print(colorize("header", "Setup Wizard") + "\n")
@@ -3056,7 +3056,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     try:
         config_backup, _written = write_generated_config(state.config_path, generate_config_with_current_values(state.config_values), force=True)
     except Exception as exc:
-        print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the configuration to '{state.config_path}': {exc}"))
+        print_recovery_error(exc, context="file.unwritable", detail=f"Could not write the configuration to '{state.config_path}': {exc}")
         return 1
     secrets_written = False
     if state.secret_updates:
@@ -3064,7 +3064,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             update_dotenv_values(state.env_path, state.secret_updates)
             secrets_written = True
         except Exception as exc:
-            print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the secrets to '{state.env_path}': {exc}"))
+            print_recovery_error(exc, context="file.unwritable", detail=f"Could not write the secrets to '{state.env_path}': {exc}")
             return 1
     tokens_path = Path(os.path.expanduser(str(state.config_values.get("MS_AUTH_TOKENS_FILE") or MS_AUTH_TOKENS_FILE or "")))
     tokens_written = False
@@ -3074,7 +3074,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             write_file_atomically(tokens_path, state.token_json, mode=0o600)
             tokens_written = True
         except Exception as exc:
-            print_recovery_advice(classify_recovery_error(exc, context="file.unwritable", detail=f"Could not write the Xbox tokens to '{tokens_path}': {exc}"))
+            print_recovery_error(exc, context="file.unwritable", detail=f"Could not write the Xbox tokens to '{tokens_path}': {exc}")
             return 1
 
     print("\n" + colorize("header", "Saved files") + "\n")
@@ -3673,16 +3673,20 @@ def recovery_email_body(advice, error_streak=0):
     return "\n".join(lines) + get_cur_ts("\n\nTimestamp: ")
 
 
-# Prints advice in full the first time its category appears and as one line while the same category persists
-def print_recovery_advice(advice, tracker=None, retry_note="", debug=None, label="Error"):
-    print(render_recovery_advice(advice, debug, retry_note, tracker is None or tracker.should_render(advice), label))
-
-
-# Classifies a failure and prints it, the shape every user-facing error site uses
-def report_recovery_error(error=None, context="runtime", detail="", label="Error"):
-    advice = classify_recovery_error(error, context, detail)
-    print_recovery_advice(advice, label=label)
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice, debug=None, retry_note="", with_fix=True, label="Error", tracker=None):
+    print(render_recovery_advice(advice, debug, retry_note, with_fix and (tracker is None or tracker.should_render(advice)), label))
     return advice
+
+
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error"):
+    return render_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label)
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error", tracker=None):
+    return print_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label, tracker)
 
 
 # Reports a step that failed and left its output degraded, naming the step in front of the classified failure
@@ -4114,7 +4118,7 @@ async def authenticate_and_refresh_tokens(auth_mgr):
         print(f"\n* No saved Xbox tokens at '{MS_AUTH_TOKENS_FILE}' yet, so this run will ask you to authorize once")
     except Exception as e:
         print()
-        report_recovery_error(e, context="auth.token_cache", detail=f"The Xbox token cache '{MS_AUTH_TOKENS_FILE}' could not be read: {e}", label="Warning")
+        print_recovery_error(e, context="auth.token_cache", detail=f"The Xbox token cache '{MS_AUTH_TOKENS_FILE}' could not be read: {e}", label="Warning")
 
     if not token_file_loaded:
         await oauth_interactive_auth(auth_mgr)
@@ -4128,7 +4132,7 @@ async def authenticate_and_refresh_tokens(auth_mgr):
         if is_transient_auth_error(e):
             raise
         print()
-        report_recovery_error(e, context="auth", detail=f"Refreshing the saved Xbox tokens failed: {format_exception(e)}", label="Warning")
+        print_recovery_error(e, context="auth", detail=f"Refreshing the saved Xbox tokens failed: {format_exception(e)}", label="Warning")
         print("* Re-authorization is required")
         await oauth_interactive_auth(auth_mgr)
         debug_print("Token refresh after re-authorization")
@@ -4269,11 +4273,11 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         return 1
 
     if not subject or not isinstance(subject, str):
-        report_recovery_error(context="smtp.settings", detail="the message subject is empty")
+        print_recovery_error(context="smtp.settings", detail="the message subject is empty")
         return 1
 
     if not body and not body_html:
-        report_recovery_error(context="smtp.settings", detail="the message has no plain-text and no HTML body")
+        print_recovery_error(context="smtp.settings", detail="the message has no plain-text and no HTML body")
         return 1
 
     try:
@@ -4303,7 +4307,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.quit()
     except Exception as e:
         debug_print("Email delivery", host=SMTP_HOST, outcome="failed", error=f"{type(e).__name__}: {e}")
-        report_recovery_error(e, context="smtp", detail=f"Sending the email through {SMTP_HOST} failed: {e}")
+        print_recovery_error(e, context="smtp", detail=f"Sending the email through {SMTP_HOST} failed: {e}")
         return 1
     debug_print("Email delivery", host=SMTP_HOST, outcome="OK", subject=subject)
     verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
@@ -4618,7 +4622,7 @@ def build_webhook_headers(provider, payload):
 # Reports one webhook configuration or delivery failure through the shared recovery renderer, so it carries a
 # category and a fix line like every other failure this tool prints
 def print_webhook_error(message):
-    print_recovery_advice(classify_recovery_error(context="webhook", detail=str(message)))
+    print_recovery_error(context="webhook", detail=str(message))
 
 
 # Sends one webhook request with the destination, deadline and redirect policy every delivery shares
@@ -5247,7 +5251,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             xbl_client = XboxLiveClient(auth_mgr)
         except Exception as e:
             print()
-            report_recovery_error(e, context="auth", detail=f"Signing in to Xbox Live failed: {format_exception(e)}")
+            print_recovery_error(e, context="auth", detail=f"Signing in to Xbox Live failed: {format_exception(e)}")
             if session:
                 await session.aclose()
             sys.exit(1)
@@ -5260,7 +5264,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         profile = await xbl_client.profile.get_profile_by_gamertag(gamertag)
         if not profile.profile_users:
             print()
-            report_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned a profile for '{gamertag}' with no account in it")
+            print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned a profile for '{gamertag}' with no account in it")
             if session:
                 await session.aclose()
             sys.exit(1)
@@ -5277,7 +5281,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
     except Exception as e:
         print()
-        report_recovery_error(e, context="target", detail=f"The profile for '{gamertag}' could not be read: {e}")
+        print_recovery_error(e, context="target", detail=f"The profile for '{gamertag}' could not be read: {e}")
         if session:
             await session.aclose()
         sys.exit(1)
@@ -5290,7 +5294,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
     except Exception as e:
         print()
-        report_recovery_error(e, context="target", detail=f"The presence for '{gamertag}' could not be read: {e}")
+        print_recovery_error(e, context="target", detail=f"The presence for '{gamertag}' could not be read: {e}")
         if session:
             await session.aclose()
         sys.exit(1)
@@ -5939,7 +5943,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         if csv_file_name:
             init_csv_file(csv_file_name)
     except Exception as e:
-        report_recovery_error(e, context="file.unwritable", detail=f"The CSV file '{csv_file_name}' could not be prepared: {e}")
+        print_recovery_error(e, context="file.unwritable", detail=f"The CSV file '{csv_file_name}' could not be prepared: {e}")
 
     # Create a XBOX HTTP client session
     async with create_signed_session() as session:
@@ -5968,7 +5972,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             await authenticate_and_refresh_tokens(auth_mgr)
         except Exception as e:
             print()
-            report_recovery_error(e, context="auth", detail=f"Signing in to Xbox Live failed: {format_exception(e)}")
+            print_recovery_error(e, context="auth", detail=f"Signing in to Xbox Live failed: {format_exception(e)}")
             sys.exit(1)
 
         _print_ok()
@@ -5983,7 +5987,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         try:
             profile = await xbl_client.profile.get_profile_by_gamertag(xbox_gamertag)
         except Exception as e:
-            report_recovery_error(e, context="target", detail=f"The profile for '{xbox_gamertag}' could not be read: {e}")
+            print_recovery_error(e, context="target", detail=f"The profile for '{xbox_gamertag}' could not be read: {e}")
             sys.exit(1)
 
         if 'profile_users' in dir(profile):
@@ -5991,19 +5995,19 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             try:
                 xuid = int(profile.profile_users[0].id)
             except IndexError:
-                report_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned a profile for '{xbox_gamertag}' with no account in it")
+                print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned a profile for '{xbox_gamertag}' with no account in it")
                 sys.exit(1)
 
 
         if xuid == 0:
-            report_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned no XUID for '{xbox_gamertag}'")
+            print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned no XUID for '{xbox_gamertag}'")
             sys.exit(1)
 
         # Get presence status (by XUID)
         try:
             presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
         except Exception as e:
-            report_recovery_error(e, context="target", detail=f"The presence for '{xbox_gamertag}' could not be read: {e}")
+            print_recovery_error(e, context="target", detail=f"The presence for '{xbox_gamertag}' could not be read: {e}")
             sys.exit(1)
 
         status, title_name, game_name, platform, lastonline_ts = xbox_process_presence_class(presence, False)
@@ -6024,7 +6028,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             if fallback_used:
                 lastonline_ts = title_history_ts
         if not status:
-            report_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned no online status for '{xbox_gamertag}'")
+            print_recovery_error(context="xbox.malformed_response", detail=f"Xbox Live returned no online status for '{xbox_gamertag}'")
             sys.exit(1)
 
         status_ts_old = int(time.time())
@@ -6045,7 +6049,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     last_status_read = json.load(f)
             except Exception as e:
                 print()
-                report_recovery_error(e, context="file.unreadable", detail=f"The last status could not be read from '{xbox_last_status_file}': {e}", label="Warning")
+                print_recovery_error(e, context="file.unreadable", detail=f"The last status could not be read from '{xbox_last_status_file}': {e}", label="Warning")
             if last_status_read:
                 last_status_ts = last_status_read[0]
                 last_status = last_status_read[1]
@@ -6074,7 +6078,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 save_last_status(xbox_last_status_file, status_ts_old, status)
             except Exception as e:
                 print()
-                report_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}")
+                print_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}")
 
         if status != "offline" and game_name:
             print(f"\nUser is currently in-game:\t{game_name}")
@@ -6085,7 +6089,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             if csv_file_name and (status != last_status):
                 write_csv_entry(csv_file_name, now_local_naive(), status, game_name)
         except Exception as e:
-            report_recovery_error(e, context="file.unwritable", detail=f"The CSV entry could not be written to '{csv_file_name}': {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"The CSV entry could not be written to '{csv_file_name}': {e}")
 
         if last_status_ts == 0:
             if lastonline_ts and status == "offline":
@@ -6093,7 +6097,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             try:
                 save_last_status(xbox_last_status_file, status_ts_old, status)
             except Exception as e:
-                report_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}")
+                print_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}")
 
         if status_ts_old != status_ts_old_bck:
             if status == "offline":
@@ -6261,7 +6265,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 try:
                     save_last_status(xbox_last_status_file, status_ts, status)
                 except Exception as e:
-                    report_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}", label="Warning")
+                    print_recovery_error(e, context="file.unwritable", detail=f"The last status could not be saved to '{xbox_last_status_file}': {e}", label="Warning")
 
                 print(f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}")
                 status_range = get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True, always_show_year=True)
@@ -6405,7 +6409,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), status, game_name)
                 except Exception as e:
-                    report_recovery_error(e, context="file.unwritable", detail=f"The CSV entry could not be written to '{csv_file_name}': {e}")
+                    print_recovery_error(e, context="file.unwritable", detail=f"The CSV entry could not be written to '{csv_file_name}': {e}")
 
             status_old = status
             game_name_old = game_name
@@ -6442,7 +6446,7 @@ def main():
                 print_recovery_advice(make_recovery_advice("file.exists", str(exc), recovery_fix_with_guide(f"Re-run with: {tool_command('--generate-config', output_file, '--force', include_paths=False)}. The existing file is backed up with a timestamp first, or write to a different path", CONFIG_GUIDE_URL), False, str(exc)))
                 sys.exit(1)
             except OSError as exc:
-                report_recovery_error(exc, context="file.unwritable", detail=f"Config file '{output_file}' cannot be written: {exc}")
+                print_recovery_error(exc, context="file.unwritable", detail=f"Config file '{output_file}' cannot be written: {exc}")
                 sys.exit(1)
             if not written:
                 print("Config was not replaced. The existing file is unchanged")
@@ -6985,7 +6989,7 @@ def main():
         try:
             run_set_ms_app_credentials(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
         except Exception as exc:
-            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            print_recovery_error(exc, context="secret.entry")
             sys.exit(1)
         sys.exit(0)
 
@@ -6993,7 +6997,7 @@ def main():
         try:
             run_set_smtp_password(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
         except Exception as exc:
-            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            print_recovery_error(exc, context="secret.entry")
             sys.exit(1)
         sys.exit(0)
 
@@ -7001,13 +7005,13 @@ def main():
         try:
             run_set_webhook_url(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
         except Exception as exc:
-            print_recovery_advice(classify_recovery_error(exc, context="secret.entry"))
+            print_recovery_error(exc, context="secret.entry")
             sys.exit(1)
         sys.exit(0)
 
     if args.send_test_webhook:
         if not validate_webhook_url():
-            report_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+            print_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
             sys.exit(1)
         print(f"* Sending test webhook notification through {webhook_provider_display_name()} to {webhook_destination_host()} ...\n")
         # Forced past the alert settings, because the point of the test is the destination, not the choices
@@ -7031,16 +7035,16 @@ def main():
         sys.exit(0)
 
     if not args.xbox_gamertag:
-        report_recovery_error(context="target.missing", detail="XBOX_GAMERTAG needs to be defined")
+        print_recovery_error(context="target.missing", detail="XBOX_GAMERTAG needs to be defined")
         sys.exit(1)
 
     missing_credentials = [name for name in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET") if not secret_is_set(globals()[name])]
     if missing_credentials:
-        report_recovery_error(context="secret.missing", detail=f"{join_names(missing_credentials)} is empty or still set to a placeholder" if len(missing_credentials) == 1 else f"{join_names(missing_credentials)} are empty or still set to a placeholder")
+        print_recovery_error(context="secret.missing", detail=f"{join_names(missing_credentials)} is empty or still set to a placeholder" if len(missing_credentials) == 1 else f"{join_names(missing_credentials)} are empty or still set to a placeholder")
         sys.exit(1)
 
     if not MS_AUTH_TOKENS_FILE:
-        report_recovery_error(context="config.invalid", detail="MS_AUTH_TOKENS_FILE is empty, so authorized tokens cannot be saved")
+        print_recovery_error(context="config.invalid", detail="MS_AUTH_TOKENS_FILE is empty, so authorized tokens cannot be saved")
         sys.exit(1)
     MS_AUTH_TOKENS_FILE = os.path.expanduser(MS_AUTH_TOKENS_FILE)
 
@@ -7051,7 +7055,7 @@ def main():
     try:
         validate_monitor_timers()
     except ValueError as e:
-        report_recovery_error(context="config.invalid", detail=str(e))
+        print_recovery_error(context="config.invalid", detail=str(e))
         sys.exit(1)
 
     if CSV_FILE:
@@ -7059,13 +7063,13 @@ def main():
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            report_recovery_error(e, context="file.unwritable", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing: {e}")
             sys.exit(1)
 
     try:
         ascii_log_separators_enabled()
     except ValueError as e:
-        report_recovery_error(context="config.invalid", detail=str(e))
+        print_recovery_error(context="config.invalid", detail=str(e))
         sys.exit(1)
 
     if not DISABLE_LOGGING:

@@ -5,6 +5,7 @@ so each test pins one failure a user can actually hit.
 """
 
 import ast
+import inspect
 import re
 import smtplib
 import socket
@@ -400,3 +401,64 @@ def test_the_guide_guard_still_inspects_the_source():
 
     assert len(inspected) > 40
     assert all(any(marker in summary for _, summary in bare) for marker in GUIDELESS_ADVICE), "an allowlisted summary stopped matching a builder"
+
+
+# One concept carried three names across this family: a renderer taking a built advice, a renderer taking the
+# failure itself, and a third pair that classified and printed under a name of its own. Pinned here so a call
+# copied from a sibling cannot quietly mean something else
+def test_the_recovery_printers_share_one_contract():
+    advice_first = ("advice", "debug", "retry_note", "with_fix", "label")
+    error_first = ("error", "context", "debug", "detail", "retry_note", "with_fix", "label")
+
+    assert tuple(inspect.signature(monitor.render_recovery_advice).parameters) == advice_first
+    assert tuple(inspect.signature(monitor.render_recovery_error).parameters) == error_first
+    # The hint tracker follows the shared parameters, so a call written for a sibling without one still means the same thing
+    assert tuple(inspect.signature(monitor.print_recovery_advice).parameters) == advice_first + ("tracker",)
+    assert tuple(inspect.signature(monitor.print_recovery_error).parameters) == error_first + ("tracker",)
+
+
+# The advice pair prints what the caller built, so a summary the classifier would never produce survives the trip
+def test_the_advice_printer_does_not_reclassify(capsys):
+    monitor.DEBUG_MODE = False
+    advice = monitor.make_recovery_advice("network.timeout", "a summary no rule produces", "a fix of its own", True)
+
+    returned = monitor.print_recovery_advice(advice)
+
+    assert capsys.readouterr().out == "* Error: a summary no rule produces\nTo fix: a fix of its own\n"
+    assert returned is advice
+
+
+# The error pair classifies what the caller hands it, which is the difference between the two front doors
+def test_the_error_printer_classifies_what_it_was_given(capsys):
+    monitor.DEBUG_MODE = False
+
+    returned = monitor.print_recovery_error(socket.timeout("timed out"), context="runtime")
+
+    assert returned.code != "unknown"
+    assert capsys.readouterr().out.startswith(f"* Error: {returned.summary}\n")
+
+
+# Both front doors reach the same renderer, so the retry note, the label and a suppressed fix behave the same way
+def test_both_front_doors_render_the_same_line():
+    monitor.DEBUG_MODE = False
+    error = socket.timeout("timed out")
+    advice = monitor.classify_recovery_error(error, "runtime")
+
+    through_advice = monitor.render_recovery_advice(advice, retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+    through_error = monitor.render_recovery_error(error, "runtime", retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+
+    assert through_advice == through_error
+    assert through_advice == f"* Warning: {advice.summary} (retrying in 5 minutes)"
+
+
+# The tracker decides only whether the fix repeats, and it does that after the caller has already allowed it
+def test_the_tracker_suppresses_only_the_repeated_fix(capsys):
+    monitor.DEBUG_MODE = False
+    tracker = monitor.RecoveryHintTracker()
+
+    monitor.print_recovery_error(socket.timeout("timed out"), "runtime", tracker=tracker)
+    monitor.print_recovery_error(socket.timeout("timed out"), "runtime", tracker=tracker)
+
+    printed = capsys.readouterr().out
+    assert printed.count("* Error: ") == 2
+    assert printed.count("To fix: ") == 1
