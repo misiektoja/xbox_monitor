@@ -197,3 +197,27 @@ def test_the_linter_defaults_follow_the_template_order():
 
     assert len(mirrored) == len(set(mirrored)), "a setting is repeated in the linter defaults"
     assert mirrored == [name for name in order if name in set(mirrored)]
+
+
+# Verifies a run started with discovery off names the sentinel rather than a config file it deliberately ignored
+def test_a_printed_command_keeps_discovery_off(monkeypatch, tmp_path):
+    (tmp_path / "xbox_monitor.conf").write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+
+    assert monitor.find_config_file() is not None
+    assert monitor.resolved_command_config(None) == "none"
+    assert monitor.resolved_command_config("none") == "none"
+
+
+# Verifies discovery left on still names the file a printed command should carry
+def test_a_printed_command_names_the_discovered_config(monkeypatch, tmp_path):
+    config_path = tmp_path / "xbox_monitor.conf"
+    config_path.write_text("DISABLE_LOGGING = True\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", False)
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+
+    assert str(monitor.resolved_command_config(None)) == str(config_path)
+    assert monitor.resolved_command_config("/given/path.conf") == "/given/path.conf"

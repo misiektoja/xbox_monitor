@@ -240,7 +240,7 @@ On Windows, install [colorama](https://pypi.org/project/colorama/) for colours i
 
 Each part of the output has a logical name. `COLOR_THEME` in the configuration file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
 
-Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Delete the block or edit only the entries you want to change:
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. Delete the block or edit only the entries you want to change:
 
 ```python
 COLOR_THEME = {

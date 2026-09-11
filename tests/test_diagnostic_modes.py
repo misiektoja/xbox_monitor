@@ -364,6 +364,20 @@ def test_the_liveness_banner_follows_the_clock_not_the_check_count(xbox_loop, mo
     assert capsys.readouterr().out.count("Monitoring healthy for") == 1
 
 
+# Verifies a check that reported the end of an outage restarts the quiet clock, since the banner speaks for a
+# check that said nothing and would otherwise contradict the recovery line above it
+def test_a_check_that_reported_a_recovery_does_not_claim_it_was_quiet(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 2 * monitor.XBOX_CHECK_INTERVAL)
+    failures = [httpx.ConnectError("down") for _ in range(4)]
+    xbox_loop([presence_payload(), *failures, presence_payload(), presence_payload()])
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    assert "Monitoring recovered for" in output, "the check under test reported no recovery"
+    assert "Monitoring healthy for" not in output
+
+
 # Verifies a cycle with nothing rare to report prints no verbose line at all
 def test_verbose_stays_quiet_through_an_uneventful_cycle(xbox_loop, verbose_only, capsys):
     xbox_loop([presence_payload(), presence_payload(), presence_payload()])

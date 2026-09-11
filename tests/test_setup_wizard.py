@@ -101,11 +101,21 @@ def test_a_declined_email_section_clears_the_mail_server(monkeypatch, wizard_pat
 def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path):
     state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
 
-    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", str(tmp_path / "activity"), ""]))
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "y", str(tmp_path / "activity"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
 
-    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", str(tmp_path / "activity.txt"), ""]))
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "y", str(tmp_path / "activity.txt"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
+
+
+# Verifies declining CSV output clears a saved path, which the path prompt alone could never do
+def test_declining_csv_output_clears_a_saved_path(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+    state.config_values["CSV_FILE"] = "saved.csv"
+
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "n", ""]))
+
+    assert state.config_values["CSV_FILE"] == ""
 
 
 # Verifies the status file question names the working directory, since the default is relative to where the tool runs
@@ -125,10 +135,10 @@ def test_the_status_file_question_names_the_working_directory(tmp_path):
 def test_the_status_file_answer_gains_a_json_extension_when_it_has_none(tmp_path):
     state = monitor.WizardSetupState(tmp_path / "xbox_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
 
-    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "", str(tmp_path / "profile")]))
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "n", str(tmp_path / "profile")]))
     assert state.config_values["XBOX_STATUS_FILE"] == str(tmp_path / "profile.json")
 
-    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "", str(tmp_path / "profile.txt")]))
+    monitor._wizard_collect_output_section(state, input_func=ScriptedAnswers(["y", "n", str(tmp_path / "profile.txt")]))
     assert state.config_values["XBOX_STATUS_FILE"] == str(tmp_path / "profile.txt")
 
 
@@ -947,3 +957,20 @@ def test_the_effective_secret_follows_the_startup_precedence(tmp_path, monkeypat
     assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("exported", True)
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
     assert monitor.effective_secret_after_setup("SMTP_PASSWORD", tmp_path / "absent.env", {}) == ("from-config-file", False)
+
+
+# Verifies an explicit colour theme survives a config rebuild, since the template ships the setting commented out
+def test_a_rebuilt_config_keeps_an_explicit_color_theme():
+    values = dict(monitor._config_template_defaults())
+    values["COLOR_THEME"] = {"header": "bright_red"}
+
+    rendered = monitor.generate_config_with_current_values(values)
+
+    assert monitor.parse_config_content(rendered, "<generated>")["COLOR_THEME"] == {"header": "bright_red"}
+
+
+# Verifies the shipped default stays commented out, so a rebuild does not pin a theme the user never chose
+def test_a_rebuilt_config_leaves_the_default_theme_commented():
+    rendered = monitor.generate_config_with_current_values(dict(monitor._config_template_defaults()))
+
+    assert "\nCOLOR_THEME = {" not in rendered
