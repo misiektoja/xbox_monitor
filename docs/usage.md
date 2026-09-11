@@ -266,6 +266,8 @@ COLOR_THEME = {
 
 You can use [GRC](https://github.com/garabik/grc) to colour logs.
 
+The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colours every tool's logs.
+
 Add this to your GRC config at `~/.grc/grc.conf`:
 
 ```
