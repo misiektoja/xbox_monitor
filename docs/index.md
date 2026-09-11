@@ -29,24 +29,24 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-### Activity Tracking
+### 🔍 Activity Tracking
 
 * **Gaming activity**: Track status, game starts, finishes and changes.
 * **Appear Offline**: Detect gaming activity from title history when presence is hidden.
 * **Session statistics**: Measure state and game durations, preserving statistics through short offline interruptions.
 
-### Profile Insights
+### 📊 Profile Insights
 
 * **Profile details**: View XUID, status, platform, account tier, gamerscore and friends.
 * **Games and achievements**: See recent games, playtime and earned achievements.
 
-### Notifications and History
+### 🔔 Notifications and History
 
 * **Event alerts**: Configure email, Discord and ntfy notifications independently.
 * **CSV history**: Save reported activity with timestamps.
 * **Saved status**: Retain monitoring state across restarts.
 
-### Setup and Configuration
+### ⚙️ Setup and Configuration
 
 * **Guided setup**: Configure credentials and complete OAuth2 authorization with `--setup`.
 * **Preflight checks**: Check readiness with `--doctor` without writing files.
