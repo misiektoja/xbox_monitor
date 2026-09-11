@@ -1024,6 +1024,8 @@ async def doctor_check_target(auth_mgr, xbox_gamertag, progress=None):
         profile = await xbl_client.profile.get_profile_by_gamertag(str(xbox_gamertag))
         xuid = int(profile.profile_users[0].id)
         presence = await xbl_client.presence.get_presence(str(xuid), PresenceLevel.ALL)
+        # Parsed and discarded on purpose. A profile that answers with a body monitoring cannot read is a target
+        # failure the report has to show, and only parsing it proves the response is usable
         xbox_process_presence_class(presence, False)
     except Exception as exc:
         advice = classify_recovery_error(exc, context="target", detail=f"Looking up the gamertag '{xbox_gamertag}' failed: {exc}")
