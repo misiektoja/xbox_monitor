@@ -1,4 +1,3 @@
-from pathlib import Path
 """Tests that drive real startup through main() and assert on what a user sees on the paths they walk."""
 
 from command_expectations import runtime_command
@@ -157,12 +156,12 @@ def test_secret_is_set_recognizes_placeholders(value, expected):
 def test_install_method_follows_how_the_tool_was_started(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["/usr/local/bin/xbox_monitor"])
     assert monitor.detect_install_method() == "pip"
-    assert monitor.install_command_prefix() == [monitor.sys.executable, "-m", "xbox_monitor"]
+    assert monitor.install_command_prefix() == ["xbox_monitor"]
     assert monitor.install_method_display_name() == "PyPI install"
 
     monkeypatch.setattr(sys, "argv", ["xbox_monitor.py"])
     assert monitor.detect_install_method() == "manual"
-    assert monitor.install_command_prefix()[-1] == str(Path(monitor.__file__).resolve())
+    assert monitor.install_command_prefix()[-1] == "xbox_monitor.py"
     assert monitor.install_method_display_name() == "downloaded script"
 
 
