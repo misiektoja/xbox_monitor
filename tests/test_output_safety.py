@@ -201,3 +201,19 @@ def test_the_sent_subject_carries_no_line_break(monkeypatch):
     assert monitor.send_email("Xbox user x started playing 'Halo\nBcc: attacker@example.com'", "body", "", True) == 0
     headers = captured["message"].split("\n\n", 1)[0].splitlines()
     assert [line for line in headers if line.lower().startswith("bcc:")] == []
+
+
+# Verifies a cut line closes the colour it opened, so the truncated tail does not paint every line printed after it
+def test_a_truncated_line_closes_its_open_colour():
+    pytest.importorskip("wcwidth")
+
+    assert monitor.truncate_string_per_line("\x1b[31m0123456789ABCDEF\x1b[0m", 10) == "\x1b[31m0123456789" + monitor.ANSI_RESET
+
+
+# Verifies no extra reset is added when the colour closed before the cut or the line was never cut
+def test_a_closed_or_uncut_colour_gains_no_extra_reset():
+    pytest.importorskip("wcwidth")
+
+    assert monitor.truncate_string_per_line("\x1b[31m0123\x1b[0m456789ABCDEF", 10) == "\x1b[31m0123\x1b[0m456789"
+    assert monitor.truncate_string_per_line("\x1b[31m0123\x1b[0m", 10) == "\x1b[31m0123\x1b[0m"
+    assert monitor.truncate_string_per_line("0123456789ABCDEF", 10) == "0123456789"
