@@ -171,7 +171,7 @@ xbox_monitor --set-webhook-url
 
 Each command rewrites its assignment in the dotenv file in place and keeps every other line and comment. Each asks first when the value is already set. `--setup` does the same as part of the guided run.
 
-`--set-smtp-password` checks the rest of the mail server settings before it asks for anything and names the one that is still missing, so you never type a password that cannot be checked. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL` first or run `--setup`.
+`--set-smtp-password` checks the rest of the mail server settings before it asks for anything and names the one that is still missing, so you never type a password that cannot be checked. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SENDER_EMAIL` and `RECEIVER_EMAIL` first or run `--setup`. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
 
 Export them on Linux, Unix, macOS and WSL:
 
