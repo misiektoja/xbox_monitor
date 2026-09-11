@@ -271,6 +271,12 @@ DISABLE_LOGGING = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
+# Cut every printed line to this many characters, so long lines do not wrap in a narrow terminal
+# 0 disables it, 999 uses the detected terminal width. Needs the optional wcwidth library
+# Log files always keep the untruncated text
+# Can also be set using the --truncate flag
+TRUNCATE_CHARS = 0
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -326,16 +332,6 @@ COLORED_OUTPUT = True
 #     "help_default": "bright_black",
 # }
 
-# Cut every printed line to this many characters, so long lines do not wrap in a narrow terminal
-# 0 disables it, 999 uses the detected terminal width. Needs the optional wcwidth library
-# Log files always keep the untruncated text
-# Can also be set using the --truncate flag
-TRUNCATE_CHARS = 0
-
-# Value used by signal handlers increasing/decreasing the check for player activity
-# when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
-XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
-
 # Report rare operational events such as recoveries and degraded features (can also be enabled via --verbose flag)
 # Independent of DEBUG_MODE, which reports every technical step instead
 VERBOSE_MODE = False
@@ -347,6 +343,10 @@ DEBUG_MODE = False
 # Whether verbose output confirms each delivered email and webhook alert
 # Applies only when VERBOSE_MODE is enabled
 DELIVERY_CONFIRMATIONS = True
+
+# Value used by signal handlers increasing/decreasing the check for player activity
+# when user is online/away (XBOX_ACTIVE_CHECK_INTERVAL); in seconds
+XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 """
 
 # -------------------------
@@ -379,9 +379,9 @@ WEBHOOK_GAME_CHANGE_NOTIFICATION = False
 WEBHOOK_STATUS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 WEBHOOK_HEADERS: dict = {}
+NTFY_ACCESS_TOKEN = ""
 WEBHOOK_TEMPLATE: dict = {}
 WEBHOOK_TRANSFORMS: list = []
-NTFY_ACCESS_TOKEN = ""
 XBOX_CHECK_INTERVAL = 0
 XBOX_ACTIVE_CHECK_INTERVAL = 0
 LOCAL_TIMEZONE = ""
@@ -400,15 +400,15 @@ DOTENV_FILE = ""
 XBOX_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 COLOR_THEME: dict = {}
-TRUNCATE_CHARS = 0
-XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
 VERBOSE_MODE = False
 DEBUG_MODE = False
 DELIVERY_CONFIRMATIONS = True
+XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
 
 exec(CONFIG_BLOCK, globals())
 
