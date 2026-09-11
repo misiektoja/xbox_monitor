@@ -6129,7 +6129,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         await asyncio.sleep(sleep_interval)
 
         # Main loop
+        check_count = 0
         while True:
+            check_count += 1
             try:
                 if auth_refresh_version != XBOX_AUTH_REFRESH_VERSION:
                     auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
@@ -6220,7 +6222,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     sleep_interval = XBOX_CHECK_INTERVAL
                 error_streak += 1
                 advice = classify_recovery_error(e, context="monitor", detail=f"Reading the presence for '{xbox_gamertag}' failed: {e}")
-                debug_print("Presence check", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, retryable=advice.retryable, streak=error_streak)
+                debug_print("Presence check", check=f"#{check_count}", outcome="failed", error=f"{type(e).__name__}: {e}", recovery_code=advice.code, retryable=advice.retryable, streak=error_streak)
                 # A failure that can clear on its own is worth an alert only once it clearly has not
                 alert_after = MONITOR_TRANSIENT_ALERT_AFTER if advice.retryable else 1
                 exhausted = advice.code == "resource.exhausted"
@@ -6416,6 +6418,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
                 print_liveness_banner(f"Monitoring healthy for {xbox_gamertag}. The user is {status or 'unknown'} with no activity change since the last check")
                 alive_since = int(time.time())
+
+            debug_print("Completed check", check=f"#{check_count}", user=xbox_gamertag, outcome="OK", status=status or "unknown", game=game_name or None)
 
             if status and status != "offline":
                 debug_print("Sleep", seconds=XBOX_ACTIVE_CHECK_INTERVAL, reason="the user is online")

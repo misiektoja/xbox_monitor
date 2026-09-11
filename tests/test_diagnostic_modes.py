@@ -206,8 +206,23 @@ def test_debug_reports_the_presence_failure_and_its_classification(xbox_loop, bo
 
     output = capsys.readouterr().out
     assert "recovery_code=network.unavailable" in output
-    assert "Presence check: outcome=failed, error=ConnectError: connection reset by peer" in output
+    assert "Presence check: check=#1, outcome=failed, error=ConnectError: connection reset by peer" in output
     assert "streak=1" in output
+
+
+# Verifies a healthy check reports that it finished and what it found, since a trace covering only failures
+# makes a run that is quietly working look the same as one that is stuck
+def test_debug_reports_each_completed_check_and_its_result(xbox_loop, both_modes_on, capsys):
+    xbox_loop([presence_payload(), httpx.ConnectError("connection reset by peer"), presence_payload()])
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    # The first payload is the startup snapshot, so the loop sees the failure first and the second payload second
+    completed = [line for line in output.splitlines() if "Completed check" in line]
+    assert len(completed) == 1, output
+    assert "Completed check: check=#2, user=" in completed[0]
+    assert "outcome=OK, status=offline" in completed[0]
 
 
 # Verifies every wait names how long it is and why, so a stalled run can be explained from the transcript
