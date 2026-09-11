@@ -183,14 +183,14 @@ def test_debug_mode_is_off_while_a_secret_is_being_typed(secret_paths, monkeypat
 # Verifies the dotenv writer refuses a key that is not one of this tool's secrets
 def test_the_dotenv_writer_refuses_an_unknown_key(secret_paths):
     with pytest.raises(ValueError):
-        monitor.update_dotenv_values(secret_paths["env"], {"PATH": "/tmp"})
+        monitor.update_dotenv_file(secret_paths["env"], {"PATH": "/tmp"})
     assert secret_paths["env"].read_text(encoding="utf-8") == ""
 
 
 # Verifies a cleared secret is removed from the dotenv file rather than left behind as an empty assignment
 def test_a_cleared_secret_is_removed_from_the_file(secret_paths):
     secret_paths["env"].write_text('SMTP_PASSWORD="old"\nOTHER=keep\n', encoding="utf-8")
-    monitor.update_dotenv_values(secret_paths["env"], {"SMTP_PASSWORD": ""})
+    monitor.update_dotenv_file(secret_paths["env"], {"SMTP_PASSWORD": ""})
     written = secret_paths["env"].read_text(encoding="utf-8")
     assert "SMTP_PASSWORD" not in written
     assert "OTHER=keep" in written
@@ -199,7 +199,7 @@ def test_a_cleared_secret_is_removed_from_the_file(secret_paths):
 # Verifies a value containing quotes and backslashes survives one write and read cycle unchanged
 def test_a_quoted_value_survives_the_round_trip(secret_paths, monkeypatch):
     tricky = 'a"b\\c'
-    monitor.update_dotenv_values(secret_paths["env"], {"SMTP_PASSWORD": tricky})
+    monitor.update_dotenv_file(secret_paths["env"], {"SMTP_PASSWORD": tricky})
     from dotenv import dotenv_values
 
     assert dotenv_values(str(secret_paths["env"]))["SMTP_PASSWORD"] == tricky
@@ -207,7 +207,7 @@ def test_a_quoted_value_survives_the_round_trip(secret_paths, monkeypatch):
 
 # Verifies the dotenv file the writer creates is readable only by its owner
 def test_a_written_dotenv_file_is_private(secret_paths):
-    monitor.update_dotenv_values(secret_paths["env"], {"SMTP_PASSWORD": "value"})
+    monitor.update_dotenv_file(secret_paths["env"], {"SMTP_PASSWORD": "value"})
     assert secret_paths["env"].stat().st_mode & 0o077 == 0
 
 
@@ -386,3 +386,34 @@ def test_the_replace_question_names_the_secret_not_the_keys(secret_paths):
     monitor.run_set_ms_app_credentials(env_file=str(secret_paths["env"]), interactive=True, input_func=lambda prompt: prompts.append(prompt) or "y", getpass_func=hidden_answers("client-id", "client-secret"), authorizer=TokenAuthorizer())
 
     assert prompts == [f"Replace the saved Microsoft application credentials in '{secret_paths['env'].resolve()}'? [y/N]: "]
+
+
+# Verifies an assignment the owner exported keeps its export, since dropping it changes what a shell sourcing the file exports
+def test_an_exported_assignment_keeps_its_export(tmp_path):
+    destination = tmp_path / ".env"
+    destination.write_text('export SMTP_PASSWORD="old"\nOTHER=keep\n', encoding="utf-8")
+
+    monitor.update_dotenv_file(destination, {"SMTP_PASSWORD": "new"})
+
+    assert destination.read_text(encoding="utf-8") == 'export SMTP_PASSWORD="new"\nOTHER=keep\n'
+
+
+# Verifies a line break inside a value is escaped rather than written through, since a raw one would split the assignment
+def test_a_line_break_in_a_value_cannot_split_the_assignment(tmp_path):
+    destination = tmp_path / ".env"
+
+    monitor.update_dotenv_file(destination, {"SMTP_PASSWORD": "one\ntwo"})
+
+    assert destination.read_text(encoding="utf-8") == 'SMTP_PASSWORD="one\\ntwo"\n'
+
+
+# Verifies the writer refuses a key this tool does not ship, so a typo cannot put an unknown name in the private file
+def test_the_writer_refuses_a_key_this_tool_does_not_ship(tmp_path):
+    with pytest.raises(ValueError):
+        monitor.update_dotenv_file(tmp_path / ".env", {"NOT_A_SECRET": "value"})
+
+
+# Verifies the writer refuses a value that is not text, so a mistyped caller fails before the file is touched
+def test_the_writer_refuses_a_value_that_is_not_text(tmp_path):
+    with pytest.raises(TypeError):
+        monitor.update_dotenv_file(tmp_path / ".env", {"SMTP_PASSWORD": 1234})
