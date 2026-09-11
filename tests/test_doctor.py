@@ -1094,6 +1094,16 @@ def test_invalid_numeric_settings_are_reported_in_one_row(monkeypatch):
     assert all(name in rows[0].detail for name in ("XBOX_CHECK_INTERVAL", "TOKEN_REFRESH_RETRIES", "SMTP_PORT"))
 
 
+# Verifies a quoted interval is reported as an unusable setting, since comparing it against the safe floor used to raise
+def test_an_interval_that_is_not_a_number_is_reported_rather_than_raised(monkeypatch):
+    monkeypatch.setattr(monitor, "XBOX_ACTIVE_CHECK_INTERVAL", "3600")
+
+    labels = [item.label for item in monitor.doctor_check_configuration()]
+
+    assert "One or more numeric settings are invalid" in labels
+    assert "Check intervals are short" not in labels
+
+
 # Verifies configured mail settings with no alert types selected warn, since nothing would ever be emailed
 def test_email_configured_but_nothing_selected_warns(monkeypatch):
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
