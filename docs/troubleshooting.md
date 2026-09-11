@@ -4,7 +4,7 @@ If a dotenv file cannot be opened or is not UTF-8, monitoring stops with the fil
 
 ## Doctor Preflight
 
-`--doctor` checks the whole setup and exits. It writes no files, so running it costs nothing:
+`--doctor` checks the setup without writing files:
 
 ```sh
 xbox_monitor --doctor <xbox_gamertag>
@@ -21,19 +21,19 @@ The report covers six sections:
 | **Target** | That the monitored gamertag resolves and shares its activity |
 | **Notifications** | Whether email alerts are on and, if so, whether the SMTP server accepts the configured login. Whether the webhook destination, headers and alert choices can be used |
 
-Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`, colour-coded by status when colour output is on. Every `[WARN]` and `[FAIL]` row carries an indented `To fix:` line under its marker, plus a `Guide:` link when a documentation page covers that row. A `[SKIP]` row names a check that could not run and says why. An explicitly selected dotenv path that does not exist is reported as a warning with the path and recovery command. A warning describes a working setup worth reviewing. Only a failure changes the exit code, which is 1 when anything failed and 0 otherwise, so the report can be used in a script.
+Results use `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Warnings and failures include a `To fix:` action and relevant guide links. Doctor exits `1` if anything fails and `0` otherwise.
 
 When both the input and the output are a terminal and a channel passed, the report offers one real test message for that channel. Nothing is sent without a separate yes and the result is counted in the summary. The webhook check validates the settings without contacting Discord or ntfy, so nothing is published until you approve the test.
 
 Doctor never starts the interactive sign-in, because that writes a token file. A missing token cache is reported as a warning naming the command that creates one, which is `--setup` or the first monitoring run.
 
-The report ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. It carries the target this run used, leaves it out when the configuration file already supplies one and otherwise shows `<xbox_gamertag>` for you to replace. While a check is failing it asks for the failures first.
+Follow the report's **Next steps** after correcting any failed checks. The printed start command uses the configuration and dotenv files you checked.
 
 ## Setup and Secret Commands
 
 `--setup`, `--set-ms-app-credentials`, `--set-smtp-password` and `--set-webhook-url` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
 
-Ctrl+C is safe at every question. During `--setup` it reports that the destination files were not changed. During a secret command it says the entry was cancelled, names the command that resumes it and leaves the dotenv file unchanged. Answering `n` at a replace question instead says the saved values were left as they are. After `--setup` has saved, Ctrl+C only skips the optional doctor run or the offer to start monitoring. At the doctor's own optional delivery prompts it ends the run instead, since nothing is waiting to be written there.
+Ctrl+C cancels setup before saving or cancels a secret prompt without changing the dotenv file. After saving, it skips the optional Doctor run or monitoring offer. At Doctor's test-message prompts, Ctrl+C ends the report.
 
 `--setup` needs somewhere to put both files, so it refuses `--env-file none` and `--config-file none`. It reports a destination that is a directory or whose parent will not accept a write before asking anything.
 
@@ -55,7 +55,9 @@ Every reported problem carries a category, a one-line summary and a `To fix:` pa
 | The webhook service refused the delivery | The webhook was deleted or the saved URL is out of date. Create a new one and run `--set-webhook-url` |
 | The webhook service is rate limiting deliveries | Too many alerts for the destination. Enable fewer webhook alert types |
 
-The banner that says nothing changed prints in any mode: `* Monitoring healthy for <xbox_gamertag>` with what was checked, followed by `Liveness check, timestamp:`. It is timed rather than counted in checks, so it appears once per `LIVENESS_CHECK_INTERVAL` of quiet, measured from the last thing the run printed. That setting defaults to 86400 seconds, a day. Set it to 0 to switch the banner off. A monitoring failure is reported as `* Error: <what failed> (retrying in <time>)`, with the `To fix:` paragraph under it the first time that category appears. Every monitor in this family prints that same line. During a long outage the failure is reported in full once, then the tool stays quiet and reminds you once an hour with `* Monitoring degraded for <xbox_gamertag>`, the summary of what is still failing, when it started and how many checks have failed so far, so a two-day outage is a handful of lines rather than one block per check. The reminder has its own clock and does not depend on `LIVENESS_CHECK_INTERVAL`, so it keeps coming when the banner is off. When the failure clears, `* Monitoring recovered for <xbox_gamertag>` reports how long it lasted. An outage that starts failing differently is still one outage. A lost connection that reads as a timeout on one check and as an unreachable host on the next prints nothing new. A change to another kind of failure that clears on its own is one line, `* Monitoring failure changed for <xbox_gamertag>. <what fails now>`, rather than a second full report. A change to a failure that needs you is reported in full.
+During quiet monitoring, `* Monitoring healthy for <xbox_gamertag>` confirms the tool is still running. `LIVENESS_CHECK_INTERVAL` defaults to 86400 seconds (24 hours). Set it to `0` to disable this reminder.
+
+Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when liveness reminders are disabled. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
 
 ## Verbose and Debug Output
 
@@ -77,7 +79,7 @@ Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and li
 [DEBUG 00:03:04] Presence check: outcome=failed, error=ConnectError: connection reset by peer, recovery_code=network.unavailable, streak=1
 ```
 
-Debug fields depend on the operation. Webhook response traces report the HTTP status and retry decision. Failed requests include error details when available. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL. A secret is reported by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
+Debug output includes HTTP status, retries and error details. Both modes redact credentials and tokens. Application credential lengths are shown to help identify an incomplete copy. Webhook traces show the destination host without its private path.
 
 Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email sent to ...` and `* Webhook sent through ...` lines, which is worth doing when alerts are frequent.
 
@@ -96,6 +98,8 @@ If the tool cannot import a dependency, install the dependencies with the same P
 If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `xbox_monitor --doctor "<xbox_gamertag>"` to see which settings are loaded.
 
 ## Invalid saved settings and state
+
+If setup fails while saving, the configuration may already have changed. Correct the reported destination problem, rerun `--setup` with the same `--config-file` and `--env-file` paths then run `--doctor` before monitoring. The configuration backup restores non-secret settings only.
 
 Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.
 

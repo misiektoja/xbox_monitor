@@ -1,13 +1,5 @@
 # Setup & First Run
 
-Printed commands use short names. Activate the tool's virtual environment before running them. For a downloaded script, run them from the script directory. Recovery commands retain selected configuration and dotenv paths.
-
-Before replacing a configuration, setup copies retained inline credentials to the selected private dotenv file when that file has no value for the same key. An existing dotenv value, including an explicit empty value, keeps precedence. If preservation fails, the original configuration stays in place. Setup backups omit inline credentials.
-
-When rebuilding an existing configuration, setup keeps its saved `DOTENV_FILE` unless you pass `--env-file PATH`. A nonempty exported secret takes precedence over the dotenv file. An explicit empty value in that file still overrides the configuration, both after saving and on the next run. Quoted dotenv keys receive the same replacement confirmation as unquoted keys.
-
-Setup replaces each file separately. If saving secrets fails after the configuration was saved, setup stops and identifies the saved configuration. Correct the destination then rerun `--setup` with the same `--config-file` and `--env-file`, review the settings and run `--doctor` before monitoring. A crash between replacements can also leave a new configuration beside the previous dotenv file. The configuration backup can recover non-secret settings. Replaced secrets are not backed up.
-
 ## Before You Start
 
 Install the tool using [Installation](installation.md). You will need an Xbox gamertag and the [Microsoft Entra application credentials](#microsoft-entra-application-credentials). Quote a gamertag that contains spaces. The wizard collects credentials through hidden prompts.
@@ -23,11 +15,11 @@ The setup wizard asks a few questions, runs the [first authorization](#first-aut
 xbox_monitor --setup
 ```
 
-It writes the secrets to a dotenv file and everything else to `xbox_monitor.conf`, both in the current directory unless `--config-file` and `--env-file` say otherwise. Both destinations are checked before the first question, so an unwritable path is reported straight away rather than after you have answered everything. When the configuration file already exists it asks whether to replace it. It offers to write somewhere else instead. A rebuilt file starts from the settings already in place with your answers applied over them. A section you decline is cleared rather than carried over, so declining email leaves no mail server behind. A secret already in the dotenv file is never replaced without asking. A saved webhook URL or ntfy access token is offered by name, so it can be kept, replaced or, for the token, switched off, without ever being displayed.
+Settings go to `xbox_monitor.conf` and secrets go to `.env` in the current directory. Use `--config-file` and `--env-file` or the summary's **File destinations** section to choose other files. Setup asks before replacing existing files or secrets. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
 
-It covers the monitored account, the polling intervals, the application credentials, email alerts, [webhook alerts](configuration.md#webhook-settings) and the files the tool writes. Each section can be skipped and re-entered from the summary. The summary's **File destinations** section changes where the configuration and dotenv files are written. Moving the dotenv destination reviews the private settings again. Kept file credentials are saved to the new destination when you choose Save. An existing value at that destination, including an empty value, takes precedence unless you explicitly replace it. The old file is left intact.
+The wizard asks for the account, polling intervals, application credentials, email and [webhook alerts](configuration.md#webhook-settings) and output files. Review or change any section from the summary. A rerun uses saved settings as defaults. Declining a section disables it.
 
-Every answer setup cannot use is explained and offered again. Declining the retry moves on rather than asking the same question forever: a value question keeps the default it showed and a channel such as email or webhook is switched off with its alerts.
+If an answer is invalid, setup explains how to correct it and lets you retry.
 
 Nothing is written until you choose **Save settings** on the summary. Ctrl+C at any question leaves both files untouched.
 

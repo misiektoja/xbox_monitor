@@ -13,7 +13,7 @@ Examples use the PyPI command. For a downloaded script, run commands from the di
 
 For example, `xbox_monitor --setup` becomes `python3 xbox_monitor.py --setup` on macOS or Linux. Use `python` on Windows. Replace placeholders such as `"<xbox_gamertag>"` with an Xbox gamertag, quoted when it contains spaces.
 
-The manual-script examples assume the current directory contains `xbox_monitor.py`. Commands printed by setup, Doctor and recovery messages use the running interpreter and the full script path. Packaged installations use the running interpreter with `-m xbox_monitor`.
+Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `xbox_monitor.py`.
 
 For first-time configuration, follow [Setup & First Run](setup-and-first-run.md). Use [Doctor Preflight](troubleshooting.md#doctor-preflight) to check a setup before monitoring.
 
@@ -102,7 +102,7 @@ The timestamp and last status are saved after every change, so the last status s
 xbox_monitor <xbox_gamertag> --status-file ~/xbox/last_status.json
 ```
 
-The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind. A saved timestamp more than five minutes ahead of the machine clock is not used as history: the run warns, keeps the saved entry and starts timing it again.
+Interrupted writes leave the previous status file intact. If a saved timestamp is more than five minutes ahead of the machine clock, monitoring warns and starts timing that status again.
 
 ## Startup Summary
 
@@ -121,7 +121,7 @@ Monitoring mode prints the settings that are actually in effect before the first
 
 Optional features appear once you switch them on. `TLS verification` appears here whenever certificate checking is off.
 
-`--verbose` or `--debug` replaces this with the complete list, in the order it prints: the tolerated offline gap, the mail server and the masked recipient, the webhook service alerts go to and whether that channel is switched on, whether the delivery confirmations are printed, the log file, the liveness interval, the CSV file, the status file, the token cache, the truncation width, the process id, the Python version, the operating system, the resolved time zone, the install method, which secrets came from the dotenv file, the environment, the configuration file or the command line, whether certificate checking is on, how log separators are written, whether colour is actually in use and the two flags themselves.
+Use `--verbose` or `--debug` for the full startup summary, including output paths, notification settings, secret sources and runtime information.
 
 The sibling monitors print the same rows in the same order, so a setting sits in the same place whichever of them you are reading. Each channel's own settings are indented under it. The token cache row is the one addition, since only this tool signs in through Microsoft.
 
@@ -155,7 +155,7 @@ To stop the error email, which is on by default, set `ERROR_NOTIFICATION` to `Fa
 xbox_monitor <xbox_gamertag> -e
 ```
 
-The error alert fires at once for a failure that cannot clear on its own, such as expired credentials or a profile that stopped sharing its activity. A failure that can clear on its own, such as a timeout or a rate limit, is alerted on only once it has lasted **5 minutes**, so a short outage does not reach you. Either way the alert is sent once per channel. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. The alert is not repeated until a check succeeds. The same rule governs the webhook error alert.
+Email and webhook error alerts are sent after **5 minutes** of a continuing temporary failure. Problems that need your action, such as expired credentials or a hidden profile, alert immediately. Each channel gets one alert until a check succeeds. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
 
 Set the [SMTP settings](configuration.md#smtp-settings) first.
 
