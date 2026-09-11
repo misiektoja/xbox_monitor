@@ -1,5 +1,6 @@
 """Tests for the --help screen and the zero-argument welcome screen, which are the two first-contact surfaces."""
 
+from command_expectations import runtime_command
 import sys
 
 import pytest
@@ -44,7 +45,7 @@ def test_the_wizard_is_the_first_example(monkeypatch, capsys):
     block = help_output(monkeypatch, capsys).split("Examples:", 1)[1]
     first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
 
-    assert first == ["# Guided setup, recommended for the first run", "xbox_monitor --setup"]
+    assert first == ["# Guided setup, recommended for the first run", runtime_command("xbox_monitor --setup")]
 
 
 # Verifies the one-line description carries the repository link in the form the sibling monitors print

@@ -710,11 +710,11 @@ def test_an_exported_secret_is_not_credited_to_the_dotenv_file(monkeypatch, tmp_
 
 
 # Verifies an Auto zone in the saved config is resolved before doctor reads it, as it is on a normal start
-def test_the_saved_timezone_is_resolved_before_doctor_reads_it(monkeypatch):
+def test_the_saved_timezone_is_resolved_before_doctor_reads_it(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE_STATE", "config")
     monkeypatch.setattr(monitor, "get_localzone", lambda: "Europe/Warsaw")
-    state = types.SimpleNamespace(config_values={"LOCAL_TIMEZONE": "Auto"}, secret_updates={})
+    state = monitor.WizardSetupState(tmp_path / "settings.conf", tmp_path / "private.env", {"LOCAL_TIMEZONE": "Auto"})
 
     advice = monitor._wizard_apply_saved_values(state, env_path=None)
 
@@ -863,7 +863,7 @@ def test_a_rerun_keeps_loaded_secrets_out_of_the_configuration(monkeypatch, wiza
 
 # Verifies the configuration renderer keeps the template placeholder for every secret whatever the values hold
 def test_the_configuration_renderer_never_writes_a_secret():
-    values = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
+    values: dict = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
     values["XBOX_CHECK_INTERVAL"] = 4321
 
     rendered = monitor.generate_config_with_current_values(values)

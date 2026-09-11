@@ -1,5 +1,7 @@
+from pathlib import Path
 """Tests that drive real startup through main() and assert on what a user sees on the paths they walk."""
 
+from command_expectations import runtime_command
 import inspect
 import io
 import os
@@ -155,20 +157,20 @@ def test_secret_is_set_recognizes_placeholders(value, expected):
 def test_install_method_follows_how_the_tool_was_started(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["/usr/local/bin/xbox_monitor"])
     assert monitor.detect_install_method() == "pip"
-    assert monitor.install_command_prefix() == ["xbox_monitor"]
+    assert monitor.install_command_prefix() == [monitor.sys.executable, "-m", "xbox_monitor"]
     assert monitor.install_method_display_name() == "PyPI install"
 
     monkeypatch.setattr(sys, "argv", ["xbox_monitor.py"])
     assert monitor.detect_install_method() == "manual"
-    assert monitor.install_command_prefix()[-1] == "xbox_monitor.py"
+    assert monitor.install_command_prefix()[-1] == str(Path(monitor.__file__).resolve())
     assert monitor.install_method_display_name() == "downloaded script"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shell quoting")
 # Verifies a rendered command quotes arguments for the shell the user pastes it into
 def test_rendered_commands_quote_arguments_for_the_shell():
-    assert monitor.render_command(["--generate-config", "my conf.conf"], method="pip") == "xbox_monitor --generate-config 'my conf.conf'"
-    assert monitor.render_command(["--generate-config", "plain.conf"], method="pip") == "xbox_monitor --generate-config plain.conf"
+    assert monitor.render_command(["--generate-config", "my conf.conf"], method="pip") == runtime_command("xbox_monitor --generate-config 'my conf.conf'")
+    assert monitor.render_command(["--generate-config", "plain.conf"], method="pip") == runtime_command("xbox_monitor --generate-config plain.conf")
 
 
 # Verifies --generate-config refuses to replace an existing file outside a terminal and names the way around it
@@ -430,8 +432,8 @@ def test_printed_commands_carry_the_files_this_run_was_given(monkeypatch):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
     monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
 
-    assert monitor.render_command(["--send-test-webhook"], method="pip") == "xbox_monitor --send-test-webhook --config-file /etc/xbox.conf --env-file /etc/xbox.env"
-    assert monitor.render_command(["--generate-config", "plain.conf"], method="pip", include_paths=False) == "xbox_monitor --generate-config plain.conf"
+    assert monitor.render_command(["--send-test-webhook"], method="pip") == runtime_command("xbox_monitor --send-test-webhook --config-file /etc/xbox.conf --env-file /etc/xbox.env")
+    assert monitor.render_command(["--generate-config", "plain.conf"], method="pip", include_paths=False) == runtime_command("xbox_monitor --generate-config plain.conf")
 
 
 # Verifies the missing-target fix carries this run's files and leaves the placeholder readable
@@ -447,10 +449,10 @@ def test_the_missing_target_command_carries_the_files_and_the_placeholder(monkey
 
 # Verifies a <placeholder> is printed for the reader to replace rather than quoted as a literal value
 def test_a_placeholder_argument_is_left_unquoted():
-    assert monitor.render_command(["<xbox_gamertag>", "-u", "<client_id>"], include_paths=False, method="pip") == "xbox_monitor <xbox_gamertag> -u <client_id>"
-    assert monitor.render_command(["a value"], include_paths=False, method="pip") == "xbox_monitor 'a value'"
+    assert monitor.render_command(["<xbox_gamertag>", "-u", "<client_id>"], include_paths=False, method="pip") == runtime_command("xbox_monitor <xbox_gamertag> -u <client_id>")
+    assert monitor.render_command(["a value"], include_paths=False, method="pip") == runtime_command("xbox_monitor 'a value'")
     # A value only shaped like a placeholder is user input, so pasting the rendered command must not run a substitution
-    assert monitor.render_command(["<$(echo>marker)>"], include_paths=False, method="pip") == "xbox_monitor '<$(echo>marker)>'"
+    assert monitor.render_command(["<$(echo>marker)>"], include_paths=False, method="pip") == runtime_command("xbox_monitor '<$(echo>marker)>'")
 
 
 # Verifies the disabled dotenv search reaches the commands that accept it and stays out of the ones that refuse it
@@ -458,9 +460,9 @@ def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypat
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
 
-    assert monitor.render_command(["--doctor"], method="pip") == "xbox_monitor --doctor --env-file none"
-    assert monitor.render_command(["--set-ms-app-credentials"], method="pip") == "xbox_monitor --set-ms-app-credentials"
-    assert monitor.render_command(["--setup"], method="pip") == "xbox_monitor --setup"
+    assert monitor.render_command(["--doctor"], method="pip") == runtime_command("xbox_monitor --doctor --env-file none")
+    assert monitor.render_command(["--set-ms-app-credentials"], method="pip") == runtime_command("xbox_monitor --set-ms-app-credentials")
+    assert monitor.render_command(["--setup"], method="pip") == runtime_command("xbox_monitor --setup")
 
 
 # Verifies the disabled config search reaches the commands that accept it and stays out of the ones that refuse it
@@ -469,10 +471,10 @@ def test_a_disabled_config_search_is_carried_only_where_it_is_accepted(monkeypat
     monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
     monkeypatch.setattr(monitor, "DOTENV_FILE", "")
 
-    assert monitor.render_command(["--doctor"], method="pip") == "xbox_monitor --doctor --config-file none"
-    assert monitor.render_command(["--set-ms-app-credentials"], method="pip") == "xbox_monitor --set-ms-app-credentials --config-file none"
-    assert monitor.render_command(["--setup"], method="pip") == "xbox_monitor --setup"
-    assert monitor.render_command(["--doctor"], method="pip", include_paths=False) == "xbox_monitor --doctor"
+    assert monitor.render_command(["--doctor"], method="pip") == runtime_command("xbox_monitor --doctor --config-file none")
+    assert monitor.render_command(["--set-ms-app-credentials"], method="pip") == runtime_command("xbox_monitor --set-ms-app-credentials --config-file none")
+    assert monitor.render_command(["--setup"], method="pip") == runtime_command("xbox_monitor --setup")
+    assert monitor.render_command(["--doctor"], method="pip", include_paths=False) == runtime_command("xbox_monitor --doctor")
 
 
 # Verifies a caller that already names a file is not given a second copy of it
@@ -480,7 +482,7 @@ def test_a_path_the_caller_passed_is_not_repeated(monkeypatch):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/xbox.conf")
     monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/xbox.env")
 
-    assert monitor.render_command(["--doctor", "--env-file", "/tmp/other.env"], method="pip") == "xbox_monitor --doctor --env-file /tmp/other.env --config-file /etc/xbox.conf"
+    assert monitor.render_command(["--doctor", "--env-file", "/tmp/other.env"], method="pip") == runtime_command("xbox_monitor --doctor --env-file /tmp/other.env --config-file /etc/xbox.conf")
 
 
 # Verifies both test commands carry the subject, title and body shared with the sibling monitors
