@@ -29,7 +29,7 @@ By default the tool looks for `xbox_monitor.conf` in the current directory, then
 xbox_monitor <xbox_gamertag> --config-file /path/xbox_monitor_new.conf
 ```
 
-`--config-file none` switches automatic config discovery off for one run.
+`--config-file none` switches automatic config discovery off for one run. The startup summary reports `Discovery disabled` when it is in effect.
 
 ## Target Account
 

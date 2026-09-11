@@ -58,6 +58,7 @@ and again before anything is published to PyPI.
 | `test_setup_wizard.py` | `--setup` driven end to end: what it asks, what it writes and what it leaves untouched |
 | `test_shared_wording.py` | The prompts, labels and headings this tool shares word for word with the sibling monitors |
 | `test_startup_summary.py` | The startup summary rows, their order and the concise and verbose views |
+| `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
 | `test_terminal_color.py` | The colour engine, the theme in both directions and which values are coloured |
 | `test_terminal_transcripts.py` | Real pty runs: what a terminal actually receives, with and without `--no-color` |
 | `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
