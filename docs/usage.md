@@ -102,7 +102,7 @@ The timestamp and last status are saved after every change, so the last status s
 xbox_monitor <xbox_gamertag> --status-file ~/xbox/last_status.json
 ```
 
-The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind.
+The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind. A saved timestamp more than five minutes ahead of the machine clock is not used as history: the run warns, keeps the saved entry and starts timing it again.
 
 ## Startup Summary
 
