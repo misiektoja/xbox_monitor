@@ -82,7 +82,8 @@ def test_secret_sources_name_where_each_value_came_from(tmp_path, monkeypatch, c
     out = capsys.readouterr().out
     assert "Secret resolution: name=MS_APP_CLIENT_ID, source=dotenv file" in out
     assert "Secret resolution: name=MS_APP_CLIENT_SECRET, source=environment" in out
-    assert "Secret resolution: name=SMTP_PASSWORD, source=nowhere" in out
+    # A secret no layer supplied takes no row, so the trace lists what is configured rather than what is not
+    assert "name=SMTP_PASSWORD" not in out
 
 
 # Verifies a secret kept in the config file is attributed to it and one from the command line overrides that

@@ -514,3 +514,33 @@ def test_the_liveness_banner_explains_itself_without_diagnostics(xbox_loop, monk
     output = capsys.readouterr().out
     assert f"* Monitoring healthy for {GAMERTAG}. The user is offline with no activity change since the last check" in output
     assert "Liveness check, timestamp:" in output
+
+
+# A secret no layer supplied takes no row, so the trace lists what is configured rather than what is not
+def test_the_trace_omits_every_secret_no_layer_supplied(monkeypatch, monitor_calls, capsys):
+    run_main(monkeypatch, ["--debug", "--webhook-url", "https://discord.com/api/webhooks/1/" + "a" * 32, GAMERTAG])
+
+    output = capsys.readouterr().out
+    assert "Secret resolution: name=WEBHOOK_URL, source=command line" in output
+    assert "name=NTFY_ACCESS_TOKEN" not in output
+    assert "source=nowhere" not in output
+
+
+# The trace runs after the last layer, so one secret cannot be reported twice with opposite answers
+def test_the_trace_reports_a_command_line_secret_exactly_once(monkeypatch, monitor_calls, capsys):
+    run_main(monkeypatch, ["--debug", "--webhook-url", "https://discord.com/api/webhooks/1/" + "a" * 32, GAMERTAG])
+
+    traces = [line for line in capsys.readouterr().out.splitlines() if "Secret resolution: name=WEBHOOK_URL" in line]
+    assert len(traces) == 1
+
+
+# A placeholder is not a value, so it earns neither a source nor a row, which is what the doctor already reports
+def test_a_placeholder_earns_no_source(monkeypatch):
+    monkeypatch.setattr(monitor, "SECRET_SOURCES", {})
+    monkeypatch.setattr(monitor, "MS_APP_CLIENT_ID", "your_ms_app_client_id", raising=False)
+
+    monitor.record_secret_source("MS_APP_CLIENT_ID", "dotenv file")
+
+    assert monitor.SECRET_SOURCES == {}
+    with pytest.raises(ValueError, match="Unsupported secret source"):
+        monitor.record_secret_source("MS_APP_CLIENT_ID", "a layer that does not exist", "a real value")

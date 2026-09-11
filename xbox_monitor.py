@@ -413,6 +413,9 @@ FIXED_LENGTH_SECRET_KEYS = frozenset(("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"
 # Where each secret's effective value came from, recorded while precedence is applied so it can be reported later
 SECRET_SOURCES = {}
 
+# The closed set of layers a secret can come from, so a typo raises instead of inventing a source
+SECRET_SOURCE_ORDER = ("configuration file", "dotenv file", "environment", "command line")
+
 # Secrets that were already exported before the dotenv file was loaded, captured at startup
 EXPORTED_SECRET_KEYS = frozenset()
 
@@ -2967,7 +2970,7 @@ def _wizard_apply_saved_values(state, env_path=None):
     for key, value in state.secret_updates.items():
         if key not in EXPORTED_SECRET_KEYS and not secret_is_set(globals().get(key)):
             globals()[key] = value
-            SECRET_SOURCES[key] = "dotenv file"
+            record_secret_source(key, "dotenv file")
     return resolve_local_timezone()
 
 
@@ -3482,7 +3485,7 @@ def apply_environment_secrets():
             globals()[secret] = val
             # A shipped placeholder is not a value, so it never counts as a source
             if secret_is_set(val):
-                SECRET_SOURCES[secret] = "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file"
+                record_secret_source(secret, "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file")
             else:
                 SECRET_SOURCES.pop(secret, None)
 
@@ -3526,8 +3529,7 @@ def apply_webhook_cli_overrides(args, parser):
             parser.error("--webhook-url needs a complete HTTPS link without embedded credentials")
         WEBHOOK_URL = str(args.webhook_url).strip()
         WEBHOOK_ENABLED = True
-        SECRET_SOURCES["WEBHOOK_URL"] = "command line"
-        debug_print("Secret resolution", name="WEBHOOK_URL", source="command line", **secret_fields(WEBHOOK_URL, "WEBHOOK_URL"))
+        record_secret_source("WEBHOOK_URL", "command line", WEBHOOK_URL)
     if args.webhook_enabled is not None:
         WEBHOOK_ENABLED = args.webhook_enabled
     # Naming one alert also switches the channel on, so a single flag is enough to try it out
@@ -4011,6 +4013,17 @@ def secret_fingerprint(value, key=None):
 
 # Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
 def secret_fields(value, key=None): return {"value": "set" if secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and secret_is_set(value) else None}
+
+
+# Records where one secret resolved from, so a later layer replaces the earlier answer instead of adding to it
+def record_secret_source(name, source, value=None):
+    if source not in SECRET_SOURCE_ORDER:
+        raise ValueError(f"Unsupported secret source: {source}")
+    # A placeholder is not a value, so it earns neither a source nor a row
+    if not secret_is_set(globals().get(name) if value is None else value):
+        SECRET_SOURCES.pop(name, None)
+        return
+    SECRET_SOURCES[name] = source
 
 
 # Renders one diagnostic line as an operation followed by comma-separated key=value fields, dropping unset ones
@@ -5029,7 +5042,7 @@ def reload_secrets_signal_handler(sig, frame):
             if val is not None and val != old_val:
                 globals()[secret] = val
                 if secret_is_set(val):
-                    SECRET_SOURCES[secret] = "dotenv file"
+                    record_secret_source(secret, "dotenv file")
                 else:
                     SECRET_SOURCES.pop(secret, None)
                 if secret in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"):
@@ -6877,7 +6890,7 @@ def main():
     SECRET_SOURCES.clear()
     for secret in SECRET_KEYS:
         if secret_is_set(globals().get(secret)):
-            SECRET_SOURCES[secret] = "configuration file"
+            record_secret_source(secret, "configuration file")
 
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
@@ -6908,9 +6921,6 @@ def main():
 
     apply_environment_secrets()
 
-    for secret in SECRET_KEYS:
-        debug_print("Secret resolution", name=secret, source=SECRET_SOURCES.get(secret, "nowhere"), **secret_fields(globals().get(secret), secret))
-
     try:
         validate_connectivity_timer()
     except ValueError as e:
@@ -6933,15 +6943,11 @@ def main():
     # The command-line credentials have to be in effect before the report checks them
     if args.ms_app_client_id:
         MS_APP_CLIENT_ID = args.ms_app_client_id
-        if secret_is_set(MS_APP_CLIENT_ID):
-            SECRET_SOURCES["MS_APP_CLIENT_ID"] = "command line"
-            debug_print("Secret resolution", name="MS_APP_CLIENT_ID", source="command line", **secret_fields(MS_APP_CLIENT_ID, "MS_APP_CLIENT_ID"))
+        record_secret_source("MS_APP_CLIENT_ID", "command line", MS_APP_CLIENT_ID)
 
     if args.ms_app_client_secret:
         MS_APP_CLIENT_SECRET = args.ms_app_client_secret
-        if secret_is_set(MS_APP_CLIENT_SECRET):
-            SECRET_SOURCES["MS_APP_CLIENT_SECRET"] = "command line"
-            debug_print("Secret resolution", name="MS_APP_CLIENT_SECRET", source="command line", **secret_fields(MS_APP_CLIENT_SECRET, "MS_APP_CLIENT_SECRET"))
+        record_secret_source("MS_APP_CLIENT_SECRET", "command line", MS_APP_CLIENT_SECRET)
 
     if args.check_interval is not None:
         XBOX_CHECK_INTERVAL = args.check_interval
@@ -6977,6 +6983,13 @@ def main():
         ERROR_NOTIFICATION = False
 
     apply_webhook_cli_overrides(args, parser)
+
+    # Traced here rather than at each layer, so the line reports the value that survived every later override
+    resolved_secrets = {secret: SECRET_SOURCES[secret] for secret in SECRET_KEYS if secret in SECRET_SOURCES}
+    for secret, source in resolved_secrets.items():
+        debug_print("Secret resolution", name=secret, source=source, **secret_fields(globals().get(secret), secret))
+    if not resolved_secrets:
+        debug_print("No private settings were resolved from config, dotenv, environment or the command line")
 
     if doctor_mode:
         doctor_exit = run_doctor(args.xbox_gamertag, cfg_path, env_path, config_advice, timezone_advice)
