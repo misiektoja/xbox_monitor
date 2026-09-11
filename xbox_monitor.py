@@ -868,7 +868,7 @@ async def doctor_check_xbox_live(report, xbox_gamertag=None, progress=None):
 
     tokens_path = Path(os.path.expanduser(MS_AUTH_TOKENS_FILE or ""))
     if not tokens_path.is_file():
-        advice = make_recovery_advice("auth.token_cache", "No saved Xbox tokens were found", recovery_fix_with_guide(f"Authorize once by running: {tool_command('--setup')}, or start monitoring with: {tool_command('<xbox_gamertag>')}. Doctor writes no files, so it cannot run the sign-in flow for you", CREDENTIALS_GUIDE_URL), False, f"Expected the token cache at {tokens_path}")
+        advice = make_recovery_advice("auth.token_cache", "No saved Xbox tokens were found", recovery_fix_with_guide(f"Authorize once by running: {render_command(['--setup'])}, or start monitoring with: {render_command(['<xbox_gamertag>'])}. Doctor writes no files, so it cannot run the sign-in flow for you", CREDENTIALS_GUIDE_URL), False, f"Expected the token cache at {tokens_path}")
         checks.append(make_doctor_check("Authentication", "WARN", "No saved Xbox tokens were found", f"Path: {tokens_path}", advice))
         return checks + doctor_check_target_identity(report, xbox_gamertag)
 
@@ -958,7 +958,7 @@ def email_settings_problem():
     if problem is not None:
         return problem
     if not secret_is_set(SMTP_PASSWORD):
-        return ("SMTP_PASSWORD is empty or still set to its placeholder", f"Set SMTP_PASSWORD with {tool_command('--set-smtp-password')} or turn the email alerts off")
+        return ("SMTP_PASSWORD is empty or still set to its placeholder", f"Set SMTP_PASSWORD with {render_command(['--set-smtp-password'])} or turn the email alerts off")
     return None
 
 
@@ -1919,16 +1919,11 @@ def quote_command_argument(argument):
     return subprocess.list2cmdline([text]) if platform.system() == "Windows" else shlex.quote(text)
 
 
-# Renders command arguments quoted for the shell of the host operating system
-def render_command(arguments):
-    return " ".join(quote_command_argument(argument) for argument in arguments)
-
-
-# Returns the bare command that starts this tool on the detected install, without arguments
-def tool_command_prefix(method=None):
+# Returns the command that starts this tool on the detected install, as the argument parts before any option
+def install_command_prefix(method=None):
     if (method or detect_install_method()) == "manual":
-        return render_command([("python" if platform.system() == "Windows" else "python3"), Path(__file__).name])
-    return "xbox_monitor"
+        return [("python" if platform.system() == "Windows" else "python3"), Path(__file__).name]
+    return ["xbox_monitor"]
 
 
 # True when a command writes the dotenv file itself, so it refuses an --env-file that switches dotenv loading off
@@ -1958,9 +1953,10 @@ def active_path_arguments(arguments=()):
 
 
 # Returns a copy-pasteable command line for this tool, carrying the config and dotenv paths this run was given
-def tool_command(*arguments, method=None, include_paths=True):
-    parts = [*arguments, *(active_path_arguments(arguments) if include_paths else ())]
-    return " ".join([tool_command_prefix(method), *[render_command([part]) for part in parts]])
+def render_command(arguments=None, include_paths=True, *, method=None):
+    selected = [str(argument) for argument in (arguments or ())]
+    parts = [*install_command_prefix(method), *selected, *(active_path_arguments(selected) if include_paths else ())]
+    return " ".join(quote_command_argument(part) for part in parts)
 
 
 # Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
@@ -3107,9 +3103,9 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     target_arguments = [] if state.persist_target or not state.target else [state.target]
     paths = ["--config-file", str(state.config_path)] + env_arguments
     print("\n" + colorize("header", "Next steps") + "\n")
-    print_labelled_command("Check setup again:", tool_command("--doctor", *target_arguments, *paths))
+    print_labelled_command("Check setup again:", render_command(["--doctor", *target_arguments, *paths]))
     start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
-    print_labelled_command(start_label, tool_command(*target_arguments, *paths))
+    print_labelled_command(start_label, render_command([*target_arguments, *paths]))
     print(f"Guide: {QUICK_START_GUIDE_URL}\n")
 
     try:
@@ -3143,7 +3139,7 @@ def render_help_examples(groups, guide_url):
 
 # Returns the --help epilog, listing the commands worth knowing rather than every command there is
 def help_examples():
-    prefix = tool_command_prefix()
+    prefix = render_command(include_paths=False)
     groups = (
         ("Getting started", (
             ("Guided setup, recommended for the first run", f"{prefix} --setup"),
@@ -3167,7 +3163,7 @@ def help_examples():
 # Prints the commands a newcomer needs next, instead of an argparse usage error nobody can act on
 def print_welcome_screen(input_func=None, interactive=None, config_file=None, env_file=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else bool(interactive)
-    prefix = tool_command_prefix()
+    prefix = render_command(include_paths=False)
     print(f"For <xbox_gamertag>, use the {XBOX_TARGET_FORMS}.\n")
     print_labelled_command("Quickest start (already configured):", f"{prefix} <xbox_gamertag>")
     # The suffix names the prompt printed below, so it only appears when that prompt does
@@ -3233,9 +3229,9 @@ def print_secret_next_steps(env_path, config_path=None, xbox_gamertag=None, test
     doctor_target, monitor_target = command_targets(xbox_gamertag, config_file_target(config_path or find_config_file()))
     print()
     if test_step:
-        print_labelled_command(test_step[0], tool_command(test_step[1], *paths))
-    print_labelled_command("Check setup again:", tool_command("--doctor", *((doctor_target,) if doctor_target else ()), *paths))
-    print_labelled_command("Once the checks pass, start monitoring:", tool_command(*((monitor_target,) if monitor_target else ()), *paths))
+        print_labelled_command(test_step[0], render_command([test_step[1], *paths]))
+    print_labelled_command("Check setup again:", render_command(["--doctor", *((doctor_target,) if doctor_target else ()), *paths]))
+    print_labelled_command("Once the checks pass, start monitoring:", render_command([*((monitor_target,) if monitor_target else ()), *paths]))
 
 
 # Reads one secret through a hidden prompt, keeping it out of the debug stream that would print it verbatim
@@ -3380,7 +3376,7 @@ def run_set_smtp_password(env_file=None, config_path=None, xbox_gamertag=None, i
     # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
     settings_problem = mail_sign_in_settings_problem()
     if settings_problem is not None:
-        raise RecoveryError(make_recovery_advice("smtp.invalid", f"The mail server settings are incomplete: {settings_problem[0]}", recovery_fix_with_guide(f"Correct it in the config file or run {tool_command('--setup')}, then run: {tool_command('--set-smtp-password')}", SMTP_GUIDE_URL), False))
+        raise RecoveryError(make_recovery_advice("smtp.invalid", f"The mail server settings are incomplete: {settings_problem[0]}", recovery_fix_with_guide(f"Correct it in the config file or run {render_command(['--setup'])}, then run: {render_command(['--set-smtp-password'])}", SMTP_GUIDE_URL), False))
     return run_set_secret("SMTP_PASSWORD", "--set-smtp-password", "SMTP password", SMTP_GUIDE_URL, f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent", "Enter the SMTP password (input hidden): ", smtp_sign_in, lambda user: f"The mail server accepted the password for {user}", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, test_step=("Send a test email:", "--send-test-email"))
 
 
@@ -3432,7 +3428,7 @@ def print_doctor_next_steps(xbox_gamertag=None, saved_target=None, doctor_exit=0
     print("\n" + colorize("header", "Next steps") + "\n")
     label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
     monitor_target = command_targets(xbox_gamertag, saved_target)[1]
-    print_labelled_command(label, tool_command(*([monitor_target] if monitor_target else [])))
+    print_labelled_command(label, render_command([*([monitor_target] if monitor_target else [])]))
     # No trailing blank line: the command printer already left one and the report must not end on two
     print(f"Guide: {QUICK_START_GUIDE_URL}")
 
@@ -3805,12 +3801,12 @@ def http_status_from(error):
 
 # Returns the fix for credentials the Microsoft sign-in endpoint would not accept
 def credentials_recovery_fix():
-    return f"Check MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET against the app registration in the Microsoft Entra admin center, then rerun: {tool_command('<xbox_gamertag>')}"
+    return f"Check MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET against the app registration in the Microsoft Entra admin center, then rerun: {render_command(['<xbox_gamertag>'])}"
 
 
 # Returns the fix for a refresh token the sign-in endpoint no longer accepts
 def token_recovery_fix():
-    return f"Delete the token cache file and authorize again by running: {tool_command('<xbox_gamertag>')}"
+    return f"Delete the token cache file and authorize again by running: {render_command(['<xbox_gamertag>'])}"
 
 # Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
 def unknown_failure_fix(): return "Check the technical detail below, then open an issue with this output if the problem continues" if DEBUG_MODE else "Rerun with --debug and check the technical detail it prints. If the problem continues, open an issue with that output"
@@ -3832,16 +3828,16 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Xbox Live problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
 
     if context == "config.missing":
-        return make_recovery_advice("config.missing", safe_detail or "The configuration file was not found", recovery_fix_with_guide(f"Check the --config-file path, or create one with: {tool_command('--generate-config', 'xbox_monitor.conf', include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("config.missing", safe_detail or "The configuration file was not found", recovery_fix_with_guide(f"Check the --config-file path, or create one with: {render_command(['--generate-config', 'xbox_monitor.conf'], include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "config.invalid":
-        return make_recovery_advice("config.invalid", safe_detail or "The configuration file could not be loaded", recovery_fix_with_guide(f"Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted. Correct the reported line, or write a fresh template to a different path with: {tool_command('--generate-config', '<new-file>', include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("config.invalid", safe_detail or "The configuration file could not be loaded", recovery_fix_with_guide(f"Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted. Correct the reported line, or write a fresh template to a different path with: {render_command(['--generate-config', '<new-file>'], include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "secret.missing":
-        return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {tool_command('<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>')}", CREDENTIALS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {render_command(['<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>'])}", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "target.missing":
-        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was provided", recovery_fix_with_guide(f"Pass the account to watch: {tool_command('<xbox_gamertag>')}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was provided", recovery_fix_with_guide(f"Pass the account to watch: {render_command(['<xbox_gamertag>'])}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
 
     if context == "secret.entry":
         return make_recovery_advice("secret.entry", safe_detail or "The value was not entered, so nothing was written", recovery_fix_with_guide("Run the command again from an interactive terminal and enter the value when prompted", SECRETS_GUIDE_URL), False, safe_detail)
@@ -3868,31 +3864,31 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True, safe_detail)
 
     if context == "smtp.settings":
-        return make_recovery_advice("smtp.invalid", f"The SMTP settings are incorrect: {safe_detail}" if safe_detail else "The SMTP settings are incorrect", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run: {tool_command('--send-test-email')}", SMTP_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("smtp.invalid", f"The SMTP settings are incorrect: {safe_detail}" if safe_detail else "The SMTP settings are incorrect", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run: {render_command(['--send-test-email'])}", SMTP_GUIDE_URL), False, safe_detail)
 
     if context == "webhook":
         if "429" in message or "rate limit" in message:
-            return make_recovery_advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", recovery_fix_with_guide(f"Enable fewer webhook alert types, or wait until the service accepts deliveries again, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", recovery_fix_with_guide(f"Enable fewer webhook alert types, or wait until the service accepts deliveries again, then run: {render_command(['--send-test-webhook'])}", WEBHOOK_GUIDE_URL), True, safe_detail)
         # Every configuration problem this tool reports names the setting that has to change, which the
         # text of a rejection from Discord or ntfy never does
         if "webhook_" in message or "ntfy_access_token" in message:
-            return make_recovery_advice("webhook.invalid", safe_detail or "The webhook settings cannot be used", recovery_fix_with_guide(f"Correct the reported setting, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), False, safe_detail)
+            return make_recovery_advice("webhook.invalid", safe_detail or "The webhook settings cannot be used", recovery_fix_with_guide(f"Correct the reported setting, then run: {render_command(['--send-test-webhook'])}", WEBHOOK_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("could not be reached", "connection", "timed out", "timeout")):
             return make_recovery_advice("webhook.connection", "The webhook service could not be reached", recovery_fix_with_guide("Check your internet connection, DNS and firewall, then try again", WEBHOOK_GUIDE_URL), True, safe_detail)
-        return make_recovery_advice("webhook.rejected", safe_detail or "The webhook service refused the delivery", recovery_fix_with_guide(f"Confirm the webhook still exists and that the saved URL is current, then run: {tool_command('--send-test-webhook')}", WEBHOOK_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("webhook.rejected", safe_detail or "The webhook service refused the delivery", recovery_fix_with_guide(f"Confirm the webhook still exists and that the saved URL is current, then run: {render_command(['--send-test-webhook'])}", WEBHOOK_GUIDE_URL), False, safe_detail)
 
     if context.startswith("smtp"):
         for current in iter_exc_chain(error):
             if isinstance(current, smtplib.SMTPAuthenticationError):
-                return make_recovery_advice("smtp.authentication", "The SMTP server rejected the login", recovery_fix_with_guide(f"Check SMTP_USER and SMTP_PASSWORD. Providers such as Gmail need an app password rather than the account password. Then run: {tool_command('--send-test-email')}", SMTP_GUIDE_URL), False, safe_detail)
+                return make_recovery_advice("smtp.authentication", "The SMTP server rejected the login", recovery_fix_with_guide(f"Check SMTP_USER and SMTP_PASSWORD. Providers such as Gmail need an app password rather than the account password. Then run: {render_command(['--send-test-email'])}", SMTP_GUIDE_URL), False, safe_detail)
             if isinstance(current, (smtplib.SMTPException, ssl.SSLError, OSError)):
-                return make_recovery_advice("smtp.connection", "The SMTP server could not be reached", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT and SMTP_SSL, and that the port is not blocked. Then run: {tool_command('--send-test-email')}", SMTP_GUIDE_URL), True, safe_detail)
+                return make_recovery_advice("smtp.connection", "The SMTP server could not be reached", recovery_fix_with_guide(f"Check SMTP_HOST, SMTP_PORT and SMTP_SSL, and that the port is not blocked. Then run: {render_command(['--send-test-email'])}", SMTP_GUIDE_URL), True, safe_detail)
 
     if context == "auth.oauth_code":
         return make_recovery_advice("auth.oauth_code", safe_detail or "The authorization code was not accepted", recovery_fix_with_guide("Open the authorization URL again and copy the whole value after '?code=' from the address bar, without the trailing '&state=' part", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "auth.token_cache":
-        return make_recovery_advice("auth.token_cache", safe_detail or "The saved Xbox tokens could not be read", recovery_fix_with_guide(f"Delete the token cache file named by MS_AUTH_TOKENS_FILE and authorize again by running: {tool_command('<xbox_gamertag>')}", CREDENTIALS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("auth.token_cache", safe_detail or "The saved Xbox tokens could not be read", recovery_fix_with_guide(f"Delete the token cache file named by MS_AUTH_TOKENS_FILE and authorize again by running: {render_command(['<xbox_gamertag>'])}", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if status == 429 or "too many requests" in message or "rate limit" in message:
         return make_recovery_advice("xbox.rate_limited", "Xbox Live is rate limiting this application", recovery_fix_with_guide("Raise XBOX_CHECK_INTERVAL and XBOX_ACTIVE_CHECK_INTERVAL, or run fewer instances against the same application, then restart", INTERVALS_GUIDE_URL), True, safe_detail)
@@ -3972,7 +3968,7 @@ def path_is_writable(path):
 
 # Returns the command that installs one library into the interpreter running this tool
 def pip_install_command(requirement):
-    return render_command([sys.executable or "python3", "-m", "pip", "install", requirement])
+    return " ".join(quote_command_argument(part) for part in (sys.executable or "python3", "-m", "pip", "install", requirement))
 
 
 # Returns advice for an optional library that is missing, naming the exact install command for this interpreter
@@ -6461,7 +6457,7 @@ def main():
                 backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
             except FileExistsError as exc:
                 # Built here rather than from the context, so the fix names the file the user actually asked for
-                print_recovery_advice(make_recovery_advice("file.exists", str(exc), recovery_fix_with_guide(f"Re-run with: {tool_command('--generate-config', output_file, '--force', include_paths=False)}. The existing file is backed up with a timestamp first, or write to a different path", CONFIG_GUIDE_URL), False, str(exc)))
+                print_recovery_advice(make_recovery_advice("file.exists", str(exc), recovery_fix_with_guide(f"Re-run with: {render_command(['--generate-config', output_file, '--force'], include_paths=False)}. The existing file is backed up with a timestamp first, or write to a different path", CONFIG_GUIDE_URL), False, str(exc)))
                 sys.exit(1)
             except OSError as exc:
                 print_recovery_error(exc, context="file.unwritable", detail=f"Config file '{output_file}' cannot be written: {exc}")
