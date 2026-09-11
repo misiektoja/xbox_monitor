@@ -402,6 +402,8 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 COLOR_THEME: dict = {}
@@ -3478,6 +3480,15 @@ def config_file_target(config_path):
     return str(namespace.get("XBOX_GAMERTAG") or "")
 
 
+# Returns the config a printed command should name, so a run started with discovery off cannot point the reader
+# at a file it deliberately ignored
+def resolved_command_config(config_path=None):
+    # A path the caller was given is what the command names, so a stale discovery flag cannot override it
+    if config_path is not None:
+        return "none" if str(config_path).casefold() == "none" else config_path
+    return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
+
+
 # Returns the targets for the printed doctor and monitoring commands, dropping one the effective config already supplies
 def command_targets(explicit_target=None, saved_target=None, placeholder="<xbox_gamertag>"):
     saved = str(saved_target or "")
@@ -3492,10 +3503,10 @@ def command_targets(explicit_target=None, saved_target=None, placeholder="<xbox_
 # Prints the commands to run next, with the file paths this run was given so they can be pasted as they are
 def print_secret_next_steps(env_path, config_path=None, xbox_gamertag=None, test_step=None):
     paths = []
-    if config_path:
-        paths.extend(("--config-file", str(config_path)))
+    if config_path or CONFIG_DISCOVERY_DISABLED:
+        paths.extend(("--config-file", str(resolved_command_config(config_path))))
     paths.extend(("--env-file", str(env_path)))
-    doctor_target, monitor_target = command_targets(xbox_gamertag, config_file_target(config_path or find_config_file()))
+    doctor_target, monitor_target = command_targets(xbox_gamertag, config_file_target(resolved_command_config(config_path)))
     print()
     if test_step:
         print_labelled_command(test_step[0], render_command([test_step[1], *paths]))
@@ -5143,6 +5154,8 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -6492,6 +6505,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         check_count = 0
         while True:
             check_count += 1
+            reports_before_check = REPORTS_PRINTED
             try:
                 if auth_refresh_version != XBOX_AUTH_REFRESH_VERSION:
                     auth_mgr = AuthenticationManager(session, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, "")
@@ -6570,7 +6584,6 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     debug_print("Recovered", streak=error_streak)
                     if outage_lasted is not None:
                         print_outage_recovery(xbox_gamertag, outage_lasted)
-                        alive_since = int(time.time())
                 error_streak = 0
                 error_alert.reset()
                 recovery_hints.reset()
@@ -6778,7 +6791,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             status_old = status
             game_name_old = game_name
 
-            if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+            # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
+            if REPORTS_PRINTED != reports_before_check:
+                alive_since = int(time.time())
+            elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
                 print_liveness_banner(f"Monitoring healthy for {xbox_gamertag}. The user is {status or 'unknown'} with no activity change since the last check")
                 alive_since = int(time.time())
 
