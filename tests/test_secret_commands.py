@@ -262,8 +262,8 @@ def test_an_unusable_destination_is_refused_without_echoing_it(secret_paths, mon
 def test_a_destination_for_the_other_service_is_refused(secret_paths, monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
     with pytest.raises(monitor.RecoveryError) as raised:
-        monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(DISCORD_URL))
-    assert "WEBHOOK_PROVIDER is set to ntfy" in raised.value.advice.summary
+        monitor.run_set_webhook_url(env_file=str(secret_paths["env"]), interactive=True, getpass_func=hidden_answers(DISCORD_URL), provider="ntfy")
+    assert "--webhook-provider" in str(raised.value.advice)
     assert secret_paths["env"].read_text(encoding="utf-8") == ""
 
 

@@ -75,7 +75,7 @@ Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and li
 [DEBUG 00:03:04] Presence check: outcome=failed, error=ConnectError: connection reset by peer, recovery_code=network.unavailable, streak=1
 ```
 
-Every outbound call reports `outcome=OK` or `outcome=failed` with an `error=` field. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL. A secret is reported by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
+Debug fields depend on the operation. Webhook response traces report the HTTP status and retry decision. Failed requests include error details when available. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL. A secret is reported by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
 
 Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email delivered` and `* Webhook delivered` lines, which is worth doing when alerts are frequent.
 
@@ -96,3 +96,7 @@ If a new terminal cannot find your saved settings, return to the directory used 
 Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.
 
 If a saved status file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
+
+Malformed path settings and color-theme values are reported by Doctor with the setting name. Invalid color values are ignored while rendering help so you can still find the configuration commands.
+
+Saved status timestamps more than five minutes in the future are invalid. Check the system clock then correct the named history file or move it aside to start fresh. Monitoring preserves the invalid file instead of replacing it.

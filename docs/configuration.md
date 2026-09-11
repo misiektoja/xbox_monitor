@@ -59,6 +59,8 @@ An invalid time zone stops a normal run, because nothing could be timestamped. U
 
 ## SMTP Settings
 
+Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+
 To use email notifications, set the SMTP options in `xbox_monitor.conf`.
 
 Check the settings by sending a real test message:
@@ -72,6 +74,10 @@ xbox_monitor --send-test-email
 Email is switched off automatically while `SMTP_HOST`, `SMTP_USER` or `SMTP_PASSWORD` is still one of the shipped placeholders, so a fresh install never looks configured when it is not.
 
 ## Webhook Settings
+
+Hidden URL entry recognizes Discord and ntfy URLs. A bare topic name is saved as an ntfy.sh URL. Self-hosted ntfy destinations require `WEBHOOK_PROVIDER = "ntfy"`.
+
+A delivery keeps its original destination and credentials for every retry. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. Mentions remain disabled in every template.
 
 Alerts can also be delivered to a **Discord** channel or an **ntfy** topic. The webhook channel is configured and switched on separately from email, so you can send game changes to Discord while email stays off or use both.
 

@@ -486,6 +486,8 @@ STDOUT_AT_START_OF_LINE = True
 
 
 import sys
+import contextvars
+import functools
 
 # Declared once so the startup gate, the packaging metadata and any later environment check cannot disagree
 MINIMUM_PYTHON_VERSION = (3, 11)
@@ -761,8 +763,25 @@ def runtime_configuration_errors():
     return errors
 
 
+# Names malformed path and color settings before diagnostics consume their values
+def configuration_shape_errors():
+    errors = []
+    for name in ('XBOX_LOGFILE', 'XBOX_STATUS_FILE', 'CSV_FILE', 'MS_AUTH_TOKENS_FILE', 'DOTENV_FILE'):
+        if name in globals() and not isinstance(globals()[name], (str, os.PathLike)):
+            errors.append(f"{name} must be a path string")
+    theme = globals().get("COLOR_THEME", {})
+    if not isinstance(theme, dict):
+        errors.append("COLOR_THEME must be a dictionary of style strings")
+    else:
+        errors.extend(f"COLOR_THEME[{key!r}] must be a style string" for key, value in theme.items() if not isinstance(value, str))
+    return errors
+
+
 # Reports the effective settings and the files the tool would write, without writing any of them
 def doctor_check_configuration(config_path=None, env_path=None, config_advice=None, timezone_advice=None, xbox_gamertag=None):
+    shape_errors = configuration_shape_errors()
+    if shape_errors:
+        return [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_GUIDE_URL), False)) for detail in shape_errors]
     checks = []
     if config_advice is not None:
         checks.append(make_doctor_check("Configuration", "FAIL", config_advice.summary, advice=config_advice))
@@ -787,7 +806,7 @@ def doctor_check_configuration(config_path=None, env_path=None, config_advice=No
     else:
         checks.append(make_doctor_check("Configuration", "PASS", timezone_label, f"Time zone: {LOCAL_TIMEZONE}"))
 
-    if isinstance(XBOX_ACTIVE_CHECK_INTERVAL, (int, float)) and not isinstance(XBOX_ACTIVE_CHECK_INTERVAL, bool) and 0 < XBOX_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+    if finite_number(XBOX_CHECK_INTERVAL) and isinstance(XBOX_ACTIVE_CHECK_INTERVAL, (int, float)) and not isinstance(XBOX_ACTIVE_CHECK_INTERVAL, bool) and 0 < XBOX_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
         intervals = f"{display_time(XBOX_CHECK_INTERVAL)} while offline, {display_time(XBOX_ACTIVE_CHECK_INTERVAL)} while online"
         advice = make_recovery_advice("xbox.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise XBOX_ACTIVE_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_ACTIVE_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
         checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
@@ -1578,7 +1597,7 @@ _SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received$)")
 
 # Builds an ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
-    if not style_str:
+    if not isinstance(style_str, str) or not style_str:
         return ""
     parts = re.split(r"[+ ]+", str(style_str).strip().lower())
     codes = [_STYLE_CODES[part] for part in parts if part in _STYLE_CODES]
@@ -1918,8 +1937,7 @@ class Logger(object):
         # Expand tabs for file output and drop every escape, so the log file stays plain text
         self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", message).expandtabs(8)))
         # Truncated before colouring, so escape sequences never count toward the displayed width
-        if TRUNCATE_CHARS:
-            message = truncate_string_per_line(message, TRUNCATE_CHARS)
+        message = self._truncate_terminal(message)
         self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
         self.logfile.flush()
@@ -1935,13 +1953,46 @@ class Logger(object):
         if message:
             STDOUT_AT_START_OF_LINE = message.endswith('\n')
         message = sanitize_terminal_text(message)
-        if TRUNCATE_CHARS:
-            message = truncate_string_per_line(message, TRUNCATE_CHARS)
+        message = self._truncate_terminal(message)
         self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
 
     def flush(self):
         pass
+
+
+    # Limits the terminal line across separate writes while leaving the log complete
+    def _truncate_terminal(self, message):
+        try:
+            from wcwidth import wcwidth
+        except ImportError:
+            wcwidth = len
+        column = getattr(self, "_terminal_column", 0)
+        clipped = getattr(self, "_terminal_clipped", False)
+        output = []
+        position = 0
+        while position < len(message):
+            escape = ANSI_ESCAPE_RE.match(message, position)
+            if escape:
+                output.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = message[position]
+            position += 1
+            if char in ("\n", "\r"):
+                output.append(char)
+                column, clipped = 0, False
+                continue
+            width = 8 - column % 8 if char == "\t" else max(0, wcwidth(char))
+            if char == "\t" and TRUNCATE_CHARS:
+                width = min(width, max(0, TRUNCATE_CHARS - column))
+            if TRUNCATE_CHARS and (clipped or column + width > TRUNCATE_CHARS):
+                clipped = True
+                continue
+            output.append(" " * width if char == "\t" and TRUNCATE_CHARS else char)
+            column += width
+        self._terminal_column, self._terminal_clipped = column, clipped
+        return "".join(output)
 
 
 # Sanitizing and colouring stdout wrapper, used before the logging policy has been resolved
@@ -2217,7 +2268,7 @@ def read_interactively(reader, *args, **kwargs):
 
 # Rejects timestamps that cannot safely reach date conversion
 def valid_state_timestamp(value):
-    if not finite_number(value) or value < 0:
+    if not finite_number(value) or value < 0 or value > time.time() + 300:
         return False
     try:
         datetime.fromtimestamp(value)
@@ -2235,7 +2286,7 @@ def read_status_record(path):
     if not isinstance(record[1], str) or not record[1].strip():
         raise ValueError("the saved status must be nonempty text")
     if not valid_state_timestamp(record[0]):
-        raise ValueError("the saved timestamp must be finite, nonnegative and representable")
+        raise ValueError("the saved timestamp must be finite, nonnegative, representable and no more than five minutes in the future")
     return record
 
 
@@ -2537,10 +2588,10 @@ def _wizard_ask_duration(question, default, input_func=None):
 
 
 # Asks one secret through a hidden prompt with debug output off, so it never reaches the screen, the shell history or the debug stream
-def _wizard_ask_secret(question, getpass_func=None):
+def _wizard_ask_secret(question, getpass_func=None, strip=True):
     try:
         # Colorized like the visible prompts, so a hidden answer does not look like a different question
-        return read_secret_privately(colorize("info", f"{question}: "), getpass_func=getpass_func)
+        return read_secret_privately(colorize("info", f"{question}: "), getpass_func=getpass_func, strip=strip)
     except (EOFError, KeyboardInterrupt):
         print()
         raise
@@ -3029,7 +3080,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
         state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
         if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
             return
-        password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
+        password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func, strip=False)
         _wizard_queue_secret(state, "SMTP_PASSWORD", password, input_func=input_func)
         # The sign-in has to prove the value the next run resolves rather than the one just typed. A declined
         # replacement and an exported variable both leave setup reporting success for a password nothing will use
@@ -3708,14 +3759,15 @@ def print_secret_next_steps(env_path, config_path=None, xbox_gamertag=None, test
 
 
 # Reads one secret through a hidden prompt, keeping it out of the debug stream that would print it verbatim
-def read_secret_privately(prompt_text, getpass_func=None):
+def read_secret_privately(prompt_text, getpass_func=None, strip=True):
     global DEBUG_MODE
 
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     previous_debug_mode = DEBUG_MODE
     DEBUG_MODE = False
     try:
-        return str(read_interactively(hidden_prompt, prompt_text)).strip()
+        value = str(read_interactively(hidden_prompt, prompt_text))
+        return value.strip() if strip else value
     finally:
         DEBUG_MODE = previous_debug_mode
 
@@ -3746,15 +3798,14 @@ def run_set_secret(key, flag, subject, guide_url, guidance, prompt_text, validat
     confirm_secret_replacement(destination, (key,), subject, flag, guide_url, input_func=input_func)
     print(guidance)
     try:
-        entered = read_secret_privately(prompt_text, getpass_func=getpass_func)
+        entered = read_secret_privately(prompt_text, getpass_func=getpass_func, strip=key != "SMTP_PASSWORD")
     except (EOFError, KeyboardInterrupt):
         print()
         raise RecoveryError(secret_entry_cancelled_advice(subject, flag, guide_url)) from None
 
     print(f"* Checking the entered {subject} before changing the dotenv file ...")
-    outcome = validator(entered)
-    # What is stored can differ from what was typed, so a shorthand the validator accepted is saved in full
-    stored = str(entered).strip() if normalize is None else normalize(entered)
+    stored = str(entered) if key == "SMTP_PASSWORD" else (str(entered).strip() if normalize is None else normalize(entered))
+    outcome = validator(stored)
     try:
         update_dotenv_file(destination, {key: stored})
     except Exception as exc:
@@ -3826,27 +3877,28 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
 
 # Accepts a complete webhook URL or a bare ntfy.sh topic name when ntfy is the selected provider
 def normalize_webhook_destination(value):
-    return normalize_ntfy_topic_url(value) if normalized_webhook_provider() == "ntfy" else str(value or "").strip()
+    candidate = str(value or "").strip()
+    return normalize_ntfy_topic_url(candidate) if normalized_webhook_provider() == "ntfy" or "://" not in candidate else candidate
 
 
 # Checks one entered webhook destination without contacting the service, because the only confirmation a
 # webhook service offers is a delivered notification and setting a URL must not publish one
-def validate_webhook_destination(value):
+def validate_webhook_destination(value, provider=None):
     candidate = normalize_webhook_destination(value)
     if not candidate:
         raise RecoveryError(classify_recovery_error(context="secret.entry", detail="No webhook URL was entered, so the dotenv file was not changed"))
     if not validate_webhook_url(candidate):
         raise RecoveryError(classify_recovery_error(context="webhook", detail="WEBHOOK_URL needs a complete HTTPS link, so the dotenv file was not changed"))
     detected = detect_webhook_provider(candidate)
-    configured = normalized_webhook_provider()
-    if detected and configured and detected != configured:
-        raise RecoveryError(classify_recovery_error(context="webhook", detail=f"WEBHOOK_PROVIDER is set to {webhook_provider_display_name(configured)} but that is a {webhook_provider_display_name(detected)} URL, so the dotenv file was not changed"))
+    configured = normalized_webhook_provider(provider)
+    if provider is not None and detected and configured != detected:
+        raise RecoveryError(classify_recovery_error(context="webhook", detail="The entered URL does not match --webhook-provider. Correct the flag or enter a URL for that service"))
     return webhook_provider_display_name(detected or configured)
 
 
 # Stores one webhook destination in the dotenv file, so the private URL never has to appear on a command line
-def run_set_webhook_url(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None):
-    return run_set_secret("WEBHOOK_URL", "--set-webhook-url", "webhook URL", WEBHOOK_GUIDE_URL, "* Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL\n* ntfy: the complete topic URL, or just the topic name when it is hosted on ntfy.sh", "Enter the webhook URL (input hidden): ", validate_webhook_destination, lambda provider: f"The entered value looks like a valid {provider} destination", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, normalize_webhook_destination, ("Send a test webhook:", "--send-test-webhook"))
+def run_set_webhook_url(env_file=None, config_path=None, xbox_gamertag=None, interactive=None, input_func=None, getpass_func=None, provider=None):
+    return run_set_secret("WEBHOOK_URL", "--set-webhook-url", "webhook URL", WEBHOOK_GUIDE_URL, "* Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL\n* ntfy: the complete topic URL, or just the topic name when it is hosted on ntfy.sh", "Enter the webhook URL (input hidden): ", lambda value: validate_webhook_destination(value, provider), lambda provider: f"The entered value looks like a valid {provider} destination", env_file, config_path, xbox_gamertag, interactive, input_func, getpass_func, normalize_webhook_destination, ("Send a test webhook:", "--send-test-webhook"))
 
 
 # Stores one SMTP password in the dotenv file after the mail server has actually accepted it
@@ -4116,7 +4168,7 @@ MIN_REDACTABLE_SECRET_LENGTH = 12
 # Returns every redactable secret value currently known to the process, longest first so overlaps redact fully
 def known_secret_values():
     values = [value for key in SECRET_KEYS for value in (globals().get(key),) if isinstance(value, str) and secret_is_set(value) and len(value) >= MIN_REDACTABLE_SECRET_LENGTH]
-    return sorted(set(values), key=len, reverse=True)
+    return sorted(set(values) | set(_DELIVERY_SECRET_VALUES.get()), key=len, reverse=True)
 
 
 # Redacts credentials and secret-bearing assignments from arbitrary text before it is shown, logged or emailed
@@ -5043,6 +5095,18 @@ def format_payload(template, payload):
     return template
 
 
+# Parses legacy and current Discord templates before validating their object shape
+def render_discord_template(template, values):
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except json.JSONDecodeError:
+            template = json.loads(str(format_payload(template, values)))
+    if not isinstance(template, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
+    return format_payload(template, values)
+
+
 # Returns a configuration error for unsafe or unsupported webhook customization
 def validate_webhook_customization(provider=None):
     selected_provider = normalized_webhook_provider(provider)
@@ -5053,8 +5117,8 @@ def validate_webhook_customization(provider=None):
             return "WEBHOOK_AVATAR_URL must be a string"
         if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
             return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
-        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
-            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
         return "WEBHOOK_TRANSFORMS must be a list or tuple"
     for index, transform in enumerate(WEBHOOK_TRANSFORMS):
@@ -5063,6 +5127,11 @@ def validate_webhook_customization(provider=None):
         # Only public str methods are reachable, so a template cannot call arbitrary attributes of the value
         if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
             return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    if selected_provider == "discord":
+        try:
+            render_discord_template(WEBHOOK_TEMPLATE, {"title": "", "description": "", "username": "", "avatar_url": "", "image_url": "", "fields_str": "", "fields": [], "color": 0, "timestamp": "", "version": VERSION})
+        except (ValueError, TypeError):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     return None
 
 
@@ -5095,9 +5164,11 @@ def build_webhook_values(title, description, notification_type):
 def build_webhook_payload(title, description, notification_type, payload_values=None):
     values = build_webhook_values(title, description, notification_type) if payload_values is None else payload_values
     try:
-        payload = format_payload(WEBHOOK_TEMPLATE, values)
+        payload = render_discord_template(WEBHOOK_TEMPLATE, values)
     except Exception as exc:
         raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a JSON object or a dictionary")
     if isinstance(payload, dict):
         # An empty name or avatar means "use the webhook default", which Discord expects as an absent key
         if payload.get("username") == "":
@@ -5196,20 +5267,43 @@ def print_webhook_error(message):
 
 
 # Sends one webhook request with the destination, deadline and redirect policy every delivery shares
-def post_webhook_request(client, **request_kwargs):
-    destination = str(WEBHOOK_URL or "").strip()
-    # Revalidated here because a SIGHUP dotenv reload can replace the destination after the delivery started
+def post_webhook_request(client, destination=None, **request_kwargs):
+    destination = str(WEBHOOK_URL if destination is None else destination).strip()
     if not validate_webhook_url(destination):
         raise httpx.InvalidURL("WEBHOOK_URL must contain a complete HTTPS link")
     return client.post(destination, **request_kwargs)
 
 
+_DELIVERY_SECRET_VALUES: contextvars.ContextVar[tuple] = contextvars.ContextVar("delivery_secret_values", default=())
+
+
+# Keeps in-flight credentials available to error redaction across settings reloads
+def _retain_webhook_secrets(deliver):
+    @functools.wraps(deliver)
+    # Restores the previous redaction scope after this delivery finishes
+    def retained(*args, **kwargs):
+        settings = globals().copy()
+        values = [settings.get(name) for name in SECRET_KEYS]
+        headers = settings.get("WEBHOOK_HEADERS")
+        if isinstance(headers, dict):
+            values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
+        secrets = tuple(value for value in values if isinstance(value, str) and value and not value.startswith("your_"))
+        token = _DELIVERY_SECRET_VALUES.set(_DELIVERY_SECRET_VALUES.get() + secrets)
+        try:
+            return deliver(*args, **kwargs)
+        finally:
+            _DELIVERY_SECRET_VALUES.reset(token)
+    return retained
+
+
+@_retain_webhook_secrets
 # Sends one webhook through its own bounded retry path, which never shares the Xbox Live retry policy
 def send_webhook(title, description, notification_type="status", force=False, sleeper=None):
     if not force and not webhook_event_enabled(notification_type):
         debug_print("Webhook delivery", outcome="skipped", type=notification_type, reason="alerts are disabled")
         return 1
-    if not validate_webhook_url():
+    destination = str(WEBHOOK_URL or "").strip()
+    if not validate_webhook_url(destination):
         print_webhook_error("WEBHOOK_URL must contain a complete HTTPS link")
         return 1
     provider = normalized_webhook_provider()
@@ -5233,19 +5327,22 @@ def send_webhook(title, description, notification_type="status", force=False, sl
         return 1
     sleep_func = time.sleep if sleeper is None else sleeper
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
+    if destination != str(WEBHOOK_URL or "").strip():
+        print_recovery_error(context="webhook", detail="Webhook settings changed while preparing the delivery. Retry the notification with the current settings")
+        return 1
     last_error = None
     # Redirects are refused, so a moved endpoint cannot forward the alert and its authorization header elsewhere
     with httpx.Client(verify=tls_context(), timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
         for attempt in range(WEBHOOK_MAX_ATTEMPTS):
             attempt_number = attempt + 1
             try:
-                debug_print("Webhook delivery", channel=provider, host=webhook_destination_host(), attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", timeout=f"{WEBHOOK_TIMEOUT_SECONDS}s")
+                debug_print("Webhook delivery", channel=provider, host=webhook_destination_host(destination), attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", timeout=f"{WEBHOOK_TIMEOUT_SECONDS}s")
                 if provider == "ntfy":
-                    response = post_webhook_request(client, content=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers)
+                    response = post_webhook_request(client, destination=destination, content=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers)
                 elif isinstance(discord_payload, str):
-                    response = post_webhook_request(client, content=discord_payload, headers=request_headers)
+                    response = post_webhook_request(client, destination=destination, content=discord_payload, headers=request_headers)
                 else:
-                    response = post_webhook_request(client, json=discord_payload, headers=request_headers)
+                    response = post_webhook_request(client, destination=destination, json=discord_payload, headers=request_headers)
                 # A rate limit and a server fault are the only answers worth repeating and only once
                 retryable = response.status_code == 429 or 500 <= response.status_code <= 599
                 debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", status=response.status_code, retryable=retryable)
@@ -6854,7 +6951,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
                 delivery_reported = False
                 if outage_outcome == "full":
-                    print_recovery_advice(advice, recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
+                    print_recovery_advice(advice, tracker=recovery_hints, retry_note="" if exhausted else f"retrying in {display_time(sleep_interval)}")
                 elif outage_outcome == "changed":
                     print_outage_change(xbox_gamertag, advice)
                 elif outage_outcome == "reminder":
@@ -7060,6 +7157,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 await asyncio.sleep(XBOX_CHECK_INTERVAL)
 
 
+# Resolves command-line actions and initializes the selected runtime mode
 def main():
     global CHECK_INTERNET_TIMEOUT, CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LOCAL_TIMEZONE, LOCAL_TIMEZONE_STATE, LIVENESS_REMINDER_SECONDS, LIVENESS_CHECK_INTERVAL, MS_APP_CLIENT_ID, MS_APP_CLIENT_SECRET, CSV_FILE, XBOX_STATUS_FILE, DISABLE_LOGGING, XBOX_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_PROVIDER, WEBHOOK_URL, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, NTFY_ACCESS_TOKEN, XBOX_CHECK_INTERVAL, XBOX_ACTIVE_CHECK_INTERVAL, SMTP_PASSWORD, stdout_bck, MS_AUTH_TOKENS_FILE, VERBOSE_MODE, DEBUG_MODE, EXPORTED_SECRET_KEYS, COLORED_OUTPUT, COLOR_THEME, TRUNCATE_CHARS
 
@@ -7644,7 +7742,7 @@ def main():
 
     if args.set_webhook_url:
         try:
-            run_set_webhook_url(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag)
+            run_set_webhook_url(env_file=env_path, config_path=cfg_path, xbox_gamertag=args.xbox_gamertag, provider=args.webhook_provider)
         except Exception as exc:
             print_recovery_error(exc, context="secret.entry")
             sys.exit(1)
