@@ -3462,6 +3462,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             secrets_written = True
         except Exception as exc:
             print_recovery_error(exc, context="file.unwritable", detail=f"Could not write the secrets to '{state.env_path}': {exc}")
+            print(f"Configuration was saved to '{state.config_path}'. Setup is incomplete and monitoring was not started.")
+            print("Correct the dotenv destination then run --setup again with the same --config-file and --env-file. Review the saved settings before starting monitoring.")
             return 1
     tokens_path = Path(os.path.expanduser(str(state.config_values.get("MS_AUTH_TOKENS_FILE") or MS_AUTH_TOKENS_FILE or "")))
     tokens_written = False
