@@ -1811,6 +1811,11 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
 # Cuts every line to the configured display width, measuring what the terminal shows rather than the byte count
 def truncate_string_per_line(message, truncate_width, tabsize=8):
     try:
@@ -2715,10 +2720,10 @@ async def _wizard_request_tokens(client_id, client_secret, input_func=None):
 
 # Collects the Microsoft application credentials, then authorizes once so monitoring has a token to refresh
 def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, authorizer=None):
-    print(f"Register an application at {ENTRA_PORTAL_URL}")
-    print("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
+    print(colorize_links(f"Register an application at {ENTRA_PORTAL_URL}"))
+    print(colorize_links("  Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback"))
     print("  Then copy its Application (client) ID and a client secret value.")
-    print(f"  Guide: {CREDENTIALS_GUIDE_URL}")
+    print(colorize_links(f"  Guide: {CREDENTIALS_GUIDE_URL}"))
     already_configured = _wizard_credentials_ready(state) or any(_wizard_existing_secret(key, state.env_path) or _dotenv_contains_key(state.env_path, key) for key in ("MS_APP_CLIENT_ID", "MS_APP_CLIENT_SECRET"))
     if already_configured and not _wizard_ask_yes_no("Replace the Microsoft application credentials already configured?", default=False, input_func=input_func):
         _wizard_collect_authorization(state, input_func=input_func, authorizer=authorizer)
@@ -3205,7 +3210,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     if not terminal_is_interactive:
         print("The setup wizard needs an interactive terminal (TTY).")
         print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
-        print(f"Guide: {QUICK_START_GUIDE_URL}")
+        print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
         return 1
 
     try:
@@ -3310,7 +3315,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     print_labelled_command("Check setup again:", render_command(["--doctor", *target_arguments, *paths]))
     start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
     print_labelled_command(start_label, render_command([*target_arguments, *paths]))
-    print(f"Guide: {QUICK_START_GUIDE_URL}\n")
+    print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}\n"))
 
     try:
         # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
@@ -3375,7 +3380,7 @@ def print_welcome_screen(input_func=None, interactive=None, config_file=None, en
     print_labelled_command("Check setup before monitoring:", f"{prefix} --doctor <xbox_gamertag>")
     print_labelled_command("Show profile details and exit:", f"{prefix} -i <xbox_gamertag>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
-    print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
+    print(colorize_links(f"\nGuide:        {QUICK_START_GUIDE_URL}\n"))
     if terminal_is_interactive:
         try:
             start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
@@ -3506,10 +3511,10 @@ def run_set_ms_app_credentials(env_file=None, config_path=None, xbox_gamertag=No
         raise RecoveryError(classify_recovery_error(context="secret.entry", detail="--set-ms-app-credentials needs an interactive terminal so the values stay hidden"))
 
     confirm_secret_replacement(destination, keys, "Microsoft application credentials", "--set-ms-app-credentials", CREDENTIALS_GUIDE_URL, input_func=input_func)
-    print(f"* Register an application at {ENTRA_PORTAL_URL}")
-    print("* Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback")
+    print(colorize_links(f"* Register an application at {ENTRA_PORTAL_URL}"))
+    print(colorize_links("* Account type 'Personal Microsoft accounts only', redirect URI of type Web set to http://localhost/auth/callback"))
     print("* Then copy its Application (client) ID and a client secret value.")
-    print(f"* Guide: {CREDENTIALS_GUIDE_URL}")
+    print(colorize_links(f"* Guide: {CREDENTIALS_GUIDE_URL}"))
     try:
         client_id = read_secret_privately("Enter the Application (client) ID (input hidden): ", getpass_func=getpass_func)
         client_secret = read_secret_privately("Enter the client secret value (input hidden): ", getpass_func=getpass_func)
@@ -3634,7 +3639,7 @@ def print_doctor_next_steps(xbox_gamertag=None, saved_target=None, doctor_exit=0
     monitor_target = command_targets(xbox_gamertag, saved_target)[1]
     print_labelled_command(label, render_command([*([monitor_target] if monitor_target else [])]))
     # No trailing blank line: the command printer already left one and the report must not end on two
-    print(f"Guide: {QUICK_START_GUIDE_URL}")
+    print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
 
 
 # Parses a duration the way people type it, accepting bare seconds and s/m/h/d suffixes
