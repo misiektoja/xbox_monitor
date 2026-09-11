@@ -57,40 +57,58 @@ def test_every_declared_code_is_produced_somewhere():
 
 
 # Every place that reports a problem without the classifier and the reason it cannot use one
+# Every place that reports a problem without the classifier and the reason it cannot use one
 CLASSIFIER_EXEMPTIONS = {
     "or higher required": "runs at import on an interpreter too old to load the rest of the file",
     "Couldn't find the pytz library": "raised at import, while a dependency the classifier itself needs is missing",
     "Couldn't find the Python-Xbox library": "raised at import, while a dependency the classifier itself needs is missing",
-    "sanitize_error_text(message)": "the debug printer, whose content the redactor guard covers",
     "Cannot clear the screen contents": "a cosmetic notice with nothing for the operator to recover from",
     "Token refresh attempt": "reports a retry in progress, with the classified advice printed if every attempt fails",
-    "so this run will ask you to authorize once": "the expected first-run state, answered by the sign-in that follows",
-    "Re-authorization is required": "reports the recovery action taken, printed under the classified advice",
-    "Email notifications:": "the startup summary, where the word error names a switched-on alert",
     "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
 }
 
 # Words that mark a printed line as a report of something going wrong
-TROUBLE_WORDS = re.compile(r"error|cannot|can't|failed|failure|invalid|not valid|missing|not installed|no such|refused|unsupported|needs to be", re.IGNORECASE)
+TROUBLE_WORDS = re.compile(r"error|cannot|can't|failed|failure|invalid|not valid|missing|not installed|no such|refused|unsupported|needs to be|could not|couldn't|unable to", re.IGNORECASE)
+
+
+# Returns the literal text one print argument shows, leaving out the parts an f-string fills at runtime
+def printed_text(node):
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else ""
+    if isinstance(node, ast.JoinedStr):
+        return "".join(printed_text(part) for part in node.values)
+    if isinstance(node, ast.BinOp):
+        return printed_text(node.left) + printed_text(node.right)
+    return ""
+
+
+# Returns every printed line that reads as a problem, paired with the line it sits on
+def reported_problems(source):
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}):
+            continue
+        text = " ".join(printed_text(argument) for argument in node.args)
+        if TROUBLE_WORDS.search(text):
+            found.append((node.lineno, " ".join(text.split())))
+    return found
 
 
 # A problem reported without a category leaves the reader with a message and no next step
 def test_every_reported_problem_goes_through_the_classifier():
-    unexplained = []
-    for node in ast.walk(ast.parse(SOURCE)):
-        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}):
-            continue
-        segment = ast.get_source_segment(SOURCE, node) or ""
-        if TROUBLE_WORDS.search(segment) and not any(marker in segment for marker in CLASSIFIER_EXEMPTIONS):
-            unexplained.append(f"line {node.lineno}: {' '.join(segment.split())[:120]}")
+    unexplained = [f"line {line}: {text[:120]}" for line, text in reported_problems(SOURCE) if not any(marker in text for marker in CLASSIFIER_EXEMPTIONS)]
+
     assert unexplained == []
 
 
 # An exemption list that stopped matching anything would quietly cover the whole file
 def test_the_classifier_guard_still_inspects_the_source():
-    inspected = [node for node in ast.walk(ast.parse(SOURCE)) if isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}]
-    assert len(inspected) > 100
-    assert all(marker in SOURCE for marker in CLASSIFIER_EXEMPTIONS)
+    source = SOURCE
+    inspected = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}]
+    problems = reported_problems(source)
+
+    assert len(inspected) > 200
+    assert all(any(marker in text for _, text in problems) for marker in CLASSIFIER_EXEMPTIONS), "an exemption stopped matching a printed line"
 
 
 # A fix ends with the guide line wherever a page covers the failure, since that is where a reader looks next

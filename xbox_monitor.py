@@ -3684,6 +3684,13 @@ def report_recovery_error(error=None, context="runtime", detail="", label="Error
     return advice
 
 
+# Reports a step that failed and left its output degraded, naming the step in front of the classified failure
+def report_degraded_error(subject, error, label="Error"):
+    advice = classify_recovery_error(error)
+    print_recovery_advice(make_recovery_advice(advice.code, f"{subject}: {advice.summary}", advice.fix, advice.retryable, advice.detail), label=label)
+    return advice
+
+
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
 class OutageReporter:
     # Starts with no failure recorded, so the first failure of any category is reported in full
@@ -5395,7 +5402,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
         except Exception as e2:
             debug_print("Friends fetch", source="direct API and summary", outcome="failed", error=f"{type(e2).__name__}: {e2}")
-            print(f"Warning: Could not fetch friends: {e2}")
+            report_degraded_error("The friends list could not be read", e2, label="Warning")
 
     if friends_list:
         debug_print("Friends list", count=len(friends_list))
@@ -5422,7 +5429,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             if history_response.titles:
                 recent_games = history_response.titles[:]
         except Exception as e:
-            print(f"Warning: Could not fetch game history: {e}")
+            report_degraded_error("The game history could not be read", e, label="Warning")
 
         if recent_games:
             debug_print("Game history fetch", outcome="OK", count=len(recent_games))
@@ -5450,7 +5457,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             elif isinstance(ach_response, list):
                 recent_achievements = ach_response
         except Exception as e:
-            print(f"Warning: Could not fetch achievements: {e}")
+            report_degraded_error("The achievements could not be read", e, label="Warning")
 
         if recent_achievements:
             debug_print("Recent achievements fetch", source="fast feed", outcome="OK", count=len(recent_achievements))
