@@ -214,3 +214,13 @@ A secret already exported in the environment wins over the same name in the dote
 The Xbox token cache named by `MS_AUTH_TOKENS_FILE` holds a live refresh token. The tool creates it readable only by its owner. `--doctor` warns when an existing one is readable by other accounts.
 
 As a fallback, secrets can also be stored in the configuration file or the source.
+
+A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names every secret and the source it resolved from, never the value:
+
+```text
+[DEBUG 12:00:00] Secret resolution: name=MS_APP_CLIENT_ID, source=environment, value=set, chars=36
+[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
+[DEBUG 12:00:00] Secret resolution: name=WEBHOOK_URL, source=nowhere, value=not set
+```
+
+Every supported secret gets a row, so one still holding its `your_...` placeholder reads `value=not set` rather than going unmentioned. A length appears only for the secrets whose length the provider issues, never for a password you chose.
