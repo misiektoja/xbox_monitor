@@ -210,6 +210,8 @@ Signals change the behaviour of a running copy without a restart.
 | ABRT | Decrease the check interval used while the user is online, by 30 seconds |
 | HUP | Reload secrets from the dotenv file |
 
+`SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
+
 Send them with `kill` or `pkill`:
 
 ```sh
