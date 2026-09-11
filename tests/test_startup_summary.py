@@ -167,7 +167,7 @@ def test_the_notification_row_names_what_is_enabled(monkeypatch):
     monkeypatch.setattr(monitor, "STATUS_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
 
-    assert monitor.startup_notification_state() == "On (status changes, errors)"
+    assert monitor.startup_notification_state() == "On (online and offline changes, errors)"
 
 
 # Verifies the rollup says so plainly when no email alert can fire
