@@ -334,6 +334,10 @@ VERBOSE_MODE = False
 # Enable debug mode for technical logging (can also be enabled via --debug flag)
 # Shows technical details, timestamps and internal state changes
 DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
 """
 
 # -------------------------
@@ -395,6 +399,7 @@ TRUNCATE_CHARS = 0
 XBOX_ACTIVE_CHECK_SIGNAL_VALUE = 0
 VERBOSE_MODE = False
 DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
 
 exec(CONFIG_BLOCK, globals())
 
@@ -4086,6 +4091,12 @@ def verbose_print(message):
         STDOUT_AT_START_OF_LINE = True
 
 
+# Prints one delivery confirmation in verbose mode unless DELIVERY_CONFIRMATIONS turns them off
+def verbose_delivery_print(message):
+    if DELIVERY_CONFIRMATIONS:
+        verbose_print(message)
+
+
 # Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
 def verbose_notice(*messages):
     if not VERBOSE_MODE or not messages:
@@ -4359,7 +4370,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         print_recovery_error(e, context="smtp", detail=f"Sending the email through {SMTP_HOST} failed: {e}")
         return 1
     debug_print("Email delivery", host=SMTP_HOST, outcome="OK", subject=subject)
-    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
+    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
     return 0
 
 
@@ -4728,7 +4739,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                 retryable = response.status_code == 429 or 500 <= response.status_code <= 599
                 debug_print("Webhook delivery", channel=provider, attempt=f"{attempt_number}/{WEBHOOK_MAX_ATTEMPTS}", status=response.status_code, retryable=retryable)
                 if 200 <= response.status_code <= 299:
-                    verbose_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: {webhook_values['title']}")
+                    verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{webhook_values['title']}'")
                     return 0
                 last_error = f"HTTP {response.status_code}: {str(getattr(response, 'text', ''))[:200]}"
                 if not retryable or attempt_number == WEBHOOK_MAX_ATTEMPTS:
