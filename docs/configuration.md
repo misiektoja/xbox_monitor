@@ -59,6 +59,8 @@ An invalid time zone stops a normal run, because nothing could be timestamped. U
 
 Path settings are validated before startup opens files. A monitoring run stops and names the setting to correct. `--doctor`, `--setup` and the `--set-...` commands report the same setting and continue on the built-in value, so it can still be repaired. Command-line path overrides still take precedence.
 
+Timing and count settings are validated the same way. A value that is not a number or falls outside the range the setting allows stops a monitoring run. The `--set-...` commands report it and continue on the built-in value.
+
 ## SMTP Settings
 
 Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.

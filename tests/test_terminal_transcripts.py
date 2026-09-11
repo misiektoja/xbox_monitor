@@ -140,14 +140,14 @@ def test_doctor_prints_one_summary_and_one_guide_link(terminal_config):
 def test_no_color_leaves_every_first_contact_screen_plain(terminal_config):
     config, env = terminal_config
     for arguments, keystrokes in ((["--no-color", "--config-file", str(config), "--env-file", str(env)], "n\n"), (["--help", "--no-color", "--config-file", str(config)], ""), (["--doctor", "SomeTag", "--no-color", "--config-file", str(config), "--env-file", str(env)], "")):
-        raw, _ = run_on_terminal(arguments, keystrokes=keystrokes, environment={"TERM": "xterm-256color"}, keep_escapes=True)
+        raw, _ = run_on_terminal(arguments, keystrokes=keystrokes, environment={"TERM": "xterm-256color", "NO_COLOR": ""}, keep_escapes=True)
         assert "\x1b" not in raw, f"{arguments} emitted an escape sequence"
 
 
 # Verifies colour actually reaches a capable terminal, since the unit tests exercise the engine rather than the wiring
 def test_a_capable_terminal_receives_colour(terminal_config):
     config, env = terminal_config
-    raw, _ = run_on_terminal(["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)], environment={"TERM": "xterm-256color"}, keep_escapes=True)
+    raw, _ = run_on_terminal(["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)], environment={"TERM": "xterm-256color", "NO_COLOR": ""}, keep_escapes=True)
     assert "\x1b[" in raw
 
 
@@ -155,5 +155,5 @@ def test_a_capable_terminal_receives_colour(terminal_config):
 def test_the_only_escapes_sent_are_colour_changes(terminal_config):
     config, env = terminal_config
     for arguments in (["--help", "--config-file", str(config)], ["--doctor", "SomeTag", "--config-file", str(config), "--env-file", str(env)]):
-        raw, _ = run_on_terminal(arguments, environment={"TERM": "xterm-256color"}, keep_escapes=True)
+        raw, _ = run_on_terminal(arguments, environment={"TERM": "xterm-256color", "NO_COLOR": ""}, keep_escapes=True)
         assert ANSI_PATTERN.findall(raw) and set(ANSI_PATTERN.findall(raw)) == set(re.findall(r"\x1b\[[0-9;]*m", raw)), f"{arguments} sent a non-colour escape sequence"

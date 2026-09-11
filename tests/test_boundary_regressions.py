@@ -164,6 +164,34 @@ def test_an_unfillable_placeholder_is_named(monkeypatch):
     assert monitor.validate_webhook_customization("discord") == "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
 
 
+# Runs main with a configuration file that sets one runtime setting to a value the tool cannot use
+def run_with_invalid_runtime_setting(tmp_path, monkeypatch, arguments):
+    config = tmp_path / "monitor.conf"
+    config.write_text('XBOX_CHECK_INTERVAL = "abc"\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [monitor.__file__, *arguments, "--config-file", str(config), "--env-file", "none"])
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", offline_httpx)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+
+@pytest.mark.parametrize("command", ["--set-smtp-password", "--set-webhook-url"])
+# Keeps the commands that correct the configuration usable when a runtime setting they never read is unusable
+def test_recovery_commands_run_with_an_invalid_runtime_setting(tmp_path, monkeypatch, capsys, command):
+    run_with_invalid_runtime_setting(tmp_path, monkeypatch, [command])
+    output = capsys.readouterr().out
+    assert "Warning: Invalid settings: XBOX_CHECK_INTERVAL must be a number greater than zero" in output
+    # Whatever stops the command next, it is no longer the setting the command does not use
+    assert "Error: Invalid settings" not in output
+    assert monitor.XBOX_CHECK_INTERVAL == monitor.BUILT_IN_RUNTIME_SETTINGS["XBOX_CHECK_INTERVAL"]
+
+
+# Keeps a monitoring run stopping on a runtime setting it cannot use
+def test_a_monitoring_run_stops_on_an_invalid_runtime_setting(tmp_path, monkeypatch, capsys):
+    run_with_invalid_runtime_setting(tmp_path, monkeypatch, ["ExampleTag"])
+    assert "Error: Invalid settings: XBOX_CHECK_INTERVAL must be a number greater than zero" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("override", [False, True])
 # Preserves legacy interpolation order and environment precedence for unmarked assignments
 def test_legacy_dotenv_interpolation_remains_compatible(monkeypatch, override):
