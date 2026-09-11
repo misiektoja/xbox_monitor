@@ -139,31 +139,16 @@ def test_ordinary_backup_preserves_original(monitor, tmp_path):
 
 # Redacts an entire echoed credential before limiting provider error output
 def test_provider_response_does_not_leak_secret_prefix(monitor, monkeypatch, capsys):
-    import requests
+    import httpx
     token = "synthetic-provider-secret-" + "q" * 230
     for name, value in (("WEBHOOK_ENABLED", True), ("WEBHOOK_PROVIDER", "ntfy"), ("WEBHOOK_URL", "https://ntfy.sh/synthetic-test-topic"), ("NTFY_ACCESS_TOKEN", token), ("NTFY_IMAGES", False), ("DEBUG_MODE", True)):
         monkeypatch.setattr(monitor, name, value, raising=False)
 
-    # Substitutes only the HTTP response while retaining the real request and error renderer
-    def send(session, request, **kwargs):
-        response = requests.Response()
-        response.request = request
-        response.url = request.url
-        response.status_code = 400
-        response._content = ("Rejected value " + token + " trailing text").encode()
-        return response
+    # Supplies the provider failure through the real HTTPX transport
+    def httpx_send(transport, request):
+        return httpx.Response(400, request=request, text="Rejected value " + token + " trailing text")
 
-    monkeypatch.setattr(requests.Session, "send", send)
-    if monitor.__name__ == "lol_monitor":
-        monkeypatch.setattr(monitor, "WEBHOOK_SESSION", requests.Session())
-    if monitor.__name__ == "xbox_monitor":
-        import httpx
-
-        # Supplies the same provider failure through Xbox Monitor's real HTTPX transport
-        def httpx_send(transport, request):
-            return httpx.Response(400, request=request, text="Rejected value " + token + " trailing text")
-
-        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", httpx_send)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", httpx_send)
     assert monitor.send_webhook("test", "test", force=True) == 1
     output = capsys.readouterr()
     assert token[:80] not in output.out + output.err

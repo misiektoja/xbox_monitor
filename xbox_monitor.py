@@ -748,10 +748,10 @@ def runtime_configuration_errors():
     nonnegative_numbers = (("OFFLINE_INTERRUPT", OFFLINE_INTERRUPT), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("TOKEN_REFRESH_RETRY_DELAY", TOKEN_REFRESH_RETRY_DELAY))
     positive_integers = (("TOKEN_REFRESH_RETRIES", TOKEN_REFRESH_RETRIES),)
     for name, value in positive_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        if not finite_number(value) or value <= 0:
             errors.append(f"{name} must be a number greater than zero, not {value!r}")
     for name, value in nonnegative_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        if not finite_number(value) or value < 0:
             errors.append(f"{name} must be a number zero or greater, not {value!r}")
     for name, value in positive_integers:
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -2215,6 +2215,66 @@ def read_interactively(reader, *args, **kwargs):
             pass
 
 
+# Rejects timestamps that cannot safely reach date conversion
+def valid_state_timestamp(value):
+    if not finite_number(value) or value < 0:
+        return False
+    try:
+        datetime.fromtimestamp(value)
+    except (ValueError, OverflowError, OSError):
+        return False
+    return True
+
+
+# Reads saved history without adopting malformed values
+def read_status_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a status list containing a timestamp and status text")
+    if not isinstance(record[1], str) or not record[1].strip():
+        raise ValueError("the saved status must be nonempty text")
+    if not valid_state_timestamp(record[0]):
+        raise ValueError("the saved timestamp must be finite, nonnegative and representable")
+    return record
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    import math
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = _config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
 # Removes inline secret assignments from a setup backup while preserving other configuration text
 def redact_config_backup(content):
     import ast
@@ -3346,14 +3406,17 @@ def _wizard_apply_saved_values(state, env_path=None):
     except (OSError, UnicodeError, ValueError) as exc:
         print_recovery_error(exc, context="file", detail=f"Could not read saved secrets from '{selected_path}'")
         raise SystemExit(1) from None
-    globals().update(state.config_values)
+    saved_config = _config_template_defaults()
+    if not load_config_file(state.config_path, namespace=saved_config):
+        raise SystemExit(1)
+    globals().update(saved_config)
     for key in SECRET_KEYS:
         if key in exported:
             value, source = exported[key], "environment"
         elif saved.get(key) is not None:
             value, source = saved[key], "dotenv file"
         else:
-            value, source = state.config_values.get(key), "configuration file"
+            value, source = saved_config.get(key), "configuration file"
         globals()[key] = value
         if source == "dotenv file":
             os.environ[key] = str(value)
@@ -3451,11 +3514,12 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
 
     # Everything above only filled the state, so this is the first and only point anything reaches disk
     try:
+        preserved_dotenv = preserve_inline_config_secrets(state.config_path, state.env_path)
         config_backup, _written = write_generated_config(state.config_path, generate_config_with_current_values(state.config_values), force=True, redact_secrets=True)
     except Exception as exc:
         print_recovery_error(exc, context="file.unwritable", detail=f"Could not write the configuration to '{state.config_path}': {exc}")
         return 1
-    secrets_written = False
+    secrets_written = bool(preserved_dotenv)
     if state.secret_updates:
         try:
             update_dotenv_file(state.env_path, state.secret_updates)
@@ -6415,8 +6479,6 @@ def load_config_file(config_path, namespace=None, report_errors=True, advice_out
         detail = f"Config file '{config_path}' has invalid Python syntax"
         if exc.lineno is not None:
             detail += f" at line {exc.lineno}"
-        if exc.text:
-            detail += f" | Source: {exc.text.rstrip()}"
         detail += f" | Parser: {exc.msg}"
     # Checked before ValueError because UnicodeDecodeError derives from it
     except UnicodeDecodeError:
@@ -6451,7 +6513,7 @@ def normalize_timer_setting(name, value, allow_zero=False):
         raise ValueError(f"{name} must be an integer")
     try:
         parsed = int(value)
-    except (TypeError, ValueError) as e:
+    except (TypeError, ValueError, OverflowError) as e:
         raise ValueError(f"{name} must be an integer") from e
     if parsed < 0 or (parsed == 0 and not allow_zero):
         if allow_zero:
@@ -6609,11 +6671,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
         if os.path.isfile(xbox_last_status_file):
             try:
-                with open(xbox_last_status_file, 'r', encoding="utf-8") as f:
-                    last_status_read = json.load(f)
+                last_status_read = read_status_record(xbox_last_status_file)
             except Exception as e:
                 print()
-                print_recovery_error(e, context="file.unreadable", detail=f"The last status could not be read from '{xbox_last_status_file}': {e}", label="Warning")
+                print_recovery_error(e, context="file.unreadable", detail=f"Cannot load the saved status from '{xbox_last_status_file}': {e}. Correct the file or move it aside to start a new history")
+                raise SystemExit(1) from None
             if last_status_read:
                 last_status_ts = last_status_read[0]
                 last_status = last_status_read[1]
@@ -7555,6 +7617,11 @@ def main():
 
     if args.setup:
         sys.exit(run_setup_wizard(initial_target=args.xbox_gamertag, config_file=args.config_file, env_file=args.env_file))
+
+    configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
+    if configuration_errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_GUIDE_URL), False))
+        sys.exit(1)
 
     if not check_internet():
         sys.exit(1)
