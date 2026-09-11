@@ -37,6 +37,7 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_dotenv_quoted_keys.py` | Quoted dotenv keys, export prefixes, multiline values and duplicate removal |
 | `test_documentation_layout.py` | Unique anchors, main screenshot placement and matching entry-page feature summaries |
 | `conftest.py` | Shared fixtures: module globals, exported secrets and signal handlers are reset between tests |
 | `data/config_templates/` | The configuration template every released version shipped, replayed by `test_config_loading.py` |
