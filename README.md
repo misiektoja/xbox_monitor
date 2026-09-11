@@ -14,23 +14,27 @@ Powerful tool for real-time monitoring of **Xbox Live players' activities**.
 
 **Full documentation: [misiektoja.github.io/xbox_monitor](https://misiektoja.github.io/xbox_monitor/)**
 
-### 🚀 Quick Install
+<a id="-quick-install"></a>
+<a id="-quick-install-run"></a>
+### 🚀 Quick Install & Run
+
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/xbox_monitor/installation/#new-to-python-install-everything) first.
+
+Install from PyPI:
 
 ```sh
 pip install xbox_monitor
 ```
 
-Then run the guided setup. It asks a few questions, handles the one-time Microsoft authorization and writes a ready-to-run configuration:
+Run the setup wizard:
 
 ```sh
 xbox_monitor --setup
 ```
 
-Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
+Review the target, credentials and alerts before saving. See [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) for the service-specific steps.
 
-```sh
-xbox_monitor --doctor <xbox_gamertag>
-```
+For the manual single-file method, dependencies and upgrade commands, see [Installation](https://misiektoja.github.io/xbox_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/xbox_monitor/refs/heads/main/assets/xbox_monitor.png" alt="xbox_monitor_screenshot" width="85%"/>
@@ -51,11 +55,34 @@ xbox_monitor --doctor <xbox_gamertag>
 - **Built-in OAuth2 authentication** with manual authorization support
 - **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
 
+<a id="common-commands"></a>
+## Common Commands
+
+Use [Quick Install & Run](#-quick-install-run) for first-time setup. These examples use the PyPI command. See [Command Format by Installation Method](https://misiektoja.github.io/xbox_monitor/usage/#command-format) for manual-script equivalents.
+
+Replace the target placeholders with an Xbox gamertag, quoted when it contains spaces. Monitoring requires the [Microsoft Entra application credentials](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/#microsoft-entra-application-credentials) described in the setup guide.
+
+| I want to... | Run this |
+| --- | --- |
+| Configure the target, credentials and alerts | `xbox_monitor --setup` |
+| Start monitoring with saved credentials | `xbox_monitor "<xbox_gamertag>"` |
+| Check setup before monitoring | `xbox_monitor --doctor "<xbox_gamertag>"` |
+| Enter or replace credentials through hidden prompts | `xbox_monitor --set-ms-app-credentials` |
+| Use a specific configuration and secrets file | `xbox_monitor --config-file xbox_monitor.conf --env-file .env "<xbox_gamertag>"` |
+| Show profile details once | `xbox_monitor "<xbox_gamertag>" -i` |
+| List every supported command-line option | `xbox_monitor --help` |
+
+Complete [First Authorization](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/#first-authorization) before relying on Doctor. Doctor checks saved tokens and does not create them.
+
+The monitored account must expose the activity described in [User Privacy Settings](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/#user-privacy-settings).
+
+Monitoring runs until you press `Ctrl+C`. For email, Discord and ntfy alerts, CSV output and service-specific commands, see [Usage](https://misiektoja.github.io/xbox_monitor/usage/). If a run fails, start with [Doctor Preflight](https://misiektoja.github.io/xbox_monitor/troubleshooting/#doctor-preflight).
+
 ## Documentation
 
 | Page | What it covers |
 | --- | --- |
-| [Installation](https://misiektoja.github.io/xbox_monitor/installation/) | Requirements, installing from PyPI or by hand, upgrading |
+| [Installation](https://misiektoja.github.io/xbox_monitor/installation/) | Python walkthrough, PyPI or manual installation, upgrades |
 | [Setup & First Run](https://misiektoja.github.io/xbox_monitor/setup-and-first-run/) | The guided setup, Microsoft Entra application credentials, the first authorization, the privacy settings the monitored account needs |
 | [Configuration](https://misiektoja.github.io/xbox_monitor/configuration/) | Config file, time zone, SMTP, webhooks, TLS verification, check intervals, storing secrets |
 | [Usage](https://misiektoja.github.io/xbox_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals, terminal colours |

@@ -78,3 +78,15 @@ Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and li
 Every outbound call reports `outcome=OK` or `outcome=failed` with an `error=` field. Both modes redact every secret, including your Microsoft application client ID and secret, the Xbox tokens, your SMTP password and your webhook URL. A secret is reported by name and source rather than by value. A webhook delivery is traced by destination host only, never by its private path. The client ID and secret also report their length, because a value truncated while copying is a common reason sign-in stops working. Your SMTP password reports only that it is set.
 
 Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email delivered` and `* Webhook delivered` lines, which is worth doing when alerts are frequent.
+
+## Installation and Command Problems
+
+If Python or `pip` is missing, use the [Python install walkthrough](installation.md#new-to-python-install-everything).
+
+If `xbox_monitor` is not found after installation, close the terminal and open it again. On Windows with Python Install Manager, run `py install --refresh` to refresh command aliases. For a pipx installation, run `pipx ensurepath` then reopen the terminal. If you downloaded the script, use the [manual command](usage.md#command-format) from its directory.
+
+If `pip` reports an externally managed environment, follow the pipx steps in [Installation](installation.md#install-xbox-monitor-after-python-check). Use `pipx upgrade xbox_monitor` for later upgrades.
+
+If the tool cannot import a dependency, install the dependencies with the same Python interpreter that runs the script. Use `python3 -m pip install -r requirements.txt` on macOS or Linux, or `python -m pip install -r requirements.txt` on Windows, with the requirements file matching your downloaded script.
+
+If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `xbox_monitor --doctor "<xbox_gamertag>"` to see which settings are loaded.

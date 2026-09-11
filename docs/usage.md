@@ -1,5 +1,20 @@
 # Usage
 
+<a id="command-format"></a>
+## Command Format by Installation Method
+
+Examples use the PyPI command. For a downloaded script, run commands from the directory containing `xbox_monitor.py` and keep the same arguments:
+
+| Installation | Command |
+| --- | --- |
+| PyPI or pipx | `xbox_monitor [OPTIONS]` |
+| Manual script on macOS or Linux | `python3 xbox_monitor.py [OPTIONS]` |
+| Manual script on Windows | `python xbox_monitor.py [OPTIONS]` |
+
+For example, `xbox_monitor --setup` becomes `python3 xbox_monitor.py --setup` on macOS or Linux. Use `python` on Windows. Replace placeholders such as `"<xbox_gamertag>"` with an Xbox gamertag, quoted when it contains spaces.
+
+For first-time configuration, follow [Setup & First Run](setup-and-first-run.md). Use [Doctor Preflight](troubleshooting.md#doctor-preflight) to check a setup before monitoring.
+
 ## User Information Display Mode
 
 The tool can print a detailed view of an Xbox profile. This mode shows the information once and exits rather than monitoring.

@@ -1,12 +1,13 @@
 # Setup & First Run
 
-## Quick Start
+## Before You Start
 
-Run the tool with no arguments. It lists the commands worth knowing and offers to start the guided setup:
+Install the tool using [Installation](installation.md). You will need an Xbox gamertag and the [Microsoft Entra application credentials](#microsoft-entra-application-credentials). Quote a gamertag that contains spaces. The wizard collects credentials through hidden prompts.
 
-```sh
-xbox_monitor
-```
+Open a terminal in the directory where you want to keep the configuration and monitoring output. Later commands should use that directory or explicitly select the same `--config-file` and `--env-file` paths. Manual installations use the [command equivalents](usage.md#command-format).
+
+<a id="setup-wizard"></a>
+## Guided Setup
 
 The setup wizard asks a few questions, runs the [first authorization](#first-authorization) for you and writes a ready-to-run configuration. Start it directly with:
 
@@ -22,16 +23,20 @@ Every answer setup cannot use is explained and offered again. Declining the retr
 
 Nothing is written until you choose **Save settings** on the summary. Ctrl+C at any question leaves both files untouched.
 
+## Quick Start
+
 To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
 
 ```sh
-xbox_monitor <xbox_gamertag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+xbox_monitor --set-ms-app-credentials
+xbox_monitor "<xbox_gamertag>"
 ```
 
 Or, if you installed [manually](installation.md#manual-installation):
 
 ```sh
-python3 xbox_monitor.py <xbox_gamertag> -u "your_ms_application_client_id" -w "your_ms_application_secret_value"
+python3 xbox_monitor.py --set-ms-app-credentials
+python3 xbox_monitor.py "<xbox_gamertag>"
 ```
 
 Pass the Xbox gamertag, not the Microsoft account e-mail address and not the real name. A gamertag copied out of a profile link works too.
@@ -122,3 +127,7 @@ The monitored user should open the [Xbox profile privacy and online safety setti
 Set **Others can see if you're online** to **Friends** or **Everyone**. Setting **Others can see your Xbox profile details** the same way is recommended.
 
 When the profile hides its activity, the tool reports it as a privacy setting on that account rather than a credential problem. `--doctor` says the same.
+
+## Continue with Usage
+
+Use [Usage](usage.md) for monitoring and output options or [Configuration](configuration.md) to adjust saved settings. If setup or monitoring fails, run [Doctor Preflight](troubleshooting.md#doctor-preflight) and follow the reported recovery steps.
