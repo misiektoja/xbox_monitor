@@ -3758,6 +3758,44 @@ AUTH_RECOVERY_CODES = frozenset({"auth.credentials_invalid", "auth.token_expired
 # well inside this, so only an outage the operator has to know about reaches them
 # How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
 ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
+# How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
+ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
+ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
+
+
+# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+class ErrorAlertState:
+    # Starts with nothing delivered and no channel on hold
+    def __init__(self) -> None:
+        self.email_sent = False
+        self.webhook_sent = False
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+
+    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    def reset(self) -> None:
+        self.__init__()
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
 # Stable recovery categories. Every code here is produced somewhere in this file and nothing else is accepted
@@ -6363,8 +6401,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         print_cur_ts("\nTimestamp:\t\t\t")
 
         alive_since = int(time.time())
-        email_sent = False
-        webhook_sent = False
+        error_alert = ErrorAlertState()
         # A poll that keeps failing for the same reason repeats the fix paragraph on every cycle without it
         recovery_hints = RecoveryHintTracker()
         # Every failed check prints its advice, so the end of a streak is worth one line closing it
@@ -6464,8 +6501,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         print_outage_recovery(xbox_gamertag, outage_lasted)
                         alive_since = int(time.time())
                 error_streak = 0
-                email_sent = False
-                webhook_sent = False
+                error_alert.reset()
                 recovery_hints.reset()
             except Exception as e:
                 if status and status != "offline":
@@ -6487,10 +6523,13 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     print_outage_change(xbox_gamertag, advice)
                 elif outage_outcome == "reminder":
                     print_outage_liveness(xbox_gamertag, advice, outage.since, outage.failures)
-                if alert_due and ((ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent)):
-                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent)
-                    email_sent = email_sent or email_delivered
-                    webhook_sent = webhook_sent or webhook_delivered
+                now = int(time.time())
+                error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
+                error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+                if error_email_pending or error_webhook_pending:
+                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending)
+                    error_alert.record("email", error_email_pending, email_delivered, now)
+                    error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
                     # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
                     # with nothing under it reads as a run that stopped there
                     delivery_reported = True

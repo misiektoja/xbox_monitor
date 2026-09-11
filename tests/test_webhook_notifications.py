@@ -613,9 +613,11 @@ def test_the_error_alert_is_raised_once_per_channel_and_reset_on_recovery():
     error_calls = [node for node in ast.walk(loop) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "send_notification_channels" and isinstance(node.args[0], ast.Constant) and node.args[0].value == "error"]
     assert len(error_calls) == 1
     guards = {keyword.arg: ast.unparse(keyword.value) for keyword in error_calls[0].keywords}
-    assert "not email_sent" in guards["email_enabled"]
-    assert "not webhook_sent" in guards["webhook_enabled"]
-    # Both flags have to be cleared when a poll succeeds or one error would silence every later one
-    cleared = [ast.unparse(node) for node in ast.walk(loop) if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) in ("email_sent", "webhook_sent") and ast.unparse(node.value) == "False"]
-    assert cleared.count("email_sent = False") == 2
-    assert cleared.count("webhook_sent = False") == 2
+    assert guards["email_enabled"] == "error_email_pending"
+    assert guards["webhook_enabled"] == "error_webhook_pending"
+    source = ast.unparse(loop)
+    assert 'error_email_pending = alert_due and error_alert.pending(\'email\', ERROR_NOTIFICATION, now)' in source
+    assert source.count("error_alert.record(") == 2
+    # The state has to be cleared when a poll succeeds or one error would silence every later one
+    assert source.count("error_alert = ErrorAlertState()") == 1
+    assert source.count("error_alert.reset()") == 1

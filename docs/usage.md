@@ -138,7 +138,7 @@ To stop the error email, which is on by default, set `ERROR_NOTIFICATION` to `Fa
 xbox_monitor <xbox_gamertag> -e
 ```
 
-The error alert fires at once for a failure that cannot clear on its own, such as expired credentials or a profile that stopped sharing its activity. A failure that can clear on its own, such as a timeout or a rate limit, is alerted on only once it has lasted **5 minutes**, so a short outage does not reach you. Either way the alert is sent once per channel, a channel that could not deliver is tried again on the next failing check and the alert is not repeated until a check succeeds. The same rule governs the webhook error alert.
+The error alert fires at once for a failure that cannot clear on its own, such as expired credentials or a profile that stopped sharing its activity. A failure that can clear on its own, such as a timeout or a rate limit, is alerted on only once it has lasted **5 minutes**, so a short outage does not reach you. Either way the alert is sent once per channel. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. The alert is not repeated until a check succeeds. The same rule governs the webhook error alert.
 
 Set the [SMTP settings](configuration.md#smtp-settings) first.
 
