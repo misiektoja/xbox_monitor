@@ -1,5 +1,6 @@
 """Tests for VERIFY_SSL: which connections honour it, what is reported while it is off and its shipped default."""
 
+import ast
 import ssl
 from pathlib import Path
 
@@ -112,3 +113,30 @@ def test_certificates_are_verified_by_default():
     shipped = monitor.parse_config_content(monitor.CONFIG_BLOCK, "<built-in-config>")
     assert shipped["VERIFY_SSL"] is True
     assert monitor.VERIFY_SSL is True
+
+
+# Returns every call to the named function in the module source, paired with the keywords it was given
+def calls_to(*names):
+    return [(node.lineno, [keyword.arg for keyword in node.keywords]) for node in ast.walk(ast.parse(SOURCE)) if isinstance(node, ast.Call) and (node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", None)) in names]
+
+
+# A call that omits the argument verifies no matter what the setting says, and an omission is invisible to a
+# grep for the setting, so every connection the tool opens is swept for the keyword that carries the decision
+@pytest.mark.parametrize(("names", "keyword", "minimum"), [
+    (("Client", "AsyncClient"), "verify", 3),
+    (("SignedSession",), "ssl_context", 1),
+    (("starttls",), "context", 2),
+])
+def test_every_connection_is_opened_with_the_shared_decision(names, keyword, minimum):
+    found = calls_to(*names)
+    # Asserting the count stops a rename from emptying the sweep and leaving it passing on nothing
+    assert len(found) >= minimum, f"expected at least {minimum} {names} calls, found {len(found)}"
+    missing = [line for line, keywords in found if keyword not in keywords]
+    assert missing == [], f"{names} calls without {keyword}= at lines {missing}"
+
+
+# A webhook POST that follows a redirect hands its payload and headers to whatever host the redirect names
+def test_the_webhook_client_refuses_redirects():
+    clients = [keywords for _, keywords in calls_to("Client") if "follow_redirects" in keywords]
+    assert len(clients) == 1
+    assert ast.literal_eval(next(keyword.value for node in ast.walk(ast.parse(SOURCE)) if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "Client" for keyword in node.keywords if keyword.arg == "follow_redirects")) is False
