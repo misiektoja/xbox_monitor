@@ -52,3 +52,24 @@ def test_entry_pages_share_the_main_image_and_features():
     index_features = re.search(feature_block, index, re.MULTILINE | re.DOTALL)
     assert readme_features is not None and index_features is not None
     assert readme_features.group(1).strip() == index_features.group(1).strip()
+
+
+# Keep the badge block identical on both entry pages, since a badge added to one is easy to forget on the other
+def test_entry_pages_share_the_badge_block():
+    blocks = []
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        block = re.search(r'<p align="left">\n(.*?)</p>', path.read_text(encoding="utf-8"), re.DOTALL)
+        assert block is not None, f"{path.name}: no badge block"
+        blocks.append(block.group(1))
+    assert len(blocks[0].strip().splitlines()) >= 7
+    assert blocks[0] == blocks[1]
+
+
+# The Scorecard badge only resolves through the scorecard.dev API, so the retired shields endpoints stay out
+def test_the_scorecard_badge_uses_the_endpoint_that_resolves():
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "api.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fxbox_monitor" in text
+        assert "ossf-scorecard" not in text and "securityscorecards.dev" not in text
+        # A cache-buster freezes shields on the first score it fetched, so the badge stops tracking the real one
+        assert "badge_cache" not in text
