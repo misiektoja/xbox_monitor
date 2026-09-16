@@ -17,7 +17,7 @@ dependencies = [
   "httpx>=0.26.0",
   "pytz>=2020.1",
   "tzlocal>=4.0",
-  "python-dotenv>=0.19",
+  "python-dotenv>=1.2.2",
   "wcwidth>=0.2.7",
 ]
 classifiers = [
@@ -34,7 +34,7 @@ classifiers = [
 keywords = ["xbox", "xbox-live","monitoring", "tracking", "real-time", "osint", "python-xbox"]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0", "pyyaml>=6.0"]
+test = ["pytest>=9.0.3", "pyyaml>=6.0"]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
 lint = ["ruff==0.16.4"]
 
