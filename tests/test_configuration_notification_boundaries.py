@@ -4,8 +4,6 @@ import argparse
 import json
 
 import pytest
-import requests
-from requests.adapters import HTTPAdapter
 
 import xbox_monitor as monitor
 
@@ -19,15 +17,23 @@ import xbox_monitor as monitor
 def test_unknown_webhook_field_stops_delivery(monkeypatch, template, capsys):
     requests_seen = []
 
-    # Records any attempted delivery at the HTTP transport boundary
-    def respond(adapter, request, **kwargs):
-        requests_seen.append(request)
-        response = requests.Response()
-        response.status_code = 204
-        response.request = request
-        return response
+    # Records any attempted delivery instead of letting one reach the network
+    class RecordingClient:
+        def __init__(self, **client_kwargs):
+            self.client_kwargs = client_kwargs
 
-    monkeypatch.setattr(HTTPAdapter, "send", respond)
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        # Records one POST and answers with the success a real provider would return
+        def post(self, url, **kwargs):
+            requests_seen.append(dict(kwargs, url=url))
+            return monitor.httpx.Response(204, request=monitor.httpx.Request("POST", url))
+
+    monkeypatch.setattr(monitor.httpx, "Client", RecordingClient)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
     monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/test-boundary-token")
