@@ -171,7 +171,11 @@ def test_the_site_url_matches_the_code():
 # Documentation in two places drifts apart, which is why it was moved to the site
 def test_the_readme_is_a_landing_page():
     text = README.read_text(encoding="utf-8")
-    assert len(text) < 8000, "the README has grown back into full documentation"
+    # The badge block is header chrome rather than documentation, so adding a badge must not eat the budget
+    badges = [index for index, line in enumerate(text.splitlines()) if line.startswith("[![")]
+    assert badges, "the README has no badge block"
+    body = "\n".join(text.splitlines()[badges[-1] + 1:])
+    assert len(body) < 7100, "the README has grown back into full documentation"
     assert monitor.DOCS_BASE_URL in text, "the README does not link to the documentation site"
 
 

@@ -58,11 +58,18 @@ def test_entry_pages_share_the_main_image_and_features():
 def test_entry_pages_share_the_badge_block():
     blocks = []
     for path in (ROOT / "README.md", ROOT / "docs/index.md"):
-        block = re.search(r'<p align="left">\n(.*?)</p>', path.read_text(encoding="utf-8"), re.DOTALL)
-        assert block is not None, f"{path.name}: no badge block"
-        blocks.append(block.group(1))
-    assert len(blocks[0].strip().splitlines()) >= 7
+        badges = re.findall(r"^\[!\[[^\]]+\]\([^)]+\)\]\([^)]+\)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        assert len(badges) >= 8, f"{path.name}: expected the full badge block, found {len(badges)}"
+        blocks.append(badges)
     assert blocks[0] == blocks[1]
+
+
+# Every badge links somewhere, the way the sibling monitors render them, so a bare image cannot creep back in
+def test_badges_are_linked_the_way_the_sibling_monitors_render_them():
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        text = path.read_text(encoding="utf-8")
+        header = text[:text.index("\n\n", text.index("shields.io"))]
+        assert "<img" not in header and "<p align=" not in header, f"{path.name}: unlinked image badge in the header"
 
 
 # The Scorecard badge only resolves through the scorecard.dev API, so the retired shields endpoints stay out
