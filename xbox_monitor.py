@@ -447,7 +447,7 @@ TIMEZONE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#time-zone"
 SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
 WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#webhook-settings"
 TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
-INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
+INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/usage/#check-intervals"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 
