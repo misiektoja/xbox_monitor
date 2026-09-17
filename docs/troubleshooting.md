@@ -1,7 +1,8 @@
 # Troubleshooting
 
-If a dotenv file cannot be opened or is not UTF-8, monitoring stops with the file path and the repair step for that cause. Doctor reports the failed load and continues the remaining checks.
+Examples on this page use the PyPI command `xbox_monitor`. If you installed the manual script, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method).
 
+<a id="doctor-preflight"></a>
 ## Doctor Preflight
 
 `--doctor` checks the setup without writing files:
@@ -29,74 +30,81 @@ Doctor never starts the interactive sign-in, because that writes a token file. A
 
 Follow the report's **Next steps** after correcting any failed checks. The printed start command uses the configuration and dotenv files you checked.
 
-## Setup and Secret Commands
+<a id="common-problems"></a>
+## Common Problems
 
-`--setup`, `--set-ms-app-credentials`, `--set-smtp-password` and `--set-webhook-url` need an interactive terminal, since the values they collect must stay hidden. Run outside one they explain that and exit non-zero rather than reading a secret from a pipe.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
 
-Ctrl+C cancels setup before saving or cancels a secret prompt without changing the dotenv file. After saving, it skips the optional Doctor run or monitoring offer. At Doctor's test-message prompts, Ctrl+C ends the report.
+| Symptom | Likely cause | Where to look |
+| --- | --- | --- |
+| `Xbox Live rejected authorization for this account` | The saved tokens are no longer accepted | [First Authorization](setup-and-first-run.md#first-authorization) |
+| `That Xbox profile does not share its activity with this application` | A privacy setting on the monitored account | [User Privacy Settings](setup-and-first-run.md#user-privacy-settings) |
+| Rate limit warnings | The polling intervals are too short | [Check Intervals](usage.md#check-intervals) |
+| The run stops naming a file and a line number | A configuration line is not a plain `SETTING = value` assignment | [Configuration File](configuration.md#configuration-file) |
+| Emails never arrive | Incomplete SMTP settings | [SMTP Settings](configuration.md#smtp-settings) then run `xbox_monitor --send-test-email` |
+| Webhook alerts never arrive | Provider mismatch or a stale destination | [Webhook Settings](configuration.md#webhook-settings) then run `xbox_monitor --send-test-webhook` |
+| `xbox_monitor` is not found after installation | The shell has not picked up the new command | [Installation and Command Problems](#installation-and-command-problems) |
+| Escape sequences such as `[36m` printed as text, or no colour at all | The terminal cannot display ANSI colour, or colour was switched off | [Terminal Colours Look Wrong](#terminal-colours-look-wrong) |
 
-`--setup` needs somewhere to put both files, so it refuses `--env-file none` and `--config-file none`. It reports a destination that is a directory or whose parent will not accept a write before asking anything.
+A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when the [liveness reminder](usage.md#liveness-reminder) is switched off, and `* Monitoring recovered` marks recovery. Use `--verbose` to see the first failed check.
 
-## Error Messages and Recovery
+If a dotenv file cannot be opened or is not UTF-8, monitoring stops with the file path and the repair step for that cause. Doctor reports the failed load and continues the remaining checks.
 
-Every reported problem carries a category, a one-line summary and a `To fix:` paragraph, plus a `Guide:` link when a documentation page covers it. The category decides the advice, so the same failure reads the same way wherever it surfaces. A command in the fix text matches how you installed the tool: `xbox_monitor ...` for a PyPI install and `python3 xbox_monitor.py ...` for a downloaded script. It also carries the `--config-file` or `--env-file` you started with.
+<a id="terminal-colours-look-wrong"></a>
+## Terminal Colours Look Wrong
 
-| What you see | What it usually means |
-| --- | --- |
-| The configuration file could not be loaded | A line in the config file is not a plain `SETTING = value` assignment. The message names the line |
-| A required credential is missing | `MS_APP_CLIENT_ID` or `MS_APP_CLIENT_SECRET` is empty or still a placeholder |
-| The Microsoft sign-in endpoint rejected the saved credentials | The refresh token expired or was revoked. An expired application secret in Microsoft Entra reads the same way |
-| The Xbox token cache is not a saved token response | The token file is corrupt. Delete it and authorize again |
-| That Xbox profile does not share its activity | A privacy setting on the monitored account, not a problem with your credentials |
-| Xbox Live is rate limiting this application | The polling intervals are too short or several copies share one application |
-| This process ran out of file descriptors | A local limit rather than an Xbox Live problem. Raise it with `ulimit -n` or `LimitNOFILE=` under systemd. The tool exits, since no retry can recover it |
-| The SMTP server rejected the login | Providers such as Gmail need an app password rather than the account password |
-| The webhook settings cannot be used | A webhook setting is malformed. The message names the one to correct, then run `--send-test-webhook` |
-| The webhook service refused the delivery | The webhook was deleted or the saved URL is out of date. Create a new one and run `--set-webhook-url` |
-| The webhook service is rate limiting deliveries | Too many alerts for the destination. Enable fewer webhook alert types |
+If escape sequences such as `[36m` appear as literal text, the terminal does not understand ANSI colour. Start the tool with `--no-color` or set `COLORED_OUTPUT = False` in the configuration file. On Windows, `pip install colorama` fixes the classic Command Prompt.
 
-During quiet monitoring, `* Monitoring healthy for <xbox_gamertag>` confirms the tool is still running. `LIVENESS_CHECK_INTERVAL` defaults to 86400 seconds (24 hours). Set it to `0` to disable this reminder.
+If colour is missing where you expect it, check in this order: `--no-color` on the command line, `COLORED_OUTPUT` in the configuration file, a `NO_COLOR` environment variable and whether output is redirected or piped. Colour is switched off in all of those cases and also when `TERM` is unset or set to `dumb`.
 
-Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when liveness reminders are disabled. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes.
+Log files never contain colour by design. To colour a saved log while reading it, see [Coloring Log Output with GRC](usage.md#coloring-log-output-with-grc).
 
+To change which colours are used, see [Terminal Colours](configuration.md#terminal-colours).
+
+<a id="choosing-the-right-logging-level"></a>
+## Choosing the Right Logging Level
+
+- **Default mode** reports activity changes and important errors
+- **Verbose mode (`--verbose`)** adds occasional state changes, a line naming where each delivered alert went and a complete startup summary without private values. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without those delivery lines
+- **Debug mode (`--debug`)** adds sanitized request flow, scheduling details and internal diagnostics
+
+Delivery confirmations name the recipient or webhook provider. `DELIVERY_CONFIRMATIONS = False` hides these optional success messages. Monitoring events, send attempts and errors remain visible.
+
+Both `--verbose` and `--debug` show the complete startup summary, including notification settings and credential sources. Use it to check which configuration is active without displaying private values.
+
+Start with `--doctor`. If the suggested fix does not resolve the issue, retry with `--debug` and include only sanitized output when opening a GitHub issue.
+
+<a id="verbose-and-debug-output"></a>
 ## Verbose and Debug Output
 
-Two flags make the tool explain what it is doing. They are independent, so you can use either or both:
+`--verbose` adds the decisions a run made, in the same `*` lines as the rest of the output:
 
 ```sh
-xbox_monitor <xbox_gamertag> --verbose --debug
+xbox_monitor <xbox_gamertag> --verbose
 ```
 
-* `VERBOSE_MODE`, `--verbose`: operational events, such as email alerts switched off because their settings are still placeholders, whether an email was actually delivered and when a fallback such as the title history is unavailable. It prints nothing per check, so an uneventful run stays quiet. It also expands the startup summary, which is where the configuration file, dotenv file, token cache, time zone and the source of each secret are named
-* `DEBUG_MODE`, `--debug`: technical diagnostics, such as every Xbox Live call, how many settings the configuration file supplied, the parsed presence and title history behind each activity decision, the classification and text of each failure, how long the tool will wait before the next check and why, every read and write of the status and CSV files and where each secret was resolved from
+`--debug` traces what the tool is doing in timestamped `[DEBUG HH:MM:SS]` lines:
 
-A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
-
-Debug lines are prefixed with `[DEBUG HH:MM:SS]`, then name the operation and list its details as comma-separated `key=value` fields, matching the sibling monitors:
-
-```
-[DEBUG 00:03:02] Connectivity check: url=https://xbox.example/probe, outcome=OK
-[DEBUG 00:03:04] Presence check: outcome=failed, error=ConnectError: connection reset by peer, recovery_code=network.unavailable, streak=1
+```sh
+xbox_monitor <xbox_gamertag> --debug
 ```
 
-Debug output includes HTTP status, retries and error details. Both modes redact credentials and tokens. Application credential lengths are shown to help identify an incomplete copy. Webhook traces show the destination host without its private path.
+Lines with details read `Operation: key=value, key=value`. Fields depend on the operation. Some results report `outcome=OK`, `failed`, `degraded` or `skipped`.
 
-Both flags take effect before the configuration file is read, so they still work when the problem you are chasing is the configuration file itself. A flag you type always wins over `VERBOSE_MODE` or `DEBUG_MODE` in the configuration file. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email sent to ...` and `* Webhook sent through ...` lines, which is worth doing when alerts are frequent.
-
-Delivery confirmations name the email recipient or webhook provider without repeating the subject or message body. `DELIVERY_CONFIRMATIONS = False` hides those optional success receipts. Event output, send attempts and errors remain visible. Explicit notification tests report their result once. Generated email subjects and webhook titles use readable service names without a program-name prefix.
-
+<a id="installation-and-command-problems"></a>
 ## Installation and Command Problems
 
-If Python or `pip` is missing, use the [Python install walkthrough](installation.md#new-to-python-install-everything).
+If Python or `pip` is missing, use the [Python install walkthrough](installation.md#new-to-python-check-and-install).
 
-If `xbox_monitor` is not found after installation, close the terminal and open it again. On Windows with Python Install Manager, run `py install --refresh` to refresh command aliases. For a pipx installation, run `pipx ensurepath` then reopen the terminal. If you downloaded the script, use the [manual command](usage.md#command-format) from its directory.
+If `xbox_monitor` is not found after installation, close the terminal and open it again. On Windows with Python Install Manager, run `py install --refresh` to refresh command aliases. For a pipx installation, run `pipx ensurepath` then reopen the terminal. If you downloaded the script, use the [manual command](usage.md#command-format-by-installation-method) from its directory.
 
-If `pip` reports an externally managed environment, follow the pipx steps in [Installation](installation.md#install-xbox-monitor-after-python-check). Use `pipx upgrade xbox_monitor` for later upgrades.
+If `pip` reports an externally managed environment, follow the pipx steps in [Installation](installation.md#install-xbox-monitor). Use `pipx upgrade xbox_monitor` for later upgrades.
 
 If the tool cannot import a dependency, install the dependencies with the same Python interpreter that runs the script. On macOS or Linux use `python3 -m pip install -r requirements.txt`. On Windows use `python -m pip install -r requirements.txt`. Match the requirements file to your downloaded script.
 
 If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `xbox_monitor --doctor "<xbox_gamertag>"` to see which settings are loaded.
 
+<a id="invalid-saved-settings-and-state"></a>
 ## Invalid saved settings and state
 
 If setup fails while saving, the configuration may already have changed. Correct the reported destination problem, rerun `--setup` with the same `--config-file` and `--env-file` paths then run `--doctor` before monitoring. The configuration backup restores non-secret settings only.

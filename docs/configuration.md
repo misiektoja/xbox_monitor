@@ -1,10 +1,15 @@
 # Configuration
 
+Examples on this page use the PyPI command `xbox_monitor`. Manual script users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format-by-installation-method).
+
+<a id="configuration-file"></a>
 ## Configuration File
 
-The quickest way to get a configuration file is [`--setup`](setup-and-first-run.md#quick-start), which fills it in from your answers.
+You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-Most settings can also be set on the command line. To keep them, generate the default template and save it as `xbox_monitor.conf`:
+The easiest way to create this file is `xbox_monitor --setup`.
+
+To edit every available setting yourself, generate a default configuration file:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -14,33 +19,50 @@ xbox_monitor --generate-config > xbox_monitor.conf
 xbox_monitor --generate-config xbox_monitor.conf
 ```
 
-!!! important
-    On **Windows PowerShell**, redirecting with `>` writes the file as UTF-16, which makes the tool fail with null-byte errors. Pass the filename directly to `--generate-config` so it is written as UTF-8.
+> **Windows PowerShell:** Pass the filename directly to `--generate-config`. PowerShell redirection can write UTF-16, which the tool rejects with a "null bytes" error.
 
-When the named file already exists, the tool asks before replacing it and keeps the previous version as `xbox_monitor.conf.<timestamp>.bak` next to it. Outside a terminal, add `--force` to replace it without a prompt. Redirecting with `>` truncates the file before the tool starts, so that form cannot be protected.
+When the named file already exists, `--generate-config` asks before replacing it and keeps a timestamped `.bak` backup next to it. Add `--force` to replace it without the question.
 
-Then edit `xbox_monitor.conf` and change the settings you need. Each one carries a comment describing it.
+The file contains a short explanation above each setting.
 
-Configuration files are read as data. Only documented `SETTING = value` lines with plain literal values are accepted, so a file picked up from the working directory cannot run code.
+A configuration file is read as data, not executed. The tool accepts only `SETTING = value` lines where the name is one of the documented settings and the value is a plain literal such as a string, number, `True`, `False`, `None`, a list or a dictionary. Comments and blank lines are fine.
 
-By default the tool looks for `xbox_monitor.conf` in the current directory, then the home directory, then the directory holding the script. To use a different path:
+Imports, function calls, expressions and unknown settings are rejected with the setting and line number to correct.
+
+If the same setting appears in more than one place, the item later in this list wins:
+
+1. Built-in defaults
+2. The discovered or explicitly selected configuration file
+3. Values from the selected `.env` file
+4. Secret environment variables
+5. Command-line options
+
+By default the tool looks for a configuration file named `xbox_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location, or `--config-file none` to disable automatic config discovery for one run.
+
+<a id="monitored-target"></a>
+## Monitored Target
+
+The Xbox gamertag is a positional argument. It is required to start monitoring:
 
 ```sh
-xbox_monitor <xbox_gamertag> --config-file /path/xbox_monitor_new.conf
+xbox_monitor "<xbox_gamertag>"
 ```
 
-`--config-file none` switches automatic config discovery off for one run. The startup summary reports `Discovery disabled` when it is in effect.
+Use the gamertag, not the Microsoft account e-mail address. Quote it when it contains spaces.
 
-## Target Account
+To stop repeating it, save it in the configuration file:
 
-Set `XBOX_GAMERTAG` to save the account you usually watch. A gamertag passed on the command line always wins over the saved one. With a saved value you can start monitoring with no arguments at all:
+```ini
+XBOX_GAMERTAG = "xbox_gamertag"
+```
+
+Then `xbox_monitor` alone starts monitoring that user. A positional argument still wins, so you can watch someone else for one run without editing the file:
 
 ```sh
-xbox_monitor
+xbox_monitor "Other Gamertag"
 ```
 
-`XBOX_STATUS_FILE` and the `--status-file` flag choose where the last seen status is kept, which otherwise defaults to `xbox_<xbox_gamertag>_last_status.json` in the current directory.
-
+<a id="time-zone"></a>
 ## Time Zone
 
 By default the time zone is detected with `tzlocal`. Set it manually in `xbox_monitor.conf`:
@@ -55,35 +77,19 @@ To list every time zone pytz supports:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
-An invalid time zone stops a normal run, because nothing could be timestamped. Under `--doctor` it becomes a reported row instead, so the rest of the report still runs.
-
-Path settings are validated before startup opens files. A monitoring run stops and names the setting to correct. `--doctor`, `--setup` and the `--set-...` commands report the same setting and continue on the built-in value, so it can still be repaired. Command-line path overrides still take precedence. `TRUNCATE_CHARS` must be an integer zero or greater. Use `0` to keep full lines or `999` to detect terminal width. A `--truncate` override also applies to Doctor.
-
-Timing and count settings are validated the same way. A value that is not a number or falls outside the range the setting allows stops a monitoring run. The `--set-...` commands report it and continue on the built-in value.
-
+<a id="smtp-settings"></a>
 ## SMTP Settings
 
-Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+Email notifications need SMTP server details for the sending account. Add them to `xbox_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `xbox_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
-Private entry preserves literal `${...}` text in saved passwords and other secrets. Assignments that need this protection carry a `# monitor:literal` comment. Keep that comment when editing the value. Unmarked assignments retain their existing interpolation behavior. The marker is read by this monitor. Other dotenv readers or shells may still interpolate the value.
-
-To use email notifications, set the SMTP options in `xbox_monitor.conf`.
-
-Check the settings by sending a real test message:
+Send one test message to verify the settings:
 
 ```sh
 xbox_monitor --send-test-email
 ```
 
-`--doctor` checks the same settings and signs in without sending anything, then offers a real test message only after you approve it separately.
-
-Email is switched off automatically while `SMTP_HOST`, `SMTP_USER` or `SMTP_PASSWORD` is still one of the shipped placeholders, so a fresh install never looks configured when it is not.
-
+<a id="webhook-settings"></a>
 ## Webhook Settings
-
-Hidden URL entry recognizes Discord and ntfy URLs. A bare topic name is saved as an ntfy.sh URL. Self-hosted ntfy destinations require `WEBHOOK_PROVIDER = "ntfy"`.
-
-Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including legacy strings with doubled object braces. Unsupported placeholders are reported before delivery. Alert text is kept literal and mentions are disabled. Reloaded settings apply to the next delivery.
 
 Alerts can also be delivered to a **Discord** channel or an **ntfy** topic. The webhook channel is configured and switched on separately from email, so you can send game changes to Discord while email stays off or use both.
 
@@ -93,7 +99,7 @@ Save the destination privately, which never puts it in your shell history:
 xbox_monitor --set-webhook-url
 ```
 
-For Discord this is the URL from Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL. For ntfy it is the complete topic URL, such as `https://ntfy.sh/your-private-topic` or just the topic name when it is hosted on ntfy.sh. The service is detected from the URL, so `WEBHOOK_PROVIDER` only needs setting for a self-hosted ntfy server. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.
+Hidden URL entry recognizes Discord and ntfy URLs. A bare topic name is saved as an ntfy.sh URL. The service is detected from the URL, so `WEBHOOK_PROVIDER` only needs setting for a self-hosted ntfy server. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.
 
 The URL is checked for shape without contacting the service, because the only confirmation Discord or ntfy can give is a delivered notification. The command prints `--send-test-webhook` as the next step, which does deliver one.
 
@@ -110,48 +116,160 @@ WEBHOOK_ERROR_NOTIFICATION = True               # monitoring errors, enabled by 
 
 A `WEBHOOK_URL` that is unset or still holding its `your_webhook_url` placeholder switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
 
-Discord alerts are sent as an embed built from `WEBHOOK_TEMPLATE`, which supports the `title`, `description`, `version`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Mentions are always disabled, whatever the template says. `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` override the webhook's own display name and picture. Both are ignored by ntfy.
+Which events actually fire and how a failed delivery is retried is covered in [Webhook Notifications](usage.md#webhook-notifications).
 
-ntfy alerts are sent as a native message with the subject as the title, so no template is involved. Use `WEBHOOK_HEADERS` to add ntfy options such as priority or tags. Use `NTFY_ACCESS_TOKEN` when the topic needs authentication:
+<a id="ntfy"></a>
+### ntfy
+
+For ntfy it is the complete topic URL, such as `https://ntfy.sh/xbox-monitor-long-random-value` or just the topic name when it is hosted on ntfy.sh. Set the provider in `xbox_monitor.conf` for a self-hosted ntfy server:
+
+```ini
+WEBHOOK_PROVIDER = "ntfy"
+```
+
+ntfy alerts are sent as a native message with the subject as the title, so no template is involved. Use `WEBHOOK_HEADERS` to add ntfy options such as priority or tags:
 
 ```python
 WEBHOOK_HEADERS = {"Priority": "5", "Tags": "video_game"}
 ```
 
-`WEBHOOK_TRANSFORMS` applies string methods to the values before they are sent, for example to strip Markdown from the body:
+Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password. Use `NTFY_ACCESS_TOKEN` when the topic needs authentication:
 
-```python
+```ini
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
+```
+
+Xbox Monitor sends this value as `Authorization: Bearer <token>`. `NTFY_ACCESS_TOKEN` takes precedence over an `Authorization` entry in `WEBHOOK_HEADERS`. Header values support the same placeholders as `WEBHOOK_TEMPLATE` and apply to both Discord and ntfy.
+
+<a id="discord"></a>
+### Discord
+
+If you are new to Discord, follow these steps to get your private webhook URL:
+
+1. Open your Xbox alerts server and choose the channel that should receive them.
+2. Select **Edit Channel**, open **Integrations** then choose **Webhooks**.
+3. Select **New Webhook**, choose a name if you want then select **Copy Webhook URL**.
+4. Save it with `xbox_monitor --set-webhook-url`.
+
+Treat this link like a password because anyone who has it can post through it.
+
+Keep the default provider in `xbox_monitor.conf`:
+
+```ini
+WEBHOOK_PROVIDER = "discord"
+```
+
+Discord alerts are sent as an embed built from `WEBHOOK_TEMPLATE`. Mentions are always disabled, whatever the template says.
+
+<a id="advanced-discord-format-customization"></a>
+### Advanced Discord-format customization
+
+`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` override the webhook's own display name and picture for Discord-format payloads. Both are ignored by ntfy:
+
+```ini
+WEBHOOK_USERNAME = "Xbox Monitor"
+WEBHOOK_AVATAR_URL = "https://example.com/path/avatar.png"
+```
+
+`WEBHOOK_TEMPLATE` controls the Discord-format request body. It supports these placeholders:
+
+- `{title}`
+- `{description}`
+- `{version}`
+- `{image_url}`
+- `{fields}` and `{fields_str}`
+- `{color}`
+- `{timestamp}`
+- `{username}`
+- `{avatar_url}`
+
+Discord templates must produce a JSON object. Use a dictionary or a JSON string encoding an object, including legacy strings with doubled object braces. Lists, non-JSON strings and unsupported placeholders are rejected before delivery. Alert text is kept literal and all payloads replace `allowed_mentions` with `{"parse": []}` so alert text cannot trigger Discord mentions. Reloaded settings apply to the next delivery.
+
+`WEBHOOK_TRANSFORMS` applies string methods to shared placeholder values before the template and headers are rendered:
+
+```ini
 WEBHOOK_TRANSFORMS = [
     ("title", "upper"),
     ("description", "replace", "**", ""),
+    ("description", "strip"),
 ]
 ```
 
-Which events actually fire and how a failed delivery is retried is covered in [Webhook Notifications](usage.md#webhook-notifications).
+The tuple format is `(field_to_target, method_name, *optional_arguments)`. Invalid templates, avatar URLs, transforms or formatted headers fail before a request is attempted. `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to the Discord request format. ntfy continues to use its native publish API while transformations and header placeholders use the same shared title and description values.
 
-## TLS Verification
+<a id="terminal-colours"></a>
+## Terminal Colours
 
-Every outbound connection verifies the server certificate by default. Xbox Live, the Microsoft sign-in endpoint, the connectivity check, the SMTP handshake and the webhook service all use the same setting.
+Terminal output is coloured by default. Colour switches itself off when the output is not an interactive terminal, when `TERM` is unset or `dumb`, when `NO_COLOR` is set and when the output is piped or redirected, so a log file or a piped run never contains escape sequences.
 
-```ini
-VERIFY_SSL = True
-```
+The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
 
-Set it to `False` only on a network that intercepts TLS with its own certificate authority. While it is off, an intercepted connection cannot be told apart from the real service, so `--doctor` reports it as a warning and the startup summary states it.
-
-## Check Intervals
-
-To change the polling intervals, use `-k` and `-c` or the matching settings:
+Turn it off for one run:
 
 ```sh
-xbox_monitor <xbox_gamertag> -k 30 -c 120
+xbox_monitor <xbox_gamertag> --no-color
 ```
 
-* `XBOX_ACTIVE_CHECK_INTERVAL`, `-k`: check interval while the user is online or away, in seconds
-* `XBOX_CHECK_INTERVAL`, `-c`: check interval while the user is offline, in seconds
+Turn it off permanently in the configuration file:
 
-An active interval below 30 seconds invites the Xbox Live rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
+```python
+COLORED_OUTPUT = False
+```
 
+On Windows, install [colorama](https://pypi.org/project/colorama/) for colours in the older Command Prompt. Windows Terminal needs nothing extra.
+
+Each part of the output has a logical name. `COLOR_THEME` in the configuration file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
+
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. Delete the block or edit only the entries you want to change:
+
+```python
+COLOR_THEME = {
+    "game": "bright_magenta bold",
+    "duration": "cyan",
+}
+```
+
+| Theme key | Default | What it colours |
+| --- | --- | --- |
+| `header` | `bright_cyan` | Report and wizard headings, plus the tool name in the startup banner |
+| `section` | `bright_white` | Section names and every command the tool tells you to run |
+| `username` | `bright_cyan underline` | The monitored gamertag, the detected install method and wizard menu numbers |
+| `id` | `bright_magenta` | The XUID |
+| `status_active` | `green` | An online presence or a game that just started |
+| `status_away` | `yellow` | An away presence |
+| `status_inactive` | `red` | An inactive presence or a game that just stopped |
+| `status_offline` | `red` | An offline presence |
+| `status_other` | `white` | A presence value the tool does not recognise |
+| `game` | `bright_yellow` | Game titles |
+| `platform` | `blue` | Console names and the platform tag beside a game |
+| `achievement` | `bright_green` | Gamerscore and achievement names |
+| `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
+| `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
+| `timestamp_value` | `cyan` | The timestamp itself |
+| `info` | `cyan` | `To fix:` lines, notes, prompts and default markers |
+| `warning` | `yellow` | `* Warning:` lines and `[WARN]` rows |
+| `error` | `red` | `* Error:` lines and `[FAIL]` rows |
+| `signal` | `yellow` | `* Signal ... received` lines |
+| `email` | `bright_cyan` | Lines reporting an email being sent |
+| `webhook` | `bright_blue` | Lines reporting a webhook being sent |
+| `date` | `magenta` | Single dates and times |
+| `date_range` | `magenta` | Date and time ranges |
+| `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
+| `boolean_false` | `red` | `False`, `Disabled` and `Off` |
+| `count_up` | `green` | A count that went up, with the `(+n)` beside it |
+| `count_down` | `red` | A count that went down, with the `(-n)` beside it |
+| `link` | `blue underline` | URLs |
+| `help_heading` | `bright_cyan bold` | The `--help` group headings and example task names |
+| `help_usage` | `bright_white bold` | The `usage:` label |
+| `help_option` | `bright_green` | Option names such as `--doctor` |
+| `help_metavar` | `yellow` | The value each option takes, such as a path or a number of seconds |
+| `help_placeholder` | `bright_magenta` | Values to replace in the help examples |
+| `help_command` | `bright_white` | The commands in the help examples |
+| `help_comment` | `bright_black` | The `#` comment above each help example |
+| `help_default` | `bright_black` | The `(default: ...)` notes |
+
+<a id="network-timeouts-and-retries"></a>
 ## Network Timeouts and Retries
 
 Requests to Xbox Live and to the Microsoft sign-in endpoint use a 30 second timeout. A token refresh that fails because of a network timeout or a temporary server-side error, HTTP 429 or 5xx, is retried up to three times with an exponentially growing delay.
@@ -164,6 +282,7 @@ On a slow or unstable connection you can raise both:
 
 An expired or revoked refresh token is a credential problem rather than a network problem, so it is reported immediately and starts the interactive re-authorization flow instead of being retried.
 
+<a id="storing-secrets"></a>
 ## Storing Secrets
 
 Store `MS_APP_CLIENT_ID`, `MS_APP_CLIENT_SECRET`, `SMTP_PASSWORD`, `WEBHOOK_URL` and `NTFY_ACCESS_TOKEN` as environment variables or in a dotenv file rather than in the configuration file.
@@ -219,10 +338,6 @@ Switch the search off with `DOTENV_FILE = "none"` or `--env-file none`:
 xbox_monitor <xbox_gamertag> --env-file none
 ```
 
-A nonempty exported secret takes priority over the dotenv file at startup and after `SIGHUP`. An explicit command-line value has the highest priority.
-
-`--doctor` reports which secrets are loaded and which source each one came from, by name and never by value. Diagnostic output is redacted, so a report can be pasted into a public bug report.
-
 The Xbox token cache named by `MS_AUTH_TOKENS_FILE` holds a live refresh token. The tool creates it readable only by its owner. `--doctor` warns when an existing one is readable by other accounts.
 
 As a fallback, secrets can also be stored in the configuration file or the source.
@@ -234,14 +349,13 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 [DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
 ```
 
-A secret no layer supplied is left out. A secret still holding its `your_...` placeholder counts as unset and is left out too. A run where nothing resolved says so in one line instead. A length appears only for the secrets whose length the provider issues, never for a password you chose.
+<a id="tls-verification"></a>
+## TLS Verification
 
-Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
+Every outbound connection verifies the server certificate by default. Xbox Live, the Microsoft sign-in endpoint, the connectivity check, the SMTP handshake and the webhook service all use the same setting.
 
-### Reloading secrets and backup contents
+```ini
+VERIFY_SSL = True
+```
 
-On macOS, Linux and Unix, `SIGHUP` reloads file-supplied secrets. Command-line values take priority, followed by nonempty environment values exported before startup, dotenv entries and configuration fallbacks. Change an argument or export and restart to replace those values. Removing a file entry uses the next available source or clears the secret. An unreadable or invalid file leaves working credentials unchanged. Empty exports are ignored. An empty dotenv entry overrides the configuration.
-
-Setup keeps the saved `DOTENV_FILE` unless you pass `--env-file PATH`. If you change files, setup asks you to review credentials again. Existing values in the new file, including empty values, stay unless you replace them. Retained credentials fill missing entries when you save. The old file stays intact.
-
-Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.
+Set it to `False` only on a network that intercepts TLS with its own certificate authority. While it is off, an intercepted connection cannot be told apart from the real service, so `--doctor` reports it as a warning and the startup summary states it.

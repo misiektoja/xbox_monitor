@@ -1,58 +1,50 @@
 # Setup & First Run
 
-## Before You Start
+<a id="run-the-setup-wizard"></a>
+## Run the setup wizard
 
-Install the tool using [Installation](installation.md). You will need an Xbox gamertag and the [Microsoft Entra application credentials](#microsoft-entra-application-credentials). Quote a gamertag that contains spaces. The wizard collects credentials through hidden prompts.
+Already installed? Run the setup command below for your installation and follow the prompts. Otherwise, start with [Installation](installation.md).
 
-Open a terminal in the directory where you want to keep the configuration and monitoring output. Later commands should use that directory or explicitly select the same `--config-file` and `--env-file` paths. Manual installations use the [command equivalents](usage.md#command-format).
+Setup asks who to monitor, the application credentials, how often to check and which alerts and output files you want. It also runs the [first authorization](#first-authorization) for you. You can review your answers before saving. Regular settings go in `xbox_monitor.conf` and private values go in `.env`. Keep `.env` private.
 
-<a id="setup-wizard"></a>
-## Guided Setup
+Press Enter to accept a default or Ctrl+C to cancel. Cancelling before saving leaves your files untouched. Cancelling after saving keeps the saved settings. For changes to an existing setup, see [Configuration File](configuration.md#configuration-file).
 
-The setup wizard asks a few questions, runs the [first authorization](#first-authorization) for you and writes a ready-to-run configuration. Start it directly with:
+After saving, follow the offered Doctor checks and monitoring steps.
 
-```sh
-xbox_monitor --setup
-```
+=== "PyPI"
 
-Settings go to `xbox_monitor.conf` and secrets go to `.env` in the current directory. Use `--config-file` and `--env-file` or the summary's **File destinations** section to choose other files. Setup asks before replacing existing files or secrets. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
+    ```sh
+    xbox_monitor --setup
+    ```
 
-The wizard asks for the account, polling intervals, application credentials, email and [webhook alerts](configuration.md#webhook-settings) and output files. Review or change any section from the summary. A rerun uses saved settings as defaults. Declining a section disables it.
+=== "Manual Python script on macOS or Linux"
 
-If an answer is invalid, setup explains how to correct it and lets you retry.
+    ```sh
+    python3 xbox_monitor.py --setup
+    ```
 
-Nothing is written until you choose **Save settings** on the summary. Ctrl+C at any question leaves both files untouched.
+=== "Manual Python script on Windows"
 
-## Quick Start
+    ```powershell
+    python xbox_monitor.py --setup
+    ```
 
-To configure it by hand instead, register a [Microsoft Entra application](#microsoft-entra-application-credentials), then track the activity of `xbox_gamer_tag`:
+A **target** is the Xbox gamertag you want to monitor. The wizard asks for the Microsoft Entra application credentials and then runs the [first authorization](#first-authorization). See [Microsoft Entra Application Credentials](#microsoft-entra-application-credentials) for how to create them.
 
-```sh
-xbox_monitor --set-ms-app-credentials
-xbox_monitor "<xbox_gamertag>"
-```
+The polling prompts accept plain seconds or the `s`, `m`, `h` and `d` units. They show both the seconds and a readable form of the default.
 
-Or, if you installed [manually](installation.md#manual-installation):
+With a saved target, running Xbox Monitor without a target starts monitoring that account. If no target is saved, an interactive no-argument run offers setup.
 
-```sh
-python3 xbox_monitor.py --set-ms-app-credentials
-python3 xbox_monitor.py "<xbox_gamertag>"
-```
+<a id="before-you-start"></a>
+## Before you start
 
-Pass the Xbox gamertag, not the Microsoft account e-mail address and not the real name. A gamertag copied out of a profile link works too.
+You need three things before the first monitoring run:
 
-Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
+1. An Xbox target. Use the gamertag, not the Microsoft account e-mail address and not the real name. A gamertag copied out of a profile link works too. Quote one that contains spaces.
+2. Microsoft Entra application credentials. See [Microsoft Entra Application Credentials](#microsoft-entra-application-credentials).
+3. The monitored account must allow others to see it online. See [User Privacy Settings](#user-privacy-settings).
 
-```sh
-xbox_monitor --doctor <xbox_gamertag>
-```
-
-To get the list of all supported command-line arguments and flags:
-
-```sh
-xbox_monitor --help
-```
-
+<a id="microsoft-entra-application-credentials"></a>
 ## Microsoft Entra Application Credentials
 
 The tool signs in to Xbox Live through an application you register yourself, so the credentials stay yours. The portal is [Microsoft Entra ID](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade), previously called Azure AD.
@@ -100,6 +92,7 @@ If they live in a dotenv file, you can change their values and send `SIGHUP` to 
 
 `--doctor` reports which secrets are loaded and which source each one came from, by name and never by value.
 
+<a id="first-authorization"></a>
 ## First Authorization
 
 The first run performs OAuth2 authorization with the credentials you supplied. `--setup` and `--set-ms-app-credentials` run the same flow right after collecting the credentials, so the tokens are already in place before monitoring starts. The tool prints a URL to open in a browser.
@@ -118,6 +111,7 @@ The tokens are saved to the file named by `MS_AUTH_TOKENS_FILE`, `xbox_tokens.js
 
 `--doctor` never runs this flow, because it writes no files. It reports a missing token cache as a warning naming the command that creates one.
 
+<a id="user-privacy-settings"></a>
 ## User Privacy Settings
 
 Monitoring only works when the monitored account allows it.
@@ -128,6 +122,95 @@ Set **Others can see if you're online** to **Friends** or **Everyone**. Setting 
 
 When the profile hides its activity, the tool reports it as a privacy setting on that account rather than a credential problem. `--doctor` says the same.
 
-## Continue with Usage
+<a id="not-sure-which-command-you-need"></a>
+## Not sure which command you need?
 
-Use [Usage](usage.md) for monitoring and output options or [Configuration](configuration.md) to adjust saved settings. If setup or monitoring fails, run [Doctor Preflight](troubleshooting.md#doctor-preflight) and follow the reported recovery steps.
+| I want to... | Run this |
+| --- | --- |
+| Set up Xbox Monitor for the first time | Use the setup command for your installation above |
+| Start monitoring with existing credentials | `xbox_monitor "<xbox_gamertag>"` |
+| Start the account saved in `XBOX_GAMERTAG` | `xbox_monitor --config-file xbox_monitor.conf` |
+| Check credentials, connectivity and one account | `xbox_monitor --doctor "<xbox_gamertag>"` |
+| Most securely enter or replace the application credentials | Run `xbox_monitor --set-ms-app-credentials` and enter both at the hidden prompts |
+| Save an SMTP password for email alerts | Run `xbox_monitor --set-smtp-password` |
+| Send a test email | Run `xbox_monitor --send-test-email` |
+| Set up webhook alerts | Run the setup wizard and choose webhook alerts |
+| Save a new webhook URL | Run `xbox_monitor --set-webhook-url` |
+| Send a test webhook | Run `xbox_monitor --send-test-webhook` |
+| Show detailed account information and exit | `xbox_monitor "<xbox_gamertag>" -i` |
+| Also show the friends list | `xbox_monitor "<xbox_gamertag>" -i -f` |
+| Show recent achievements | `xbox_monitor "<xbox_gamertag>" -i -r -n 10` |
+| Write every change to a CSV file | `xbox_monitor "<xbox_gamertag>" -b changes.csv` |
+| List every supported command-line flag | `xbox_monitor --help` |
+
+<a id="run-individual-commands"></a>
+## Run Individual Commands
+
+The examples below use PyPI. For a manual script, replace `xbox_monitor` with `python3 xbox_monitor.py` on macOS or Linux. Use `python xbox_monitor.py` on Windows and run it from the directory holding the script or give its full path. See [Command Format by Installation Method](usage.md#command-format-by-installation-method).
+
+Throughout this page `<xbox_gamertag>` means the Xbox gamertag you want to monitor. Quote it when it contains spaces.
+
+<a id="save-the-application-credentials"></a>
+### Save the application credentials
+
+To configure credentials without the wizard, `--set-ms-app-credentials` is the recommended and most secure entry method. It reads the client ID and client secret through hidden prompts, so neither value appears on screen or in the command line, then runs the [first authorization](#first-authorization) straight away.
+
+```sh
+xbox_monitor --set-ms-app-credentials
+```
+
+Use `--env-file PATH` to select another `.env` file. The `-u` and `-w` options still work, but their values may appear in shell history or process listings.
+
+<a id="save-notification-credentials"></a>
+### Save notification credentials
+
+The SMTP password is entered through a hidden prompt, checked against the mail server and saved as `SMTP_PASSWORD` in `.env`:
+
+```sh
+xbox_monitor --set-smtp-password
+```
+
+A webhook URL is the private address used to deliver notifications. Treat it like a password because anyone who has it may be able to post through it. Follow the [webhook setup steps](configuration.md#webhook-settings) then save the link:
+
+```sh
+xbox_monitor --set-webhook-url
+```
+
+The link is entered through a hidden prompt and saved as `WEBHOOK_URL` in `.env`. This command only saves the link. It does not turn on webhook alerts or send a message. See [Webhook Settings](configuration.md#webhook-settings) to choose your alerts then run `xbox_monitor --send-test-webhook` to test them.
+
+<a id="start-monitoring"></a>
+### Start monitoring
+
+The first example uses a positional gamertag. The second uses a saved `XBOX_GAMERTAG`:
+
+```sh
+xbox_monitor "<xbox_gamertag>"
+xbox_monitor --config-file xbox_monitor.conf
+```
+
+For a [manual script](installation.md#install-the-manual-script):
+
+```sh
+python3 xbox_monitor.py "<xbox_gamertag>"
+```
+
+Check the setup before relying on it. The preflight report writes nothing and exits non-zero when something is wrong:
+
+```sh
+xbox_monitor --doctor "<xbox_gamertag>"
+```
+
+See [Doctor Preflight](troubleshooting.md#doctor-preflight) for what it reports.
+
+To see all supported command-line arguments and flags:
+
+```sh
+xbox_monitor --help
+```
+
+<a id="next-step"></a>
+## Next Step
+
+Run [Doctor](troubleshooting.md#doctor-preflight) before an unattended run to confirm credentials, connectivity and notification settings.
+
+With the credentials saved and a first run working, continue to [Configuration](configuration.md) for the monitored account, SMTP, webhooks and secrets. See [Usage](usage.md) for command formats, monitoring, listing commands, notifications and output files.
