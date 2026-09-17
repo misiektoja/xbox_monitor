@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 2.0 (TBD)
+# Changes in 2.0 (18 Sep 2026)
 
 Version **2.0** adds **guided setup with Microsoft authorization**, a read-only **Doctor preflight check** and **Discord and ntfy alerts**. **Coloured output**, startup summaries and verbose/debug modes make monitoring easier to follow. Authentication recovery and game detection improve, saved history and credentials are protected and downloads can be verified. The release requires **Python 3.11 or newer**.
 
