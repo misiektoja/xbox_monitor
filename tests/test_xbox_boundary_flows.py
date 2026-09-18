@@ -80,6 +80,8 @@ def test_doctor_rejects_inaccessible_presence(monkeypatch, tmp_path, capsys):
     calls, cache = setup_xbox_transport(monkeypatch, tmp_path, "private")
     before = cache.read_bytes()
     assert monitor.run_doctor("ExampleTag") == 1
+    # A substring check on the recorded request hosts, not a URL allowlist
+    # codeql[py/incomplete-url-substring-sanitization]
     assert "userpresence.xboxlive.com" in calls
     assert cache.read_bytes() == before
     assert "does not share its activity" in capsys.readouterr().out
@@ -91,6 +93,8 @@ def test_doctor_expands_token_cache_path(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "MS_AUTH_TOKENS_FILE", "~/" + os.path.relpath(cache, Path.home()))
     before = cache.read_bytes()
     assert monitor.run_doctor("ExampleTag") == 0
+    # A substring check on the recorded request hosts, not a URL allowlist
+    # codeql[py/incomplete-url-substring-sanitization]
     assert "userpresence.xboxlive.com" in calls
     assert cache.read_bytes() == before
 

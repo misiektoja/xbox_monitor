@@ -423,6 +423,8 @@ def test_the_test_webhook_command_sends_one_forced_notification(tmp_path, monkey
     assert raised.value.code == code
     assert len(sent) == 1
     assert sent[0][1]["force"] is True
+    # A substring check on printed output, not a URL allowlist
+    # codeql[py/incomplete-url-substring-sanitization]
     assert "discord.com" in capsys.readouterr().out
 
 
