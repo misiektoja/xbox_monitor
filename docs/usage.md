@@ -274,6 +274,8 @@ You can use [GRC](https://github.com/garabik/grc) to colour logs.
 
 The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colours every tool's logs.
 
+The padded listing tables are the exception. Their columns line up by width with no label or separator a recipe could recognise. A rule wide enough to read one tool's table would read across another's column boundaries, so those rows stay plain in a replayed log.
+
 Add this to your GRC config at `~/.grc/grc.conf`:
 
 ```
