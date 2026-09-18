@@ -1,0 +1,6 @@
+# Known findings in history that cannot be removed without rewriting it.
+# Fingerprint format: commit:file:rule:line
+
+# A made-up refresh token used as a test fixture. It never belonged to an account and later commits
+# replaced it with a placeholder the allowlist recognises.
+6cd2e64bd2fb89f8d9bbe0b5d6c7d275165cd82e:tests/test_output_safety.py:monitor-secret-assignment:12
