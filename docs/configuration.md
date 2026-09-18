@@ -233,17 +233,17 @@ COLOR_THEME = {
 | --- | --- | --- |
 | `header` | `bright_cyan` | Report and wizard headings, plus the tool name in the startup banner |
 | `section` | `bright_white` | Section names and every command the tool tells you to run |
-| `username` | `bright_cyan underline` | The monitored gamertag, the detected install method and wizard menu numbers |
+| `username` | `bright_cyan underline` | The monitored gamertag, a name in the friends list, the detected install method and wizard menu numbers |
 | `id` | `bright_magenta` | The XUID |
 | `status_active` | `green` | An online presence or a game that just started |
 | `status_away` | `yellow` | An away presence |
 | `status_inactive` | `red` | An inactive presence or a game that just stopped |
 | `status_offline` | `red` | An offline presence |
 | `status_other` | `white` | A presence value the tool does not recognise |
-| `game` | `bright_yellow` | Game titles |
+| `game` | `bright_yellow` | Game titles, including the title column of the recently played and recent achievements listings |
 | `platform` | `blue` | Console names and the platform tag beside a game |
 | `achievement` | `bright_green` | Gamerscore and achievement names |
-| `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `duration` | `green` | Time spans such as `3 hours, 21 minutes` and the total column of the recently played listing |
 | `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
 | `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
 | `timestamp_value` | `cyan` | The timestamp itself |
