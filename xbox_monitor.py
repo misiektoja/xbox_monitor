@@ -1659,7 +1659,7 @@ _STYLE_CODES = {
 _LABEL_STYLES = (
     (("Gamertag:", "Target:"), "username"),
     (("XUID:",), "id"),
-    (("Current game:", "Title name:", "Game:"), "game"),
+    (("User is currently in-game:", "Current game:", "Title name:", "In-game:", "Game:"), "game"),
     (("Platform:",), "platform"),
     (("Gamerscore:",), "achievement"),
 )
@@ -1716,7 +1716,19 @@ _QUOTED_OPTION_RE = re.compile(r"^-")
 # A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
 # so a title may end in a question mark and a title such as 'Ratchet & Clank' is still a name
 _QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
-_ONLINE_WORD_RE = re.compile(r"\b(ONLINE)\b")
+
+# The console names xbox_get_platform_mapping returns, printed in brackets beside a game or a status change.
+# A device type that mapping does not recognize passes through unchanged, so it stays plain rather than
+# putting a colour on any bracketed word
+XBOX_PLATFORM_NAMES = ("Xbox One Series X/S", "Xbox One X/S", "Xbox One", "Xbox 360", "Android Phone/Tablet", "iPhone/iPad", "Android", "Windows", "XONEX", "XONE", "XSX", "X360")
+# Longest first, so a shorter name cannot claim the opening of a longer one
+_PLATFORM_ALTERNATION = "|".join(re.escape(name) for name in sorted(XBOX_PLATFORM_NAMES, key=len, reverse=True))
+_LAUNCH_PLATFORM_RE = re.compile(rf"\(({_PLATFORM_ALTERNATION})\)")
+_TRAILING_PLATFORM_RE = re.compile(rf"\s*\(({_PLATFORM_ALTERNATION})\)\s*$")
+
+# The two presence values a status change reports, coloured with the same table the "Status:" row uses
+_FROM_TO_STATUS_RE = re.compile(r"(changed status from\s+)(\w+)(\s+to\s+)(\w+)")
+_ACTIVE_WORD_RE = re.compile(r"\b(ACTIVE|ONLINE)\b")
 _AWAY_WORD_RE = re.compile(r"\b(AWAY)\b")
 _OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE)\b")
 # The verbs the monitoring loop uses to report an activity change, coloured like the state they move to
@@ -1918,10 +1930,19 @@ def _colorize_line(line):
         if not labeled_value:
             continue
         label, rest = labeled_value
-        return f"{label}{colorize(style_name, rest)}" + ("\n" if line.endswith("\n") else "")
+        # The console tag after a game name keeps its own colour instead of disappearing into the title
+        trailing_platform = _TRAILING_PLATFORM_RE.search(rest) if style_name == "game" else None
+        if trailing_platform:
+            colored_value = f"{colorize(style_name, rest[:trailing_platform.start()])} ({colorize('platform', trailing_platform.group(1))})"
+        else:
+            colored_value = colorize(style_name, rest)
+        return f"{label}{colored_value}" + ("\n" if line.endswith("\n") else "")
 
     # Highlight the gamertag named inside a sentence
     line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('username', mo.group(3))}", line)
+
+    # Highlight the two presence values a status change reports
+    line = _sub_outside_color(_FROM_TO_STATUS_RE, lambda mo: f"{mo.group(1)}{colorize_status(mo.group(2))}{mo.group(3)}{colorize_status(mo.group(4))}", line)
 
     # Highlight counters and their differences
     line = _sub_outside_color(_FROM_TO_COUNT_RE, _colorize_count_change, line)
@@ -1945,12 +1966,15 @@ def _colorize_line(line):
     if not line.lstrip().startswith("'"):
         line = _sub_outside_color(_QUOTED_CONTENT_RE, lambda mo: _colorize_quoted_name(mo, "game"), line)
 
+    # Highlight the console tag printed beside a game or a status change
+    line = _sub_outside_color(_LAUNCH_PLATFORM_RE, lambda mo: f"({colorize('platform', mo.group(1))})", line)
+
     # Highlight boolean values
     line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
     line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
 
     # Highlight the presence keywords and the verbs that report an activity change
-    line = _sub_outside_color(_ONLINE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
+    line = _sub_outside_color(_ACTIVE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
     line = _sub_outside_color(_AWAY_WORD_RE, lambda mo: colorize("status_away", mo.group(0)), line)
     line = _sub_outside_color(_OFFLINE_WORD_RE, lambda mo: colorize("status_offline", mo.group(0)), line)
     line = _sub_outside_color(_GAME_STARTED_RE, lambda mo: colorize("status_active", mo.group(0)), line)
