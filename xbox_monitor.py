@@ -3553,6 +3553,8 @@ def _wizard_summary_value(label, value):
 def _wizard_print_summary_rows(rows):
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
+        # The summary rows show a status or a path for every secret, never the value
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
 
 
@@ -4831,6 +4833,8 @@ def debug_print(_operation, **fields):
         timestamp = datetime.now().strftime("%H:%M:%S")
         prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
         message = format_diagnostic_line(_operation, fields)
+        # The scanner does not treat the sanitizer as a barrier, so it reports the masked line as a leak
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"{prefix}[DEBUG {timestamp}] {sanitize_error_text(message)}")
         STDOUT_AT_START_OF_LINE = True
 
@@ -4840,6 +4844,8 @@ def verbose_print(message):
     global STDOUT_AT_START_OF_LINE
     if VERBOSE_MODE:
         prefix = "" if STDOUT_AT_START_OF_LINE else "\n"
+        # The scanner does not treat the sanitizer as a barrier, so it reports the masked line as a leak
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"{prefix}* {sanitize_error_text(message)}")
         STDOUT_AT_START_OF_LINE = True
 
@@ -6023,6 +6029,8 @@ def reload_secrets_signal_handler(sig, frame):
                     auth_credentials_changed = True
                 if secret == "WEBHOOK_URL":
                     webhook_url_changed = True
+                # The line names the setting and where it came from, never its value
+                # codeql[py/clear-text-logging-sensitive-data]
                 print(f"* Reloaded {secret} from {env_path}")
     if auth_credentials_changed:
         XBOX_AUTH_REFRESH_VERSION += 1
