@@ -4,11 +4,13 @@ This is a high-level summary of the most important changes.
 
 # Changes in 2.0.1 (TBD)
 
-Version **2.0.1** restores the colours missing from presence changes, in-game rows and console tags, keeps the alert a failing check sends inside that check's report on screen and reports an alert channel that still holds the values from the sample configuration as unset.
+Version **2.0.1** restores the colours missing from presence changes, console tags and the friends and listing tables, keeps the alert a failing check sends inside that check's report on screen and reports an alert channel that still holds the values from the sample configuration as unset.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Presence changes and console tags are coloured again** - A status change printed **`changed status from offline to online`** with both presence values plain, **`*** User got ACTIVE !`** left its keyword uncoloured, the **`User is currently in-game:`** row left the game title uncoloured and a console tag such as **`(iPhone/iPad)`** stayed plain beside a game or a status change. All four now use the colours the `COLOR_THEME` table documents. A console name the tool cannot map is still printed plain
+- **BUGFIX:** **The friends list and the listing tables are coloured** - **`--show-friends`** printed every row plain. A name now takes the gamertag colour, the presence beside it is read through the same table the **`Status:`** row uses and a title a friend is playing is coloured as a game. The **recently played games** and **recent achievements** tables colour each column for what it holds. These rows line up by width, so a saved log replayed through `grc` still shows them plain
+- **BUGFIX:** **An `away` presence is yellow in a replayed log** - The bundled `grc` recipe painted **`away`** red inside **`changed status from ... to away`** while the live output and the **`Status:`** row used yellow. The recipe also now colours the Xbox console tags and the friends list rows. Copy `grc/conf.monitor_logs` to `~/.grc/` again to pick these up
 - **BUGFIX:** **Alert deliveries stay inside their report** - The hourly **`Monitoring degraded`** reminder closed its report before the error alert was sent, so **`Sending email notification to ...`** and its webhook equivalent landed under the separator and started a second, headless block. The reminder now closes below its delivery lines, keeping one check's report in one block
 - **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary read the values the sample configuration ships as a real destination, so a run that had never been given a mail server printed **`Email transport: your_smtp_server_ssl:587`**, a recipient of **`your_receiver_email`** and a webhook provider of **`Discord`**. Those rows now read **`Not configured`** and the channel rollup above them reads **`Off (not configured)`** rather than naming alert types nothing could deliver
 
