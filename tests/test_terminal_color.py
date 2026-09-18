@@ -118,20 +118,73 @@ def test_the_three_presence_states_are_three_colours():
     assert len({monitor.DEFAULT_COLOR_THEME[key] for key in ("status_active", "status_away", "status_offline")}) == 3
 
 
+# Verifies a status change reports both presence values through the same table the Status row uses, since
+# the monitoring loop prints them in lower case rather than as the capitalised keywords
+@pytest.mark.parametrize("old, new, old_key, new_key", [
+    ("offline", "online", "status_offline", "status_active"),
+    ("online", "offline", "status_active", "status_offline"),
+    ("online", "away", "status_active", "status_away"),
+])
+def test_a_status_change_colours_both_presence_values(colored, old, new, old_key, new_key):
+    result = colored._colorize_line(f"Xbox user misiektoja changed status from {old} to {new}")
+
+    assert styled_as(result, old, old_key)
+    assert styled_as(result, new, new_key)
+
+
 # Verifies a game title is coloured as content wherever it appears
 @pytest.mark.parametrize("line, value", [
     ("Current game:\t\t\tHalo Infinite", "Halo Infinite"),
     ("Xbox user x started playing 'Sea of Thieves'", "Sea of Thieves"),
     ("Title name:\t\t\tForza Horizon 5", "Forza Horizon 5"),
+    ("User is currently in-game:\tHalo Infinite", "Halo Infinite"),
+    ("User is currently in-game: Halo Infinite (XSX)", "Halo Infinite"),
 ])
 def test_a_game_title_is_coloured_as_content(colored, line, value):
     assert styled_as(colored._colorize_line(line), value, "game")
+
+
+# Verifies the console tag keeps its own colour rather than disappearing into the title or the sentence
+@pytest.mark.parametrize("line", [
+    "User is currently in-game:\tHalo Infinite (XSX)",
+    "Xbox user misiektoja started playing 'Halo Infinite' (iPhone/iPad)",
+    "Xbox user misiektoja changed status from offline to online (Windows)",
+])
+def test_the_console_tag_is_coloured_beside_what_it_describes(colored, line):
+    tag = re.search(r"\(([\w /]+)\)$", line)
+
+    assert tag is not None
+    assert styled_as(colored._colorize_line(line), tag.group(1), "platform")
+
+
+# Verifies the console tag pattern covers every name the platform mapping can print, so a new console does
+# not silently lose its colour
+def test_every_mapped_console_name_is_recognised():
+    for device in ("Scarlett", "Anaconda", "Starkville", "Lockhart", "Edith", "Scorpio", "Edmonton", "Durango", "Xenon", "WindowsOneCore", "iOS", "Android"):
+        for short in (True, False):
+            name = monitor.xbox_get_platform_mapping(device, short=short)
+            assert monitor._LAUNCH_PLATFORM_RE.fullmatch(f"({name})"), name
 
 
 # Verifies the activity verbs are coloured like the state they move to
 @pytest.mark.parametrize("phrase, key", [("started playing", "status_active"), ("stopped playing", "status_inactive"), ("changed status", "status_change"), ("changed game", "status_change")])
 def test_an_activity_verb_is_coloured_like_the_state_it_reports(colored, phrase, key):
     assert styled_as(colored._colorize_line(f"Xbox user x {phrase} something"), phrase, key)
+
+
+# Verifies the capitalised keywords an event line announces carry the same colours as the Status row
+@pytest.mark.parametrize("line, keyword, key", [
+    ("*** User got ACTIVE ! (was offline since Fri 18 Sep 2026, 01:53:27)", "ACTIVE", "status_active"),
+    ("*** User got OFFLINE ! (after 5 minutes)", "OFFLINE", "status_offline"),
+    ("* User is AWAY for:\t\t1 hour", "AWAY", "status_away"),
+])
+def test_an_event_keyword_is_coloured_like_the_state_it_announces(colored, line, keyword, key):
+    assert styled_as(colored._colorize_line(line), keyword, key)
+
+
+# Verifies the keyword rule reads whole words only, so a state is not found inside a longer one
+def test_a_presence_keyword_is_not_found_inside_another_word(colored):
+    assert uncolored(colored._colorize_line("Xbox user x reported INACTIVE hardware"), "INACTIVE")
 
 
 # Verifies a placeholder inside a printed command stays plain, since it is not a name the user recognises
