@@ -4524,10 +4524,12 @@ def print_liveness_banner(message):
 
 
 # Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target, advice, since, failures=0):
+def print_outage_liveness(target, advice, since, failures=0, close=True):
     count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
-    print_cur_ts("Liveness check, timestamp:\t")
+    # A caller with an alert still to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Liveness check, timestamp:\t")
 
 
 # Notes that a reported outage now fails differently, in one line rather than a second full report
@@ -7276,7 +7278,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 elif outage_outcome == "changed":
                     print_outage_change(xbox_gamertag, advice)
                 elif outage_outcome == "reminder":
-                    print_outage_liveness(xbox_gamertag, advice, outage.since, outage.failures)
+                    print_outage_liveness(xbox_gamertag, advice, outage.since, outage.failures, close=False)
                 now = int(time.time())
                 error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
                 error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
@@ -7287,7 +7289,11 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
                     # with nothing under it reads as a run that stopped there
                     delivery_reported = True
-                if outage_outcome in ("full", "changed") or exhausted or delivery_reported:
+                # The reminder closes last so the delivery lines it carries stay inside the report rather than
+                # landing under the separator that ended it
+                if outage_outcome == "reminder":
+                    print_cur_ts("Liveness check, timestamp:\t")
+                elif outage_outcome in ("full", "changed") or exhausted or delivery_reported:
                     print_cur_ts("Timestamp:\t\t\t")
                 # A local file descriptor limit cannot be retried away inside this process
                 if exhausted:
