@@ -1817,6 +1817,31 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# The listing rows below are coloured here rather than by a line rule: their columns are positional, with no
+# label or separator a rule could recognize once the values are padded to width
+
+
+# Renders one friends list row, naming the player and the presence Xbox reports for them
+def render_friend_row(gamertag, state, detail="", name_width=30):
+    # The column padding stays outside the name's colour, since that style is underlined and an underline
+    # drawn across the empty column would be visible
+    padding = " " * max(0, name_width - len(gamertag)) + " "
+    status = colorize_status(state) + (f" ({colorize('game', detail)})" if detail else "")
+    return f"{colorize('username', gamertag)}{padding}{status}"
+
+
+# Renders one row of the recently played games listing, colouring each column for what it holds
+def render_recent_game_row(index, title, last_played, total, widths):
+    w_num, w_title, w_last, w_total = widths
+    return f"{str(index).ljust(w_num)}  {colorize('game', title.ljust(w_title))}  {colorize('date', last_played.ljust(w_last))}  {colorize('duration', total.ljust(w_total))}"
+
+
+# Renders one row of the recent achievements listing, colouring each column for what it holds
+def render_achievement_row(unlocked, game, achievement, widths):
+    w_date, w_game, w_ach = widths
+    return f"{colorize('date', unlocked.ljust(w_date))}  {colorize('game', game.ljust(w_game))}  {colorize('achievement', achievement.ljust(w_ach))}"
+
+
 # Splits a recognized output label from its value without applying a backtracking expression
 def _split_output_label(value, labels):
     body = value.rstrip("\n")
@@ -6600,24 +6625,26 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
                 # Handle both dict (from direct API) and model object formats
                 if isinstance(friend, dict):
                     f_gamertag = friend.get('gamertag', 'Unknown')
-                    f_status = friend.get('presenceState', 'Offline')
-                    if f_status == "Online":
+                    f_state = friend.get('presenceState', 'Offline')
+                    f_detail = ""
+                    if f_state == "Online":
                         presence_details = friend.get('presenceDetails', [])
                         for d in presence_details:
                             if d.get('presenceText'):
-                                f_status = f"Online ({d.get('presenceText')})"
+                                f_detail = d.get('presenceText')
                                 break
                 else:
                     f_gamertag = friend.gamertag
-                    f_status = "Offline"
+                    f_state = "Offline"
+                    f_detail = ""
                     if friend.presence_state == "Online":
-                        f_status = "Online"
+                        f_state = "Online"
                         if friend.presence_details:
                             for d in friend.presence_details:
                                 if d.presence_text:
-                                    f_status += f" ({d.presence_text})"
+                                    f_detail = d.presence_text
                                     break
-                print(f"{f_gamertag.ljust(30)} {f_status}")
+                print(render_friend_row(f_gamertag, f_state, f_detail))
         else:
             print("\n(Friends list details not available with current Xbox API library)")
 
@@ -6689,13 +6716,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
 
             name_fmt = _shorten_middle(t_name, w_title)
 
-            row = (
-                f"{str(i).ljust(w_num)}  "
-                f"{name_fmt.ljust(w_title)}  "
-                f"{t_last_str.ljust(w_last)}  "
-                f"{t_playtime.ljust(w_total)}"
-            )
-            print(row)
+            print(render_recent_game_row(i, name_fmt, t_last_str, t_playtime, (w_num, w_title, w_last, w_total)))
 
     if show_recent_achievements and recent_games:
         print("\nRecent Achievements:\n")
@@ -6765,7 +6786,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
             game_fmt = _shorten_middle(title_name, w_game)
             ach_fmt = _shorten_middle(a_name, w_ach)
 
-            print(f"{t_unlock_str.ljust(w_date)}  {game_fmt.ljust(w_game)}  {ach_fmt.ljust(w_ach)}")
+            print(render_achievement_row(t_unlock_str, game_fmt, ach_fmt, (w_date, w_game, w_ach)))
 
     if session and not client:
         await session.aclose()
