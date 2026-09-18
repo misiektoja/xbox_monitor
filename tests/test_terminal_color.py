@@ -166,6 +166,62 @@ def test_every_mapped_console_name_is_recognised():
             assert monitor._LAUNCH_PLATFORM_RE.fullmatch(f"({name})"), name
 
 
+# Verifies a friends list row names the player and reads the presence through the status table
+@pytest.mark.parametrize("state, key", [("Online", "status_active"), ("Away", "status_away"), ("Offline", "status_offline"), ("Unknown", "status_other")])
+def test_a_friends_row_colours_the_name_and_the_presence(colored, state, key):
+    row = colored.render_friend_row("misiektoja", state)
+
+    assert styled_as(row, "misiektoja", "username")
+    assert styled_as(row, state, key)
+
+
+# Verifies the title a friend is playing is coloured as content rather than as part of their presence
+def test_a_friends_row_colours_the_title_beside_the_presence(colored):
+    row = colored.render_friend_row("misiektoja", "Online", "Halo Infinite")
+
+    assert styled_as(row, "Online", "status_active")
+    assert styled_as(row, "Halo Infinite", "game")
+
+
+# Verifies each listing column is coloured for what it holds, since a saved log has no rule for these rows
+def test_the_listing_rows_colour_each_column(colored):
+    game_row = colored.render_recent_game_row(1, "Halo Infinite".ljust(20), "Fri 18 Sep 2026, 01:53:27", "12h 34m", (3, 20, 24, 14))
+    achievement_row = colored.render_achievement_row("Fri 18 Sep 2026, 01:53:27", "Halo Infinite".ljust(20), "Legendary Armaments".ljust(29), (26, 20, 29))
+
+    assert styled_as(game_row, "Halo Infinite".ljust(20), "game")
+    assert styled_as(game_row, "Fri 18 Sep 2026, 01:53:27", "date")
+    assert styled_as(game_row, "12h 34m".ljust(14), "duration")
+    assert styled_as(achievement_row, "Fri 18 Sep 2026, 01:53:27".ljust(26), "date")
+    assert styled_as(achievement_row, "Halo Infinite".ljust(20), "game")
+    assert styled_as(achievement_row, "Legendary Armaments".ljust(29), "achievement")
+
+
+# Verifies a listing row keeps the layout it had before colour, since the columns line up by width and the
+# log file keeps the same row with every escape stripped
+def test_a_listing_row_keeps_its_plain_layout(colored):
+    friend_row = colored.render_friend_row("misiektoja", "Online", "Halo Infinite")
+    game_row = colored.render_recent_game_row(1, "Halo Infinite", "n/a", "12h 34m", (3, 20, 24, 14))
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", friend_row) == "misiektoja" + " " * 21 + "Online (Halo Infinite)"
+    assert monitor.ANSI_ESCAPE_RE.sub("", game_row) == "1  " + "  " + "Halo Infinite".ljust(20) + "  " + "n/a".ljust(24) + "  " + "12h 34m".ljust(14)
+
+
+# Verifies a name at or past the column width still keeps one space before the presence beside it
+def test_a_long_name_still_separates_from_its_presence(colored):
+    row = monitor.ANSI_ESCAPE_RE.sub("", colored.render_friend_row("x" * 40, "Offline"))
+
+    assert row == "x" * 40 + " Offline"
+
+
+# Verifies the listing rows stay plain while colour is off, so a redirected run and the log file agree
+def test_the_listing_rows_are_plain_without_colour(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+
+    assert monitor.render_friend_row("misiektoja", "Online", "Halo Infinite") == "misiektoja" + " " * 21 + "Online (Halo Infinite)"
+    assert monitor.render_achievement_row("n/a", "Halo", "Armaments", (5, 6, 10)) == "n/a    Halo    Armaments "
+
+
 # Verifies the activity verbs are coloured like the state they move to
 @pytest.mark.parametrize("phrase, key", [("started playing", "status_active"), ("stopped playing", "status_inactive"), ("changed status", "status_change"), ("changed game", "status_change")])
 def test_an_activity_verb_is_coloured_like_the_state_it_reports(colored, phrase, key):
