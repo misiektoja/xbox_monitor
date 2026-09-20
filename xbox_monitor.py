@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0.1
+v2.1
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -18,7 +18,7 @@ wcwidth (optional, measures wide characters correctly when TRUNCATE_CHARS is set
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "2.0.1"
+VERSION = "2.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
