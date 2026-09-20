@@ -163,13 +163,15 @@ To be told about every status change, online, away or offline, set `STATUS_NOTIF
 xbox_monitor <xbox_gamertag> -s
 ```
 
-To stop the error email, which is on by default, set `ERROR_NOTIFICATION` to `False` or use `-e`:
+To stop the error email and the recovery email that follows it, which are on by default, set `ERROR_NOTIFICATION` to `False` or use `-e`:
 
 ```sh
 xbox_monitor <xbox_gamertag> -e
 ```
 
 Email and webhook error alerts are sent after **5 minutes** of a continuing temporary failure. Problems that need your action, such as expired credentials or a hidden profile, alert immediately. Each channel gets one alert until a check succeeds. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
+
+The failure alert is subject `Xbox Monitor error: <what went wrong> (user: <gamertag>)` and lists the fix, a link to the page that covers it, how many checks failed in a row, since when and when the next check runs. When the failure clears, a **recovery alert** goes to the channels that received the failure alert, so an alert is never left open.
 
 Set the [SMTP settings](configuration.md#smtp-settings) first.
 
@@ -182,7 +184,7 @@ Example email:
 <a id="webhook-notifications"></a>
 ## Webhook Notifications
 
-Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webhook settings](configuration.md#webhook-settings) name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, plus monitoring errors.
+Alerts can also go to a **Discord** channel or an **ntfy** topic. Once the [webhook settings](configuration.md#webhook-settings) name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, plus monitoring errors. A monitoring error sends the same failure and recovery alerts email does. `--no-webhook-error-notify` switches both off.
 
 The same settings have command-line equivalents for one run. Naming any single alert also switches the channel on:
 

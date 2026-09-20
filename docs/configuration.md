@@ -111,8 +111,10 @@ WEBHOOK_PROVIDER = "discord"                    # or "ntfy"
 WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = True     # user gets online or offline
 WEBHOOK_GAME_CHANGE_NOTIFICATION = True         # game starts, changes or stops
 WEBHOOK_STATUS_NOTIFICATION = False             # every status change, including away
-WEBHOOK_ERROR_NOTIFICATION = True               # monitoring errors, enabled by default
+WEBHOOK_ERROR_NOTIFICATION = True               # monitoring failures and their recovery, enabled by default
 ```
+
+`WEBHOOK_ERROR_NOTIFICATION` and its email counterpart `ERROR_NOTIFICATION` each cover both the failure alert and the recovery alert that follows it on that channel. `--no-webhook-error-notify` and `-e` switch them off for one run.
 
 A `WEBHOOK_URL` that is unset or still holding its `your_webhook_url` placeholder switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
 
