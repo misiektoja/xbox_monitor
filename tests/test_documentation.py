@@ -58,6 +58,17 @@ def test_every_guide_link_resolves_to_a_real_page_and_anchor():
             assert anchor in page_anchors(page), f"{name} points at a missing anchor on {page.name}: #{anchor}"
 
 
+# Debug output covers how to run the tool more loudly, so a failure pointed there finds nothing about its own cause
+def test_a_failure_the_tool_retries_is_never_pointed_at_the_diagnostic_pages():
+    for name in (name for name in vars(monitor) if name.endswith("_GUIDE_URL")):
+        assert "/debugging/" not in getattr(monitor, name), name
+    errors = (monitor.httpx.ReadTimeout("slow"), monitor.httpx.ConnectError("no route"), monitor.httpx.HTTPStatusError("503", request=monitor.httpx.Request("GET", "https://xboxlive.test"), response=monitor.httpx.Response(503)))
+    for error in errors:
+        fix = monitor.classify_recovery_error(error, context="monitor").fix
+        assert "#verbose-and-debug-output" not in fix
+        assert "#choosing-the-right-logging-level" not in fix
+
+
 # A renamed file should fail here rather than in the built site
 def test_every_navigation_entry_exists():
     navigation = MKDOCS.read_text(encoding="utf-8").split("nav:", 1)[1]
