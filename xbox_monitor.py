@@ -450,6 +450,8 @@ TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/usage/#check-intervals"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
+CONNECTION_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#connection-problems"
+DESCRIPTOR_LIMIT_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#too-many-open-files"
 
 # How the positional target may be written. Reused by the recovery advice and every prompt, because three
 # hand-written phrasings of the same list is what these tools drift into
@@ -518,6 +520,7 @@ from email.header import Header
 from email.utils import parsedate_to_datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 import argparse
 import ast
 import csv
@@ -4361,7 +4364,7 @@ ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 
 # Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
 class ErrorAlertState:
-    # Starts with nothing delivered and no channel on hold
+    # Starts with nothing delivered, no channel on hold and no failure noted
     def __init__(self) -> None:
         self.email_sent = False
         self.webhook_sent = False
@@ -4369,10 +4372,17 @@ class ErrorAlertState:
         self.webhook_failures = 0
         self.email_retry_at = 0
         self.webhook_retry_at = 0
+        self.advice = None
+        self.since = 0
 
-    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    # Forgets the delivered alert, any hold and the noted failure, so the next failure earns each channel a new one
     def reset(self) -> None:
         self.__init__()
+
+    # Remembers the latest failure and when the outage began, so the recovery alert can say what ended
+    def note(self, advice, since) -> None:
+        self.advice = advice
+        self.since = since
 
     # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
     def pending(self, channel: str, enabled, now: int) -> bool:
@@ -4493,19 +4503,43 @@ def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, lab
     return "\n".join(lines)
 
 
-# Builds the subject for one recovery notification, naming what failed rather than the category it fell into
-def recovery_email_subject(advice, xbox_gamertag):
-    return f"{advice.summary} (Xbox user: {xbox_gamertag})"
+# Escapes text for an HTML email body and keeps its line breaks, which HTML would otherwise collapse into spaces
+def html_text(text):
+    return escape(str(text)).replace("\n", "<br>")
 
 
-# Builds the body for one recovery notification, repeating the fix the operator sees on screen
-def recovery_email_body(advice, error_streak=0):
-    lines = [advice.summary, "", f"To fix: {advice.fix}"]
-    if error_streak > 1:
-        lines.extend(["", f"Failed checks in a row: {error_streak}"])
-    if advice.detail:
-        lines.extend(["", f"Technical detail: {advice.detail}"])
-    return "\n".join(lines) + get_cur_ts("\n\nTimestamp: ")
+# Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
+def recovery_alert_subject(advice, target):
+    return f"Xbox Monitor error: {advice.summary} (user: {target})"
+
+
+# Lists the paragraphs of a failure alert in reading order, so the plain text, HTML and webhook bodies agree
+def recovery_alert_paragraphs(advice, retry_seconds, failed_checks=0, failing_since=0):
+    retry_lines = []
+    # A first failure has no run to count, so the count and its start appear once a check has failed again
+    if failed_checks > 1:
+        retry_lines.append(f"Failed checks in a row: {failed_checks}")
+        if failing_since:
+            retry_lines.append(f"Failing since: {get_date_from_ts(int(failing_since))}")
+    retry_lines.append(f"Next retry in: {display_time(retry_seconds)}")
+    paragraphs = [advice.summary, f"To fix: {advice.fix}", "\n".join(retry_lines)]
+    # A detail that only repeats the summary spends a line saying nothing
+    if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+        paragraphs.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return paragraphs
+
+
+# Builds the plain text body every failure alert shares, ending with the timestamp unless the webhook asks without
+def recovery_alert_body(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
+    body = "\n\n".join(recovery_alert_paragraphs(advice, retry_seconds, failed_checks, failing_since))
+    return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
+
+
+# Builds the HTML body of a failure alert with the summary in bold and the same paragraphs as the plain text
+def recovery_alert_body_html(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
+    summary, *rest = recovery_alert_paragraphs(advice, retry_seconds, failed_checks, failing_since)
+    content = "<br><br>".join([f"<b>{html_text(summary)}</b>", *(html_text(paragraph) for paragraph in rest)])
+    return f"<html><head></head><body>{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}</body></html>"
 
 
 # Prints one built advice through the shared recovery block and returns it
@@ -4608,10 +4642,41 @@ def print_outage_change(target, advice):
     print(f"* Monitoring failure changed for {target}. {advice.summary}")
 
 
-# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
-def print_outage_recovery(target, lasted):
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over, and sends
+# the recovery alert inside the same report so its delivery lines sit under the line they belong to
+def print_outage_recovery(target, lasted, error_alert=None):
     print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    if error_alert is not None:
+        send_outage_recovery_alert(target, lasted, error_alert)
     print_cur_ts("Timestamp:\t\t\t")
+
+
+# Builds the subject of the alert that ends a failure alert, so it sorts next to the failure it closes
+def outage_recovery_subject(target, lasted):
+    return f"Xbox Monitor recovered: monitoring {target} resumed after {display_time(max(1, lasted))}"
+
+
+# Builds the plain text body of the recovery alert, naming the failure it ends
+def outage_recovery_body(advice, target, lasted, timestamp=True):
+    body = f"Monitoring recovered for {target} after {display_time(max(1, lasted))}.\n\nThe failure was: {advice.summary}"
+    return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
+
+
+# Builds the HTML body of the recovery alert, matching the plain text
+def outage_recovery_body_html(advice, target, lasted, timestamp=True):
+    body = f"Monitoring recovered for <b>{escape(str(target))}</b> after <b>{escape(display_time(max(1, lasted)))}</b>.<br><br>The failure was: {html_text(advice.summary)}"
+    return f"<html><head></head><body>{body}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}</body></html>"
+
+
+# Sends the recovery alert on each channel whose failure alert was delivered, returning whether any channel was tried
+def send_outage_recovery_alert(target, lasted, error_alert):
+    advice = error_alert.advice
+    email_enabled = error_alert.email_sent and bool(ERROR_NOTIFICATION)
+    webhook_enabled = error_alert.webhook_sent and webhook_event_enabled("error")
+    if advice is None or not (email_enabled or webhook_enabled):
+        return False
+    send_notification_channels("error", outage_recovery_subject(target, lasted), outage_recovery_body(advice, target, lasted), outage_recovery_body_html(advice, target, lasted), email_enabled, webhook_enabled, webhook_body=outage_recovery_body(advice, target, lasted, timestamp=False))
+    return True
 
 
 # Suppresses a repeated fix paragraph until the failure category changes or a check succeeds
@@ -4705,7 +4770,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     status = http_status_from(error)
 
     if error is not None and is_too_many_open_files(error):
-        return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Xbox Live problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not an Xbox Live problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DESCRIPTOR_LIMIT_GUIDE_URL), False, safe_detail)
 
     if any(isinstance(item, AuthenticationException) for item in iter_exc_chain(error)):
         return make_recovery_advice("auth.authorization", "Xbox Live rejected authorization for this account", recovery_fix_with_guide("Check the Microsoft application credentials and Xbox account permissions, including child-account restrictions, then run --doctor again", CREDENTIALS_GUIDE_URL), False, safe_detail)
@@ -4729,7 +4794,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("file.exists", safe_detail or "The destination file already exists", recovery_fix_with_guide("Re-run with --force to replace it after a timestamped backup, or write to a different path", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "file.unreadable":
-        return make_recovery_advice("file.unreadable", safe_detail or "A file the tool needs could not be read", recovery_fix_with_guide("Check that the path exists and that this user can read it, then retry", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("file.unreadable", safe_detail or "A file the tool needs could not be read", recovery_fix_with_guide("Check that the path exists and that this user can read it, then retry", CONFIG_GUIDE_URL), True, safe_detail)
 
     if context == "file.unwritable":
         # The wizard reaches this either because a destination was switched off or because the path cannot be written
@@ -4737,7 +4802,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return make_recovery_advice("file.unwritable", safe_detail or "--setup has nowhere to write the secrets", recovery_fix_with_guide("Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", SECRETS_GUIDE_URL), False, safe_detail)
         if "nowhere to write the configuration" in message:
             return make_recovery_advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", recovery_fix_with_guide(f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", CONFIG_GUIDE_URL), False, safe_detail)
-        return make_recovery_advice("file.unwritable", safe_detail or "A file the tool needs could not be written", recovery_fix_with_guide("Check that the directory exists, that this user can write to it and that there is free space, then retry", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("file.unwritable", safe_detail or "A file the tool needs could not be written", recovery_fix_with_guide("Check that the directory exists, that this user can write to it and that there is free space, then retry", CONFIG_GUIDE_URL), True, safe_detail)
 
     if context == "connectivity":
         # Classified from the error, because the detail names the endpoint rather than the failure
@@ -4788,23 +4853,23 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("target.not_found", "Xbox Live does not know that gamertag", recovery_fix_with_guide(f"Check the spelling. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
 
     if status is not None and status >= 500:
-        return make_recovery_advice("xbox.unavailable", "Xbox Live returned a server-side error", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, check the Xbox Live service status", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("xbox.unavailable", "Xbox Live is temporarily unavailable", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, wait for Xbox Live to recover", CONNECTION_GUIDE_URL), True, safe_detail)
 
     for current in iter_exc_chain(error):
         if isinstance(current, (httpx.TimeoutException, TimeoutError)):
-            return make_recovery_advice("network.timeout", "Xbox Live took too long to answer", recovery_fix_with_guide(f"Nothing to do in most cases, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check your connection and any proxy", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide(f"Usually nothing to do, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
         if isinstance(current, (httpx.TransportError, ConnectionError)):
-            return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, check your internet connection, DNS and firewall", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
 
     if "timed out" in message or "timeout" in message:
-        return make_recovery_advice("network.timeout", "Xbox Live took too long to answer", recovery_fix_with_guide(f"Nothing to do in most cases, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check your connection and any proxy", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide(f"Usually nothing to do, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
 
     if "connection reset by peer" in message or "connection aborted" in message or "temporarily unavailable" in message or "name or service not known" in message:
-        return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, check your internet connection, DNS and firewall", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
 
     for current in iter_exc_chain(error):
         if isinstance(current, (AttributeError, TypeError, KeyError, IndexError)):
-            return make_recovery_advice("xbox.malformed_response", "Xbox Live returned a response in an unexpected shape", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, upgrade python-xbox and rerun with --debug", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("xbox.malformed_response", "Xbox Live returned a response in an unexpected shape", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, upgrade python-xbox and rerun with --debug", DOCTOR_GUIDE_URL), True, safe_detail)
 
     return make_recovery_advice("unknown", "Something unexpected went wrong", recovery_fix_with_guide(unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL), True, safe_detail)
 
@@ -5705,7 +5770,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 
 
 # Sends one alert through the email and webhook channels, each switched on independently of the other
-def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None):
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body=""):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     email_delivered = False
@@ -5715,7 +5780,8 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_delivered = send_webhook(subject, body, notification_type, force=True) == 0
+        # A webhook body of its own leaves out what only the email carries, such as the timestamp the service adds itself
+        webhook_delivered = send_webhook(subject, webhook_body or body, notification_type, force=True) == 0
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
 
@@ -7322,7 +7388,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if error_streak:
                     debug_print("Recovered", streak=error_streak)
                     if outage_lasted is not None:
-                        print_outage_recovery(xbox_gamertag, outage_lasted)
+                        print_outage_recovery(xbox_gamertag, outage_lasted, error_alert)
                 error_streak = 0
                 error_alert.reset()
                 recovery_hints.reset()
@@ -7337,6 +7403,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 exhausted = advice.code == "resource.exhausted"
                 # A failure that has not changed is left to the liveness cadence rather than repeated every check
                 outage_outcome = outage.failed(advice)
+                error_alert.note(advice, outage.since)
                 # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
                 alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
                 delivery_reported = False
@@ -7350,7 +7417,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
                 error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
                 if error_email_pending or error_webhook_pending:
-                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_email_subject(advice, xbox_gamertag), recovery_email_body(advice, error_streak), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending)
+                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_alert_subject(advice, xbox_gamertag), recovery_alert_body(advice, sleep_interval, outage.failures, outage.since), recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, webhook_body=recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False))
                     error_alert.record("email", error_email_pending, email_delivered, now)
                     error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
                     # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
@@ -7742,7 +7809,7 @@ def main():
         dest="notify_errors",
         action="store_false",
         default=None,
-        help="Do not email on errors"
+        help="Do not email on errors or their recovery"
     )
     notify.add_argument(
         "--send-test-email",
@@ -7814,7 +7881,7 @@ def main():
         dest="webhook_errors",
         action="store_false",
         default=None,
-        help="Disable webhook alerts on errors"
+        help="Disable webhook alerts on errors and their recovery"
     )
     webhook.add_argument(
         "--send-test-webhook",
