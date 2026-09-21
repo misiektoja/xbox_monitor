@@ -4880,12 +4880,12 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     for current in iter_exc_chain(error):
         if isinstance(current, (httpx.TimeoutException, TimeoutError)):
-            return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide(f"Usually nothing to do, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
         if isinstance(current, (httpx.TransportError, ConnectionError)):
             return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
 
     if "timed out" in message or "timeout" in message:
-        return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide(f"Usually nothing to do, the tool retries on its own. If it continues, raise XBOX_API_TIMEOUT, currently {XBOX_API_TIMEOUT} seconds, and check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("network.timeout", "Xbox Live did not answer in time", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
 
     if "connection reset by peer" in message or "connection aborted" in message or "temporarily unavailable" in message or "name or service not known" in message:
         return make_recovery_advice("network.unavailable", "Xbox Live could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
