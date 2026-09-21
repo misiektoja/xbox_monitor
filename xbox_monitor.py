@@ -7589,7 +7589,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 status_range = get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True, always_show_year=True)
                 print(f"User was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({status_range})")
 
-                m_subject_was_since = f", was {status_old}: {status_range}"
+                m_subject_since = f" - {get_short_date_from_ts(int(status_ts_old), always_show_year=True)}"
                 m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
                 m_body_was_since = f" ({status_range})"
                 m_body_was_since_html = f" ({html_text(status_range)})"
@@ -7626,7 +7626,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         m_subject_after = calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)
                         online_range = get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True, always_show_year=True)
                         online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {online_range})"
-                        m_subject_was_since = f", was available: {online_range}"
+                        m_subject_since = f" - {get_short_date_from_ts(int(status_online_start_ts), always_show_year=True)}"
                         m_body_was_since = f" ({status_range})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({online_range})"
                         m_body_was_since_html = f" ({html_text(status_range)})<br><br>User was available for <b>{html_text(calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False))}</b> ({html_text(online_range)})"
                     else:
@@ -7657,7 +7657,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} changed status from <b>{html_text(status_old)}</b> to <b>{html_text(status)}</b>{html_text(platform_str)}<br><br>User was <b>{html_text(status_old)}</b> for <b>{html_text(calculate_timespan(int(status_ts), int(status_ts_old)))}</b>{m_body_was_since_html}{m_body_short_offline_msg_html}{m_body_user_in_game_html}{m_body_played_games_html}{get_cur_ts('<br><br>Timestamp: ')}")
                 if platform:
                     platform_str = f"{platform}, "
-                m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
+                m_subject = f"Xbox user {xbox_gamertag} is {status} ({platform_str}after {m_subject_after}{m_subject_since})"
                 email_status_enabled = STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag)
                 webhook_status_enabled = webhook_event_enabled("all_status") or (webhook_event_enabled("status") and act_inact_flag)
                 if email_status_enabled or webhook_status_enabled:
