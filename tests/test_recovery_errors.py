@@ -345,7 +345,7 @@ def test_the_html_alert_body_matches_the_plain_text(monkeypatch):
 
     assert body_html.startswith("<html><head></head><body><b>Xbox Live did not answer in time</b><br><br>")
     assert "Check &lt;the&gt; connection" in body_html
-    assert "Failed checks in a row: 4<br>" in body_html
+    assert "Failed checks in a row: <b>4</b><br>" in body_html
     assert body_html.endswith("</body></html>")
 
 
@@ -570,8 +570,8 @@ def delivered_alert_state(advice, email=False, webhook=False):
 def recorded_alerts(monkeypatch):
     sent = []
 
-    def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body=""):
-        sent.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled, "webhook_body": webhook_body})
+    def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body="", webhook_body_html=""):
+        sent.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled, "webhook_body": webhook_body, "webhook_body_html": webhook_body_html})
         if email_enabled:
             print("Sending email notification to receiver@example.test")
         if webhook_enabled:
@@ -595,7 +595,7 @@ def test_the_recovery_alert_names_the_failure_it_closes(recorded_alerts):
     assert alert["subject"] == f"Xbox Monitor recovered: monitoring SomeTag resumed after {monitor.display_time(900)}"
     assert alert["body"].startswith(f"Monitoring recovered for SomeTag after {monitor.display_time(900)}.\n\nThe failure was: Xbox Live did not answer in time")
     assert "Timestamp: " in alert["body"] and "Timestamp: " not in alert["webhook_body"]
-    assert "<b>SomeTag</b>" in alert["body_html"]
+    assert '<b><a href="https://account.xbox.com/en-us/profile?gamertag=SomeTag">SomeTag</a></b>' in alert["body_html"]
 
 
 @pytest.mark.parametrize("email, webhook", [(True, False), (False, True), (True, True)])

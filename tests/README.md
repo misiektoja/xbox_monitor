@@ -60,6 +60,7 @@ and again before anything is published to PyPI.
 | `test_diagnostic_modes.py` | What `--verbose` and `--debug` each report and that neither leaks a secret value |
 | `test_doctor.py` | `--doctor`: the shared report contract, every section, the delivery test approval and the exit code |
 | `test_documentation.py` | The documentation site: guide links, navigation, page structure and the flags and settings it names |
+| `test_email_html.py` | HTML notification bodies: escaping, the Discord markdown form and the plain-text match |
 | `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
 | `test_output_safety.py` | Redaction of secrets and upstream text that cannot drive the terminal, the log, the CSV file or an email |
 | `test_presence_titles.py` | Which presence titles count as a game: Xbox system surfaces are filtered and zero-width characters are stripped |
