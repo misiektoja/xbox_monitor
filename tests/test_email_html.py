@@ -211,6 +211,16 @@ def test_the_timeline_reaches_the_title_history_alert(timeline_alerts):
     assert [alert for alert in timeline_alerts if "via title history" in alert["subject"]]
 
 
+# Verifies a status subject names one timestamp rather than the whole range, which the body already reports
+def test_a_status_subject_carries_a_single_timestamp(timeline_alerts):
+    subjects = [alert["subject"] for alert in timeline_alerts if re.search(r" is (?:online|offline|away)\b", alert["subject"])]
+
+    assert subjects
+    for subject in subjects:
+        assert re.fullmatch(r"Xbox user \w+ is \w+ \(.*after .+ - (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} \w{3} \d{2}, \d{2}:\d{2}\)", subject), subject
+        assert len(re.findall(r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", subject)) == 1
+
+
 # Verifies every alert carries an HTML body next to its plain one
 def test_every_alert_has_an_html_body(timeline_alerts):
     assert [alert["subject"] for alert in timeline_alerts if not alert["body_html"]] == []
