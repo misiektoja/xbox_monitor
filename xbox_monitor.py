@@ -7488,13 +7488,15 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     raise ValueError('Xbox user status is empty')
                 # Presence and title history are separate hosts, so one can answer while the other stays blocked
                 outage_lasted = outage.recovered() if title_history_ok else None
-                if error_streak:
+                if outage_lasted is not None:
                     debug_print("Recovered", streak=error_streak)
-                    if outage_lasted is not None:
-                        print_outage_recovery(xbox_gamertag, outage_lasted, error_alert)
-                error_streak = 0
-                error_alert.reset()
-                recovery_hints.reset()
+                    print_outage_recovery(xbox_gamertag, outage_lasted, error_alert)
+                # The alert state belongs to the outage, so a check that answers while the other host stays blocked
+                # leaves it alone, otherwise the same outage earns a second alert once that host fails again
+                if title_history_ok:
+                    error_streak = 0
+                    error_alert.reset()
+                    recovery_hints.reset()
             except Exception as e:
                 if status and status != "offline":
                     sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
