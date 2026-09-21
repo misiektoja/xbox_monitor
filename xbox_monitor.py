@@ -4707,6 +4707,24 @@ def iter_exc_chain(error, max_depth=8):
         current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
 
 
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error):
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
+
+
 # Reports whether this process hit the local file descriptor limit rather than a remote failure
 def is_too_many_open_files(error):
     for current in iter_exc_chain(error):
@@ -4871,6 +4889,11 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if isinstance(current, (AttributeError, TypeError, KeyError, IndexError)):
             return make_recovery_advice("xbox.malformed_response", "Xbox Live returned a response in an unexpected shape", recovery_fix_with_guide("Nothing to do in most cases, the tool retries on its own. If it continues, upgrade python-xbox and rerun with --debug", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
 
+    # Read last, so a chain whose text nothing matched is still named by the exception types it carries
+    transport_code = network_failure_code(error)
+    if transport_code:
+        summary = "Xbox Live did not answer in time" if transport_code == "network.timeout" else "Xbox Live could not be reached"
+        return make_recovery_advice(transport_code, summary, recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     return make_recovery_advice("unknown", "Something unexpected went wrong", recovery_fix_with_guide(unknown_failure_fix(), DIAGNOSTICS_GUIDE_URL), True, safe_detail)
 
 
