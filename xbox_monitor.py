@@ -453,6 +453,9 @@ DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 CONNECTION_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#connection-problems"
 DESCRIPTOR_LIMIT_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#too-many-open-files"
 
+# The public profile page an HTML alert links a gamertag to
+XBOX_PROFILE_BASE_URL = "https://account.xbox.com/en-us/profile?gamertag="
+
 # How the positional target may be written. Reused by the recovery advice and every prompt, because three
 # hand-written phrasings of the same list is what these tools drift into
 XBOX_TARGET_FORMS = "Xbox gamertag, not the Microsoft account e-mail or the real name"
@@ -520,7 +523,7 @@ from email.header import Header
 from email.utils import parsedate_to_datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from html import escape
+from html import escape, unescape
 import argparse
 import ast
 import csv
@@ -561,7 +564,7 @@ from collections import namedtuple
 import subprocess
 import tempfile
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 
 # The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
@@ -4508,6 +4511,63 @@ def html_text(text):
     return escape(str(text)).replace("\n", "<br>")
 
 
+# Returns one value escaped for use inside an HTML attribute
+def escape_html_attr(value):
+    return escape(str(value or ""), quote=True)
+
+
+# Wraps one rendered fragment in the document every HTML alert body shares
+def html_email_body(content):
+    return f"<html><head></head><body>{content}</body></html>"
+
+
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content):
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
+# Converts one HTML anchor to Discord markdown, leaving a self-labeled link bare so Discord turns it into a link itself
+def anchor_to_discord_markdown(url, inner_html):
+    target = unescape(str(url or "")).strip()
+    label = " ".join(unescape(re.sub(r"(?s)<[^>]+>", "", str(inner_html or ""))).split())
+    # Discord prints a masked link as plain text when its label repeats the destination, while a bare URL always links
+    if not target or not label or label == target:
+        return target or label
+    return f"[{inner_html}]({target})"
+
+
+# Converts one HTML email body to the Discord markdown subset, so a Discord alert reads like the email
+def html_body_to_discord_markdown(body_html):
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda m: anchor_to_discord_markdown(m.group(1), m.group(2)), text)
+    text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda m: f"**{m.group(1)}**" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda m: f"*{m.group(1)}*" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    # Anything still tag-shaped is layout the markdown body has no use for, such as a stray paragraph or list wrapper
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text).strip()
+
+
+# Returns the public Xbox profile page of one gamertag
+def xbox_profile_url(gamertag):
+    return f"{XBOX_PROFILE_BASE_URL}{quote(str(gamertag))}" if gamertag else ""
+
+
+# Renders one escaped label as a link when a destination is known, and as plain text when it is not
+def html_link(url, label):
+    return f'<a href="{escape_html_attr(url)}">{html_text(label)}</a>' if url else html_text(label)
+
+
+# Renders one Xbox account as a bold link to its profile page
+def xbox_user_html(gamertag):
+    return f"<b>{html_link(xbox_profile_url(gamertag), gamertag)}</b>"
+
+
+# Renders one game title as the bold subject of an alert, since Xbox Live exposes no store page for it
+def xbox_game_html(game_name):
+    return f"<b>{html_text(game_name)}</b>"
+
+
 # Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
 def recovery_alert_subject(advice, target):
     return f"Xbox Monitor error: {advice.summary} (user: {target})"
@@ -4535,16 +4595,18 @@ def recovery_alert_body(advice, retry_seconds, failed_checks=0, failing_since=0,
     return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
 
 
-# Bolds the moment an outage started, the field a reader looks for first in a failure alert
-def html_bold_failing_since(content):
-    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+# Bolds the values a reader scans a failure alert for: how often it has failed and since when
+def html_bold_outage_fields(content):
+    for label in ("Failed checks in a row: ", "Failing since: "):
+        content = re.sub(f"({re.escape(label)})([^<]+)", r"\1<b>\2</b>", content, count=1)
+    return content
 
 
 # Builds the HTML body of a failure alert with the summary in bold and the same paragraphs as the plain text
 def recovery_alert_body_html(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
     summary, *rest = recovery_alert_paragraphs(advice, retry_seconds, failed_checks, failing_since)
-    content = "<br><br>".join([f"<b>{html_text(summary)}</b>", *(html_text(paragraph) for paragraph in rest)])
-    return html_bold_failing_since(f"<html><head></head><body>{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}</body></html>")
+    content = "<br><br>".join([f"<b>{html_text(summary)}</b>", *(html_autolink_urls(html_text(paragraph)) for paragraph in rest)])
+    return html_bold_outage_fields(html_email_body(f"{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}"))
 
 
 # Prints one built advice through the shared recovery block and returns it
@@ -4669,8 +4731,8 @@ def outage_recovery_body(advice, target, lasted, timestamp=True):
 
 # Builds the HTML body of the recovery alert, matching the plain text
 def outage_recovery_body_html(advice, target, lasted, timestamp=True):
-    body = f"Monitoring recovered for <b>{escape(str(target))}</b> after <b>{escape(display_time(max(1, lasted)))}</b>.<br><br>The failure was: {html_text(advice.summary)}"
-    return f"<html><head></head><body>{body}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}</body></html>"
+    body = f"Monitoring recovered for {xbox_user_html(target)} after <b>{html_text(display_time(max(1, lasted)))}</b>.<br><br>The failure was: {html_text(advice.summary)}"
+    return html_email_body(f"{body}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}")
 
 
 # Sends the recovery alert on each channel whose failure alert was delivered, returning whether any channel was tried
@@ -4680,7 +4742,7 @@ def send_outage_recovery_alert(target, lasted, error_alert):
     webhook_enabled = error_alert.webhook_sent and webhook_event_enabled("error")
     if advice is None or not (email_enabled or webhook_enabled):
         return False
-    send_notification_channels("error", outage_recovery_subject(target, lasted), outage_recovery_body(advice, target, lasted), outage_recovery_body_html(advice, target, lasted), email_enabled, webhook_enabled, webhook_body=outage_recovery_body(advice, target, lasted, timestamp=False))
+    send_notification_channels("error", outage_recovery_subject(target, lasted), outage_recovery_body(advice, target, lasted), outage_recovery_body_html(advice, target, lasted), email_enabled, webhook_enabled, webhook_body=outage_recovery_body(advice, target, lasted, timestamp=False), webhook_body_html=outage_recovery_body_html(advice, target, lasted, timestamp=False))
     return True
 
 
@@ -5728,7 +5790,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends one webhook through its own bounded retry path, which never shares the Xbox Live retry policy
-def send_webhook(title, description, notification_type="status", force=False, sleeper=None, report_delivery=True):
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, report_delivery=True, discord_description=""):
     if not force and not webhook_event_enabled(notification_type):
         debug_print("Webhook delivery", outcome="skipped", type=notification_type, reason="alerts are disabled")
         return 1
@@ -5748,10 +5810,12 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     if header_error is not None:
         print_webhook_error(header_error)
         return 1
+    # Discord renders markdown, so it gets the email's formatting while ntfy keeps the plain body it can display
+    effective_description = discord_description if provider == "discord" and discord_description else description
     try:
-        webhook_values = build_webhook_values(title, description, notification_type)
+        webhook_values = build_webhook_values(title, effective_description, notification_type)
         request_headers = build_webhook_headers(provider, webhook_values)
-        discord_payload = build_webhook_payload(title, description, notification_type, webhook_values) if provider == "discord" else None
+        discord_payload = build_webhook_payload(title, effective_description, notification_type, webhook_values) if provider == "discord" else None
     except ValueError as exc:
         print_webhook_error(exc)
         return 1
@@ -5798,7 +5862,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 
 
 # Sends one alert through the email and webhook channels, each switched on independently of the other
-def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body=""):
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body="", webhook_body_html=""):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     email_delivered = False
@@ -5809,7 +5873,8 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
         # A webhook body of its own leaves out what only the email carries, such as the timestamp the service adds itself
-        webhook_delivered = send_webhook(subject, webhook_body or body, notification_type, force=True) == 0
+        discord_description = html_body_to_discord_markdown(webhook_body_html or body_html)
+        webhook_delivered = send_webhook(subject, webhook_body or body, notification_type, force=True, discord_description=discord_description) == 0
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
 
@@ -7333,7 +7398,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         outage = OutageReporter()
         title_history_outage = OutageReporter()
 
-        m_subject = m_body = ""
+        m_subject = m_body = m_body_html = ""
 
         if status and status != "offline":
             sleep_interval = XBOX_ACTIVE_CHECK_INTERVAL
@@ -7455,7 +7520,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
                 error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
                 if error_email_pending or error_webhook_pending:
-                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_alert_subject(advice, xbox_gamertag), recovery_alert_body(advice, sleep_interval, outage.failures, outage.since), recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, webhook_body=recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False))
+                    email_delivered, webhook_delivered = send_notification_channels("error", recovery_alert_subject(advice, xbox_gamertag), recovery_alert_body(advice, sleep_interval, outage.failures, outage.since), recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, webhook_body=recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False), webhook_body_html=recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since, timestamp=False))
                     error_alert.record("email", error_email_pending, email_delivered, now)
                     error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
                     # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
@@ -7499,8 +7564,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 m_subject_was_since = f", was {status_old}: {status_range}"
                 m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
                 m_body_was_since = f" ({status_range})"
+                m_body_was_since_html = f" ({html_text(status_range)})"
 
                 m_body_short_offline_msg = ""
+                m_body_short_offline_msg_html = ""
 
                 # Player got online
                 if status_old == "offline" and status and status != "offline":
@@ -7514,10 +7581,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         status_online_start_ts = status_online_start_ts_old
                         short_offline_msg = f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
                         m_body_short_offline_msg = f"\n\n{short_offline_msg}"
+                        m_body_short_offline_msg_html = f"<br><br>Short offline interruption (<b>{html_text(display_time(status_ts - status_ts_old))}</b>), online start timestamp set back to <b>{html_text(get_short_date_from_ts(status_online_start_ts_old))}</b>"
                         print(short_offline_msg)
                     act_inact_flag = True
 
                 m_body_played_games = ""
+                m_body_played_games_html = ""
 
                 # Player got offline
                 if status_old and status_old != "offline" and status == "offline":
@@ -7531,6 +7600,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {online_range})"
                         m_subject_was_since = f", was available: {online_range}"
                         m_body_was_since = f" ({status_range})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({online_range})"
+                        m_body_was_since_html = f" ({html_text(status_range)})<br><br>User was available for <b>{html_text(calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False))}</b> ({html_text(online_range)})"
                     else:
                         online_since_msg = ""
                     if games_number > 0:
@@ -7539,6 +7609,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                             game_total_after_offline_counted = True
                         games_word = "game" if games_number == 1 else "games"
                         m_body_played_games = f"\n\nUser played {games_number} {games_word} for total time of {display_time(game_total_ts)}"
+                        m_body_played_games_html = f"<br><br>User played <b>{games_number}</b> {games_word} for total time of <b>{html_text(display_time(game_total_ts))}</b>"
                         print(f"User played {games_number} {games_word} for total time of {display_time(game_total_ts)}")
                     print(f"*** User got OFFLINE ! {online_since_msg}")
                     status_online_start_ts_old = status_online_start_ts
@@ -7546,20 +7617,23 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     act_inact_flag = True
 
                 m_body_user_in_game = ""
+                m_body_user_in_game_html = ""
                 if status != "offline" and game_name:
                     print(f"User is currently in-game: {game_name}{platform_str}")
                     m_body_user_in_game = f"\n\nUser is currently in-game: {game_name}{platform_str}"
+                    m_body_user_in_game_html = f"<br><br>User is currently in-game: {xbox_game_html(game_name)}{html_text(platform_str)}"
 
                 change = True
 
                 m_body = f"Xbox user {xbox_gamertag} changed status from {status_old} to {status}{platform_str}\n\nUser was {status_old} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} changed status from <b>{html_text(status_old)}</b> to <b>{html_text(status)}</b>{html_text(platform_str)}<br><br>User was <b>{html_text(status_old)}</b> for <b>{html_text(calculate_timespan(int(status_ts), int(status_ts_old)))}</b>{m_body_was_since_html}{m_body_short_offline_msg_html}{m_body_user_in_game_html}{m_body_played_games_html}{get_cur_ts('<br><br>Timestamp: ')}")
                 if platform:
                     platform_str = f"{platform}, "
                 m_subject = f"Xbox user {xbox_gamertag} is now {status} ({platform_str}after {m_subject_after}{m_subject_was_since})"
                 email_status_enabled = STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag)
                 webhook_status_enabled = webhook_event_enabled("all_status") or (webhook_event_enabled("status") and act_inact_flag)
                 if email_status_enabled or webhook_status_enabled:
-                    send_notification_channels("status", m_subject, m_body, email_enabled=email_status_enabled, webhook_enabled=webhook_status_enabled)
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=email_status_enabled, webhook_enabled=webhook_status_enabled)
 
                 status_ts_old = status_ts
                 print_cur_ts("Timestamp:\t\t\t")
@@ -7571,6 +7645,9 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 if platform:
                     platform_str = f" ({platform})"
 
+                # Cleared so the guard below cannot resend the status alert when no game branch produced a body
+                m_subject = m_body = m_body_html = ""
+
                 # User changed the game
                 if game_name_old and game_name:
                     print(f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}")
@@ -7579,6 +7656,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     game_total_ts += (int(game_ts) - int(game_ts_old))
                     games_number += 1
                     m_body = f"Xbox user {xbox_gamertag} changed game from '{game_name_old}' to '{game_name}'{platform_str} after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {game_range}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} changed game from '{xbox_game_html(game_name_old)}' to '{xbox_game_html(game_name)}'{html_text(platform_str)} after <b>{html_text(calculate_timespan(int(game_ts), int(game_ts_old)))}</b><br><br>User played game from {html_text(game_range)}{get_cur_ts('<br><br>Timestamp: ')}")
                     if platform:
                         platform_str = f"{platform}, "
                     m_subject = f"Xbox user {xbox_gamertag} changed game to '{game_name}' ({platform_str}after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True)})"
@@ -7589,6 +7667,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                     games_number += 1
                     m_subject = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}"
                     m_body = f"Xbox user {xbox_gamertag} now plays '{game_name}'{platform_str}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} now plays '{xbox_game_html(game_name)}'{html_text(platform_str)}{get_cur_ts('<br><br>Timestamp: ')}")
 
                 # User stopped playing the game
                 elif game_name_old and not game_name:
@@ -7599,11 +7678,12 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                         game_total_ts += (int(game_ts) - int(game_ts_old))
                     m_subject = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, always_show_year=True)})"
                     m_body = f"Xbox user {xbox_gamertag} stopped playing '{game_name_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {game_range}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} stopped playing '{xbox_game_html(game_name_old)}' after <b>{html_text(calculate_timespan(int(game_ts), int(game_ts_old)))}</b><br><br>User played game from {html_text(game_range)}{get_cur_ts('<br><br>Timestamp: ')}")
 
                 change = True
 
                 if m_subject and m_body and (GAME_CHANGE_NOTIFICATION or webhook_event_enabled("game")):
-                    send_notification_channels("game", m_subject, m_body, email_enabled=GAME_CHANGE_NOTIFICATION)
+                    send_notification_channels("game", m_subject, m_body, m_body_html, email_enabled=GAME_CHANGE_NOTIFICATION)
 
                 game_ts_old = game_ts
                 print_cur_ts("Timestamp:\t\t\t")
@@ -7612,19 +7692,22 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             if status == "offline" and title_history_ts > 0 and title_history_ts_old > 0 and title_history_ts > title_history_ts_old:
                 activity_detected_ts = get_date_from_ts(title_history_ts)
                 game_info = f" '{title_history_game}'" if title_history_game else ""
+                game_info_html = f" '{xbox_game_html(title_history_game)}'" if title_history_game else ""
                 if title_history_game:
                     print(f"User detected playing a game{game_info} (via title history)! Started: {activity_detected_ts}")
                     m_subject = f"Xbox user {xbox_gamertag} detected playing{game_info} (via title history)"
                     m_body = f"Xbox user {xbox_gamertag} appears offline but was detected starting a game{game_info}.\n\nGame session started: {activity_detected_ts}\n\nNote: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} appears offline but was detected starting a game{game_info_html}.<br><br>Game session started: <b>{html_text(activity_detected_ts)}</b><br><br>Note: This was detected via title history. We cannot detect when the user stops playing via this method.{get_cur_ts('<br><br>Timestamp: ')}")
                 else:
                     print(f"User activity detected (via title history)! Last active: {activity_detected_ts}")
                     m_subject = f"Xbox user {xbox_gamertag} activity detected (via title history)"
                     m_body = f"Xbox user {xbox_gamertag} appears offline but has newer activity in title history.\n\nLast active: {activity_detected_ts}\n\nThis record does not identify a game session.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = html_email_body(f"Xbox user {xbox_user_html(xbox_gamertag)} appears offline but has newer activity in title history.<br><br>Last active: <b>{html_text(activity_detected_ts)}</b><br><br>This record does not identify a game session.{get_cur_ts('<br><br>Timestamp: ')}")
 
                 email_activity_enabled = ACTIVE_INACTIVE_NOTIFICATION or STATUS_NOTIFICATION
                 webhook_activity_enabled = webhook_event_enabled("status") or webhook_event_enabled("all_status")
                 if email_activity_enabled or webhook_activity_enabled:
-                    send_notification_channels("status", m_subject, m_body, email_enabled=email_activity_enabled, webhook_enabled=webhook_activity_enabled)
+                    send_notification_channels("status", m_subject, m_body, m_body_html, email_enabled=email_activity_enabled, webhook_enabled=webhook_activity_enabled)
 
                 print_cur_ts("Timestamp:\t\t\t")
                 title_history_ts_old = title_history_ts
