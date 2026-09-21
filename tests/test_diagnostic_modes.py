@@ -339,6 +339,32 @@ def test_no_recovery_alert_follows_an_outage_nobody_was_told_about(xbox_loop, mo
     assert f"* Monitoring recovered for {GAMERTAG} after " in capsys.readouterr().out
 
 
+# Presence and title history sit on different hosts. A check that read presence while the title history stayed
+# blocked used to clear the alert state, so the same outage sent a second alert and its recovery never arrived
+def test_a_title_history_still_blocked_keeps_the_outage_and_its_single_alert(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "ERROR_ALERT_AFTER_SECONDS", 0)
+    subjects = collect_email_subjects(monkeypatch)
+    # The startup baseline fetch answers first, then the successful checks that run while the title history stays blocked
+    history = [False, False, False, True]
+
+    def title_history(client, xuid, outage=None):
+        return _completed((0, "", history.pop(0) if history else True))
+
+    xbox_loop([presence_payload(), httpx.ConnectError("down"), presence_payload(), httpx.ConnectError("down"), presence_payload(), presence_payload()])
+    # Installed after the loop fixture, which stubs the same call with one that always answers
+    monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", title_history)
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    failures = [subject for subject in subjects if "error:" in subject]
+    recoveries = [subject for subject in subjects if "recovered:" in subject]
+    assert len(failures) == 1, subjects
+    assert len(recoveries) == 1, subjects
+    assert f"* Monitoring recovered for {GAMERTAG} after " in output
+
+
 # Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often
 def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     clock = [1000000.0]
