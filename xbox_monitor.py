@@ -6108,10 +6108,8 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False, always
 
     if ts1_strf == ts2_strf:
         if short:
-            if always_show_year:
-                out_str = f"{get_short_date_from_ts(ts1_new, always_show_year=True)}{between_sep}{get_short_date_from_ts(ts2_new, always_show_year=True)}"
-            else:
-                out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
+            # One day needs its date once, so the far end of a same-day range is only the time it ended at
+            out_str = f"{get_short_date_from_ts(ts1_new, always_show_year=always_show_year)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new, show_seconds=True)}"
     else:
