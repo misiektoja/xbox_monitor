@@ -6364,7 +6364,7 @@ def xbox_process_presence_class(presence, platform_short=True):
 # Fetches the most recent last time played timestamp and game_name from title history
 # This is useful for detecting activity when users have "appear offline" status
 # Note: This timestamp only updates when a game session STARTS, not during or at the end
-async def xbox_get_latest_title_played_ts(xbl_client, xuid):
+async def xbox_get_latest_title_played_ts(xbl_client, xuid, outage=None):
     try:
         # Fetch 3 items to be safe (sometimes the first one is weird or missing timestamp)
         history_response = await xbl_client.titlehub.get_title_history(
@@ -6389,12 +6389,19 @@ async def xbox_get_latest_title_played_ts(xbl_client, xuid):
 
             if best_ts > 0:
                 debug_print("Title history selection", game=best_game, played=get_date_from_ts(best_ts))
-            return best_ts, best_game
+            if outage is not None and outage.recovered() is not None:
+                verbose_notice("The title history fallback is available again, so an appear-offline user's activity is reported in full")
+            return best_ts, best_game, True
     except Exception as e:
         stop_if_resource_exhausted(e)
         debug_print("Title history fetch", outcome="failed", error=f"{type(e).__name__}: {e}")
-        verbose_notice("The title history fallback is unavailable, so an appear-offline user's activity may go unreported")
-    return 0, ""
+        # Throttled like every other lasting failure, since a blocked title history repeats on every offline check
+        if outage is None or outage.failed(classify_recovery_error(e, context="monitor")):
+            verbose_notice("The title history fallback is unavailable, so an appear-offline user's activity may go unreported")
+        return 0, "", False
+    if outage is not None and outage.recovered() is not None:
+        verbose_notice("The title history fallback is available again, so an appear-offline user's activity is reported in full")
+    return 0, "", True
 
 
 # Selects the best available last online timestamp (presence vs title history)
@@ -6491,7 +6498,7 @@ async def get_user_info(gamertag, client=None, show_friends=False, show_recent_a
     lastonline_source_history = False
     if status.lower() == "offline":
         print_step("Checking title history...")
-        title_history_ts, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+        title_history_ts, _, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
         lastonline_ts, lastonline_source_history = xbox_get_best_lastonline_ts(lastonline_ts, title_history_ts)
         print_ok()
 
@@ -7222,7 +7229,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
             presence_lastonline_cache_ts = lastonline_ts
 
         # Establish title history baseline
-        title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+        title_history_ts, title_history_game, _ = await xbox_get_latest_title_played_ts(xbl_client, xuid)
 
         if title_history_ts > 0:
             title_history_ts_old = title_history_ts
@@ -7324,6 +7331,7 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
         # Every failed check prints its advice, so the end of a streak is worth one line closing it
         error_streak = 0
         outage = OutageReporter()
+        title_history_outage = OutageReporter()
 
         m_subject = m_body = ""
 
@@ -7383,9 +7391,10 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                                 debug_print("Offline grace retry", outcome="skipped", reason="the user is no longer offline")
                                 break
 
+                title_history_ok = True
                 if status == "offline":
                     debug_print("Title history fallback", state="offline", source="fresh fetch")
-                    title_history_ts, title_history_game = await xbox_get_latest_title_played_ts(xbl_client, xuid)
+                    title_history_ts, title_history_game, title_history_ok = await xbox_get_latest_title_played_ts(xbl_client, xuid, title_history_outage)
                     presence_ts_for_decision = lastonline_ts
                     lastactive_source = "presence_last_seen_live"
                     lastactive_confidence = "high"
@@ -7412,7 +7421,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
 
                 if not status:
                     raise ValueError('Xbox user status is empty')
-                outage_lasted = outage.recovered()
+                # Presence and title history are separate hosts, so one can answer while the other stays blocked
+                outage_lasted = outage.recovered() if title_history_ok else None
                 if error_streak:
                     debug_print("Recovered", streak=error_streak)
                     if outage_lasted is not None:
