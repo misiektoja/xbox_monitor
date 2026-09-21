@@ -110,7 +110,7 @@ def xbox_loop(monkeypatch):
         monkeypatch.setattr(monitor, "AuthenticationManager", lambda *args, **kwargs: SimpleNamespace())
         monkeypatch.setattr(monitor, "authenticate_and_refresh_tokens", lambda auth_mgr: _completed())
         monkeypatch.setattr(monitor, "get_user_info", lambda *args, **kwargs: _completed())
-        monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", lambda client, xuid: _completed((0, "")))
+        monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", lambda client, xuid, outage=None: _completed((0, "", True)))
         monkeypatch.setattr(monitor, "XboxLiveClient", lambda auth_mgr: SimpleNamespace(profile=SimpleNamespace(get_profile_by_gamertag=lambda tag: _completed(SimpleNamespace(profile_users=[SimpleNamespace(id=str(XUID))]))), presence=SimpleNamespace(get_presence=next_presence)))
         monkeypatch.setattr(monitor.asyncio, "sleep", no_sleep)
     return install
