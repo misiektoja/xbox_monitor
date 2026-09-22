@@ -82,6 +82,8 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 
 Email notifications need SMTP server details for the sending account. Add them to `xbox_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `xbox_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
+If email alerts are selected but local SMTP settings are missing or invalid, the startup summary shows `Unavailable` with the reason. Automatic email sends are skipped silently until the settings are fixed. `Off` means no email alert types are selected.
+
 Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the gamertag, the game, the status and the values that changed in bold. The gamertag links to its Xbox profile page. Clients that do not render HTML fall back to the plain text, which is unchanged.
 
 Send one test message to verify the settings:
@@ -118,7 +120,7 @@ WEBHOOK_ERROR_NOTIFICATION = True               # monitoring failures and their 
 
 `WEBHOOK_ERROR_NOTIFICATION` and its email counterpart `ERROR_NOTIFICATION` each cover both the failure alert and the recovery alert that follows it on that channel. `--no-webhook-error-notify` and `-e` switch them off for one run.
 
-A `WEBHOOK_URL` that is unset or still holding its `your_webhook_url` placeholder switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+If webhook alerts are selected but the URL, provider or other local settings are invalid, the startup summary shows `Unavailable` with the reason. Automatic webhook sends are skipped silently until the settings are fixed. `Off` means the master switch or all webhook alert types are off.
 
 Which events actually fire and how a failed delivery is retried is covered in [Webhook Notifications](usage.md#webhook-notifications).
 
