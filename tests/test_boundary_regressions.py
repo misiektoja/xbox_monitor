@@ -2,6 +2,7 @@
 
 import argparse
 import copy
+from email.header import decode_header, make_header
 import errno
 import os
 import sys
@@ -254,3 +255,27 @@ def test_a_cross_day_range_names_both_dates(monkeypatch):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
 
     assert monitor.get_range_of_dates_from_tss(warsaw_ts(2026, 9, 20, 5, 48), warsaw_ts(2026, 9, 21, 23, 4), short=True, always_show_year=True) == "Sun 20 Sep 26, 05:48 - Mon 21 Sep 26, 23:04"
+
+
+@pytest.mark.parametrize("provider,url", [("discord", "https://hooks.example.test/relay"), ("ntfy", "https://ntfy.example.test/topic")])
+# Encodes a custom header built from non-ASCII alert text and keeps a value the user already encoded
+def test_custom_header_with_non_ascii_alert_text_is_encoded(monkeypatch, provider, url):
+    title = "Status of Bj\u00f6rk \u0436\u0438\u0437\u043d\u044c \U0001f3b5"
+    seen = []
+
+    # Captures a prepared HTTPX request and accepts it
+    def httpx_reply(self, request):
+        seen.append(request)
+        return httpx.Response(200, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", httpx_reply)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", url)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", provider)
+    monkeypatch.setattr(monitor, "NTFY_ACCESS_TOKEN", "")
+    monkeypatch.setattr(monitor, "WEBHOOK_HEADERS", {"X-Alert-Title": "{title}", "X-Tags": "=?UTF-8?B?8J+HqfCfh6o=?="})
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monitor.send_webhook(title, "Notification body", force=True)
+    assert seen
+    headers = seen[-1].headers
+    assert str(make_header(decode_header(headers["X-Alert-Title"]))) == title
+    assert headers["X-Tags"] == "=?UTF-8?B?8J+HqfCfh6o=?="
