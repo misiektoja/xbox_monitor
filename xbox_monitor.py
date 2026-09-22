@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.1
+v2.1.1
 
 Tool implementing real-time tracking of Xbox Live players activities:
 https://github.com/misiektoja/xbox_monitor/
@@ -18,7 +18,7 @@ wcwidth (optional, measures wide characters correctly when TRUNCATE_CHARS is set
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "2.1"
+VERSION = "2.1.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1379,7 +1379,8 @@ def startup_notification_state():
     enabled = email_notification_categories()
     if not enabled:
         return "Off"
-    return "On (" + ", ".join(enabled) + ")" if email_channel_configured() else "Off (not configured)"
+    problem = email_settings_problem()
+    return f"Unavailable ({problem[0]})" if problem else "On (" + ", ".join(enabled) + ")"
 
 
 # Returns the webhook alert rollup, which reads Off whenever the channel itself is switched off
@@ -1387,7 +1388,8 @@ def startup_webhook_notification_state():
     enabled = webhook_notification_categories() if WEBHOOK_ENABLED else []
     if not enabled:
         return "Off"
-    return "On (" + ", ".join(enabled) + ")" if webhook_channel_configured() else "Off (not configured)"
+    problem = webhook_settings_problem()
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(enabled) + ")"
 
 
 # Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
@@ -1413,6 +1415,20 @@ def email_channel_configured():
 # Returns whether a webhook alert has a destination to post to
 def webhook_channel_configured():
     return bool(normalized_webhook_provider()) and secret_is_set(WEBHOOK_URL)
+
+
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem():
+    if not secret_is_set(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url():
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
 
 
 # Names the mail server this run would use, leaving out the account that signs in to it
@@ -4758,12 +4774,14 @@ def outage_missed_body_html(advice, target, lasted, timestamp=True):
 # about the whole outage at once, returning whether any channel was tried
 def send_outage_recovery_alert(target, lasted, error_alert):
     advice = error_alert.advice
-    email_enabled = error_alert.email_sent and bool(ERROR_NOTIFICATION)
-    webhook_enabled = error_alert.webhook_sent and webhook_event_enabled("error")
+    email_ready = bool(ERROR_NOTIFICATION and email_settings_problem() is None)
+    webhook_ready = bool(webhook_event_enabled("error") and webhook_settings_problem() is None)
+    email_enabled = error_alert.email_sent and email_ready
+    webhook_enabled = error_alert.webhook_sent and webhook_ready
     # A channel whose failure alert never got through hears about the outage and its end together, rather than
     # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-    email_missed = error_alert.missed("email", ERROR_NOTIFICATION)
-    webhook_missed = error_alert.missed("webhook", webhook_event_enabled("error"))
+    email_missed = error_alert.missed("email", email_ready)
+    webhook_missed = error_alert.missed("webhook", webhook_ready)
     if advice is None or not (email_enabled or webhook_enabled or email_missed or webhook_missed):
         return False
     email_text, email_html = (outage_missed_body, outage_missed_body_html) if email_missed else (outage_recovery_body, outage_recovery_body_html)
@@ -5889,8 +5907,9 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 
 # Sends one alert through the email and webhook channels, each switched on independently of the other
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body="", webhook_body_html=""):
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_settings_problem() is None)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and WEBHOOK_ENABLED and webhook_settings_problem() is None)
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -7543,8 +7562,8 @@ async def xbox_monitor_user(xbox_gamertag, csv_file_name, achievements_count=5, 
                 elif outage_outcome == "reminder":
                     print_outage_liveness(xbox_gamertag, advice, outage.since, outage.failures, close=False)
                 now = int(time.time())
-                error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
-                error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+                error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION and email_settings_problem() is None, now)
+                error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error") and webhook_settings_problem() is None, now)
                 if error_email_pending or error_webhook_pending:
                     email_delivered, webhook_delivered = send_notification_channels("error", recovery_alert_subject(advice, xbox_gamertag), recovery_alert_body(advice, sleep_interval, outage.failures, outage.since), recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since), email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, webhook_body=recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False), webhook_body_html=recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since, timestamp=False))
                     error_alert.record("email", error_email_pending, email_delivered, now)
@@ -8444,16 +8463,12 @@ def main():
 
     # Email cannot be delivered while the mail server, the user or the password is still a shipped placeholder
     unset_smtp = [name for name in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not secret_is_set(globals()[name])]
-    if unset_smtp:
+    if SMTP_HOST.startswith("your_smtp_server_") and set(email_notification_categories()) <= {"errors"}:
         verbose_print(f"Email notifications are off because {join_names(unset_smtp)} is still empty or a shipped placeholder" if len(unset_smtp) == 1 else f"Email notifications are off because {join_names(unset_smtp)} are still empty or shipped placeholders")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
-
-    if WEBHOOK_ENABLED and not validate_webhook_url():
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     emit_startup_summary(build_startup_summary(args.xbox_gamertag, cfg_path, env_path, FINAL_LOG_PATH), full_startup_summary_enabled())
 
