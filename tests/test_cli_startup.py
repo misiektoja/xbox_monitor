@@ -119,17 +119,17 @@ def test_a_placeholder_in_the_dotenv_file_is_not_a_source(tmp_path, monkeypatch)
     assert "SMTP_PASSWORD" not in observed["SECRET_SOURCES"]
 
 
-@pytest.mark.parametrize("smtp_user, expected", [("your_smtp_user", False), ("monitor@example.test", True)])
-# Verifies email alerts switch off at startup while any SMTP setting is a shipped placeholder and stay on otherwise
-def test_email_alerts_follow_the_smtp_placeholders(tmp_path, monkeypatch, capsys, smtp_user, expected):
-    config, env = write_startup_files(tmp_path, f'SMTP_HOST = "smtp.example.test"\nSMTP_USER = "{smtp_user}"\nSENDER_EMAIL = "monitor@example.test"\nRECEIVER_EMAIL = "alerts@example.test"\n', env_text='MS_APP_CLIENT_ID="dotenv-client-id-value"\nMS_APP_CLIENT_SECRET="dotenv-client-secret-value"\nSMTP_PASSWORD="dotenv-smtp-password-value"\n')
+@pytest.mark.parametrize("smtp_user, smtp_password, expected", [("your_smtp_user", "dotenv-smtp-password-value", "Unavailable (SMTP_USER"), ("monitor@example.test", "", "Unavailable (SMTP_PASSWORD"), ("monitor@example.test", "dotenv-smtp-password-value", "On (errors)")])
+# Verifies selected email alerts remain visible while SMTP credentials are unavailable
+def test_email_alerts_follow_the_smtp_placeholders(tmp_path, monkeypatch, capsys, smtp_user, smtp_password, expected):
+    config, env = write_startup_files(tmp_path, f'SMTP_HOST = "smtp.example.test"\nSMTP_USER = "{smtp_user}"\nSENDER_EMAIL = "monitor@example.test"\nRECEIVER_EMAIL = "alerts@example.test"\n', env_text=f'MS_APP_CLIENT_ID="dotenv-client-id-value"\nMS_APP_CLIENT_SECRET="dotenv-client-secret-value"\nSMTP_PASSWORD="{smtp_password}"\n')
     monkeypatch.setattr(monitor, "check_internet", lambda url=None, timeout=None: True)
 
     observed = run_startup(monkeypatch, ["gamer", "--config-file", config, "--env-file", env, "-d"], stop_at="xbox_monitor_user", observe=("ERROR_NOTIFICATION",))
 
-    assert observed["ERROR_NOTIFICATION"] is expected
+    assert observed["ERROR_NOTIFICATION"] is True
     out = capsys.readouterr().out
-    assert ("errors" in out.split("Notifications (email):")[1].splitlines()[0]) is expected
+    assert expected in out.split("Notifications (email):")[1].splitlines()[0]
 
 
 # Verifies a placeholder client secret is rejected before anything talks to Xbox Live

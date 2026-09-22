@@ -81,6 +81,8 @@ def monitor_calls(monkeypatch):
 # Signs the loop in without a network call and replays the scripted presence responses to it
 def xbox_loop(monkeypatch):
     clock = [float(int(time.time()))]
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, value)
 
     def install(responses):
         remaining = list(responses)

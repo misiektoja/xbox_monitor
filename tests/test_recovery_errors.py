@@ -569,6 +569,8 @@ def delivered_alert_state(advice, email=False, webhook=False):
 # Records the alerts send_notification_channels was asked to deliver instead of sending them
 def recorded_alerts(monkeypatch):
     sent = []
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
 
     def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body="", webhook_body_html=""):
         sent.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled, "webhook_body": webhook_body, "webhook_body_html": webhook_body_html})

@@ -522,8 +522,23 @@ def test_a_rejected_delivery_is_classified(discord_enabled, webhook_client, caps
     assert "To fix:" in output
 
 
+# Verifies unavailable automatic channels make no attempt or status line
+def test_unavailable_channels_are_silent(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "")
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "")
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: calls.append("email"))
+    monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: calls.append("webhook"))
+    assert monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True) == (False, False)
+    assert calls == []
+    assert capsys.readouterr().out == ""
+
+
 # Verifies the two channels are switched on independently and each reports its own delivery
-def test_each_channel_reports_its_own_delivery(monkeypatch, capsys):
+def test_each_channel_reports_its_own_delivery(monkeypatch, capsys, discord_enabled):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "alerts@example.test")
     monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 1)
     monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: 0)
@@ -548,7 +563,7 @@ def test_a_channel_that_is_off_is_not_contacted(monkeypatch):
 
 
 # Verifies the webhook channel falls back to its own alert settings when the caller names no preference
-def test_the_webhook_channel_falls_back_to_its_own_settings(monkeypatch):
+def test_the_webhook_channel_falls_back_to_its_own_settings(monkeypatch, discord_enabled):
     calls = []
     monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
     monkeypatch.setattr(monitor, "send_webhook", lambda *args, **kwargs: calls.append(args[2]) or 0)
@@ -616,7 +631,7 @@ def test_the_error_alert_is_raised_once_per_channel_and_reset_on_recovery():
     assert guards["email_enabled"] == "error_email_pending"
     assert guards["webhook_enabled"] == "error_webhook_pending"
     source = ast.unparse(loop)
-    assert 'error_email_pending = alert_due and error_alert.pending(\'email\', ERROR_NOTIFICATION, now)' in source
+    assert "error_email_pending = alert_due and error_alert.pending('email', ERROR_NOTIFICATION and email_settings_problem() is None, now)" in source
     assert source.count("error_alert.record(") == 2
     # The state has to be cleared when a poll succeeds or one error would silence every later one
     assert source.count("error_alert = ErrorAlertState()") == 1

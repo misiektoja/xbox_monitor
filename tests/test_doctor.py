@@ -1230,11 +1230,7 @@ def test_the_shipped_defaults_pass_the_boolean_check():
     assert monitor.runtime_boolean_errors() == []
 
 
-# A destination that fails validation switches the channel off quietly at startup, after doctor has had its say,
-# so a running monitor with one channel off beats no monitor at all and doctor still reports the FAIL
+# Doctor runs before the summary reports an unavailable selected channel
 def test_the_unusable_webhook_gate_runs_after_doctor_in_the_family_wording():
     source = inspect.getsource(monitor)
-    gate = 'if WEBHOOK_ENABLED and not validate_webhook_url():\n        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")\n        WEBHOOK_ENABLED = False'
-
-    assert source.count(gate) == 1
-    assert source.index("if doctor_mode:") < source.index(gate) < source.index("emit_startup_summary(build_startup_summary(")
+    assert source.index("if doctor_mode:") < source.index("emit_startup_summary(build_startup_summary(")
