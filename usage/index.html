@@ -969,10 +969,11 @@
 <p>To be told about every status change, online, away or offline, set <code>STATUS_NOTIFICATION</code> to <code>True</code> or use <code>-s</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>xbox_monitor<span class="w"> </span>&lt;xbox_gamertag&gt;<span class="w"> </span>-s
 </code></pre></div>
-<p>To stop the error email, which is on by default, set <code>ERROR_NOTIFICATION</code> to <code>False</code> or use <code>-e</code>:</p>
+<p>To stop the error email and the recovery email that follows it, which are on by default, set <code>ERROR_NOTIFICATION</code> to <code>False</code> or use <code>-e</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>xbox_monitor<span class="w"> </span>&lt;xbox_gamertag&gt;<span class="w"> </span>-e
 </code></pre></div>
 <p>Email and webhook error alerts are sent after <strong>5 minutes</strong> of a continuing temporary failure. Problems that need your action, such as expired credentials or a hidden profile, alert immediately. Each channel gets one alert until a check succeeds. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.</p>
+<p>The failure alert is subject <code>Xbox Monitor error: &lt;what went wrong&gt; (user: &lt;gamertag&gt;)</code> and lists the fix, a link to the page that covers it, how many checks failed in a row, since when and when the next check runs. When the failure clears, a <strong>recovery alert</strong> goes to the channels that received the failure alert, so an alert is never left open.</p>
 <p>Set the <a href="../configuration/#smtp-settings">SMTP settings</a> first.</p>
 <p>Example email:</p>
 <p align="center">
@@ -981,7 +982,7 @@
 
 <p><a id="webhook-notifications"></a></p>
 <h2 id="webhook-notifications">Webhook Notifications<a class="headerlink" href="#webhook-notifications" title="Permanent link">&para;</a></h2>
-<p>Alerts can also go to a <strong>Discord</strong> channel or an <strong>ntfy</strong> topic. Once the <a href="../configuration/#webhook-settings">webhook settings</a> name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, plus monitoring errors.</p>
+<p>Alerts can also go to a <strong>Discord</strong> channel or an <strong>ntfy</strong> topic. Once the <a href="../configuration/#webhook-settings">webhook settings</a> name a destination, each event type is switched on separately, the same way email alerts are: the user getting online or offline, a game starting, changing or stopping, every status change including away, plus monitoring errors. A monitoring error sends the same failure and recovery alerts email does. <code>--no-webhook-error-notify</code> switches both off.</p>
 <p>The same settings have command-line equivalents for one run. Naming any single alert also switches the channel on:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>xbox_monitor<span class="w"> </span>&lt;xbox_gamertag&gt;<span class="w"> </span>--webhook-game-change
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>xbox_monitor<span class="w"> </span>&lt;xbox_gamertag&gt;<span class="w"> </span>--webhook<span class="w"> </span>--no-webhook-error-notify
@@ -1063,6 +1064,7 @@
 <h2 id="coloring-log-output-with-grc">Coloring Log Output with GRC<a class="headerlink" href="#coloring-log-output-with-grc" title="Permanent link">&para;</a></h2>
 <p>You can use <a href="https://github.com/garabik/grc">GRC</a> to colour logs.</p>
 <p>The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in <code>~/.grc/</code> colours every tool's logs.</p>
+<p>The padded listing tables are the exception. Their columns line up by width with no label or separator a recipe could recognise. A rule wide enough to read one tool's table would read across another's column boundaries, so those rows stay plain in a replayed log.</p>
 <p>Add this to your GRC config at <code>~/.grc/grc.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a># monitoring log file
 <a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>.*_monitor_.*\.log
