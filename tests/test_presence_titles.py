@@ -5,6 +5,7 @@ in some names, so the tests use the exact strings the live API returns rather th
 """
 
 import asyncio
+import httpx
 from types import SimpleNamespace
 
 import pytest
@@ -81,14 +82,32 @@ def test_the_last_seen_row_drops_a_system_surface():
 
 # Title history proves the user was active even when the name is a surface worth hiding, so only the name goes
 def test_title_history_keeps_the_timestamp_but_drops_a_system_name():
-    ts, game = asyncio.run(monitor.xbox_get_latest_title_played_ts(history_client(STORE_TITLE), "2533274800000000"))
+    ts, game, _ = asyncio.run(monitor.xbox_get_latest_title_played_ts(history_client(STORE_TITLE), "2533274800000000"))
     assert ts > 0
     assert game == ""
 
 
+# A blocked title history host used to look like a successful check, which cleared the outage the presence
+# host was still in and repeated its notice on every poll, so the fallback now reports whether it answered
+def test_a_blocked_title_history_is_reported_once_and_marked_as_failed(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "print_cur_ts", lambda *args, **kwargs: None)
+
+    class Blocked:
+        async def get_title_history(self, xuid, max_items=3):
+            raise httpx.ConnectTimeout("")
+
+    client = SimpleNamespace(titlehub=Blocked())
+    outage = monitor.OutageReporter()
+    results = [asyncio.run(monitor.xbox_get_latest_title_played_ts(client, "2533274800000000", outage)) for _ in range(4)]
+
+    assert all(result == (0, "", False) for result in results)
+    assert capsys.readouterr().out.count("The title history fallback is unavailable") == 1
+
+
 # The same fallback still names a real game, which is what makes its message useful
 def test_title_history_reports_a_real_game():
-    ts, game = asyncio.run(monitor.xbox_get_latest_title_played_ts(history_client("Sea of‍ Thieves"), "2533274800000000"))
+    ts, game, _ = asyncio.run(monitor.xbox_get_latest_title_played_ts(history_client("Sea of‍ Thieves"), "2533274800000000"))
     assert ts > 0
     assert game == "Sea of Thieves"
 

@@ -118,20 +118,129 @@ def test_the_three_presence_states_are_three_colours():
     assert len({monitor.DEFAULT_COLOR_THEME[key] for key in ("status_active", "status_away", "status_offline")}) == 3
 
 
+# Verifies a status change reports both presence values through the same table the Status row uses, since
+# the monitoring loop prints them in lower case rather than as the capitalised keywords
+@pytest.mark.parametrize("old, new, old_key, new_key", [
+    ("offline", "online", "status_offline", "status_active"),
+    ("online", "offline", "status_active", "status_offline"),
+    ("online", "away", "status_active", "status_away"),
+])
+def test_a_status_change_colours_both_presence_values(colored, old, new, old_key, new_key):
+    result = colored._colorize_line(f"Xbox user misiektoja changed status from {old} to {new}")
+
+    assert styled_as(result, old, old_key)
+    assert styled_as(result, new, new_key)
+
+
 # Verifies a game title is coloured as content wherever it appears
 @pytest.mark.parametrize("line, value", [
     ("Current game:\t\t\tHalo Infinite", "Halo Infinite"),
     ("Xbox user x started playing 'Sea of Thieves'", "Sea of Thieves"),
     ("Title name:\t\t\tForza Horizon 5", "Forza Horizon 5"),
+    ("User is currently in-game:\tHalo Infinite", "Halo Infinite"),
+    ("User is currently in-game: Halo Infinite (XSX)", "Halo Infinite"),
 ])
 def test_a_game_title_is_coloured_as_content(colored, line, value):
     assert styled_as(colored._colorize_line(line), value, "game")
+
+
+# Verifies the console tag keeps its own colour rather than disappearing into the title or the sentence
+@pytest.mark.parametrize("line", [
+    "User is currently in-game:\tHalo Infinite (XSX)",
+    "Xbox user misiektoja started playing 'Halo Infinite' (iPhone/iPad)",
+    "Xbox user misiektoja changed status from offline to online (Windows)",
+])
+def test_the_console_tag_is_coloured_beside_what_it_describes(colored, line):
+    tag = re.search(r"\(([\w /]+)\)$", line)
+
+    assert tag is not None
+    assert styled_as(colored._colorize_line(line), tag.group(1), "platform")
+
+
+# Verifies the console tag pattern covers every name the platform mapping can print, so a new console does
+# not silently lose its colour
+def test_every_mapped_console_name_is_recognised():
+    for device in ("Scarlett", "Anaconda", "Starkville", "Lockhart", "Edith", "Scorpio", "Edmonton", "Durango", "Xenon", "WindowsOneCore", "iOS", "Android"):
+        for short in (True, False):
+            name = monitor.xbox_get_platform_mapping(device, short=short)
+            assert monitor._LAUNCH_PLATFORM_RE.fullmatch(f"({name})"), name
+
+
+# Verifies a friends list row names the player and reads the presence through the status table
+@pytest.mark.parametrize("state, key", [("Online", "status_active"), ("Away", "status_away"), ("Offline", "status_offline"), ("Unknown", "status_other")])
+def test_a_friends_row_colours_the_name_and_the_presence(colored, state, key):
+    row = colored.render_friend_row("misiektoja", state)
+
+    assert styled_as(row, "misiektoja", "username")
+    assert styled_as(row, state, key)
+
+
+# Verifies the title a friend is playing is coloured as content rather than as part of their presence
+def test_a_friends_row_colours_the_title_beside_the_presence(colored):
+    row = colored.render_friend_row("misiektoja", "Online", "Halo Infinite")
+
+    assert styled_as(row, "Online", "status_active")
+    assert styled_as(row, "Halo Infinite", "game")
+
+
+# Verifies each listing column is coloured for what it holds, since a saved log has no rule for these rows
+def test_the_listing_rows_colour_each_column(colored):
+    game_row = colored.render_recent_game_row(1, "Halo Infinite".ljust(20), "Fri 18 Sep 2026, 01:53:27", "12h 34m", (3, 20, 24, 14))
+    achievement_row = colored.render_achievement_row("Fri 18 Sep 2026, 01:53:27", "Halo Infinite".ljust(20), "Legendary Armaments".ljust(29), (26, 20, 29))
+
+    assert styled_as(game_row, "Halo Infinite".ljust(20), "game")
+    assert styled_as(game_row, "Fri 18 Sep 2026, 01:53:27", "date")
+    assert styled_as(game_row, "12h 34m".ljust(14), "duration")
+    assert styled_as(achievement_row, "Fri 18 Sep 2026, 01:53:27".ljust(26), "date")
+    assert styled_as(achievement_row, "Halo Infinite".ljust(20), "game")
+    assert styled_as(achievement_row, "Legendary Armaments".ljust(29), "achievement")
+
+
+# Verifies a listing row keeps the layout it had before colour, since the columns line up by width and the
+# log file keeps the same row with every escape stripped
+def test_a_listing_row_keeps_its_plain_layout(colored):
+    friend_row = colored.render_friend_row("misiektoja", "Online", "Halo Infinite")
+    game_row = colored.render_recent_game_row(1, "Halo Infinite", "n/a", "12h 34m", (3, 20, 24, 14))
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", friend_row) == "misiektoja" + " " * 21 + "Online (Halo Infinite)"
+    assert monitor.ANSI_ESCAPE_RE.sub("", game_row) == "1  " + "  " + "Halo Infinite".ljust(20) + "  " + "n/a".ljust(24) + "  " + "12h 34m".ljust(14)
+
+
+# Verifies a name at or past the column width still keeps one space before the presence beside it
+def test_a_long_name_still_separates_from_its_presence(colored):
+    row = monitor.ANSI_ESCAPE_RE.sub("", colored.render_friend_row("x" * 40, "Offline"))
+
+    assert row == "x" * 40 + " Offline"
+
+
+# Verifies the listing rows stay plain while colour is off, so a redirected run and the log file agree
+def test_the_listing_rows_are_plain_without_colour(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+
+    assert monitor.render_friend_row("misiektoja", "Online", "Halo Infinite") == "misiektoja" + " " * 21 + "Online (Halo Infinite)"
+    assert monitor.render_achievement_row("n/a", "Halo", "Armaments", (5, 6, 10)) == "n/a    Halo    Armaments "
 
 
 # Verifies the activity verbs are coloured like the state they move to
 @pytest.mark.parametrize("phrase, key", [("started playing", "status_active"), ("stopped playing", "status_inactive"), ("changed status", "status_change"), ("changed game", "status_change")])
 def test_an_activity_verb_is_coloured_like_the_state_it_reports(colored, phrase, key):
     assert styled_as(colored._colorize_line(f"Xbox user x {phrase} something"), phrase, key)
+
+
+# Verifies the capitalised keywords an event line announces carry the same colours as the Status row
+@pytest.mark.parametrize("line, keyword, key", [
+    ("*** User got ACTIVE ! (was offline since Fri 18 Sep 2026, 01:53:27)", "ACTIVE", "status_active"),
+    ("*** User got OFFLINE ! (after 5 minutes)", "OFFLINE", "status_offline"),
+    ("* User is AWAY for:\t\t1 hour", "AWAY", "status_away"),
+])
+def test_an_event_keyword_is_coloured_like_the_state_it_announces(colored, line, keyword, key):
+    assert styled_as(colored._colorize_line(line), keyword, key)
+
+
+# Verifies the keyword rule reads whole words only, so a state is not found inside a longer one
+def test_a_presence_keyword_is_not_found_inside_another_word(colored):
+    assert uncolored(colored._colorize_line("Xbox user x reported INACTIVE hardware"), "INACTIVE")
 
 
 # Verifies a placeholder inside a printed command stays plain, since it is not a name the user recognises
@@ -513,3 +622,44 @@ def test_the_early_output_config_carries_the_help_theme(monkeypatch, tmp_path):
     monitor.apply_early_output_config()
 
     assert monitor.COLOR_THEME == {"help_heading": "bright_red"}
+
+
+# Verifies a settings row is never painted as a log line, since a label or a value can read like an error keyword
+@pytest.mark.parametrize("label,value", [("Error retry timer", "3 minutes"), ("Polling interval", "5 minutes, longer after a failure")])
+def test_a_summary_row_is_not_painted_by_a_log_keyword(monkeypatch, label, value):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: f"<{name}>" for name in monitor.DEFAULT_COLOR_THEME})
+    line = monitor.format_startup_summary_row(monitor.StartupSummaryRow(label, value)).rstrip("\n")
+
+    # The value highlights still apply, so only the whole-row block styles have to be absent
+    coloured = monitor._colorize_line(line)
+
+    assert "<error>" not in coloured and "<warning>" not in coloured
+
+
+# Verifies an ordinary error line still carries the block colour the summary rows opt out of
+def test_an_error_line_is_still_painted(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {"error": "<error>"})
+
+    assert "<error>" in monitor._colorize_line("* Error: the request failed")
+
+
+# Verifies the row shape the colouriser matches is the one the summary emitter prints, so the two cannot drift
+def test_every_summary_row_is_recognised_by_its_value_column():
+    for row in (monitor.StartupSummaryRow("Target", "someone"), monitor.StartupSummaryRow("Email transport", "Not configured")):
+        line = monitor.format_startup_summary_row(row).rstrip("\n")
+        assert monitor.is_startup_summary_row(line)
+        assert line.index(row.value.split(" ")[0]) == monitor.STARTUP_SUMMARY_VALUE_COLUMN
+
+    assert not monitor.is_startup_summary_row("* Error: something failed")
+    assert not monitor.is_startup_summary_row("* Warning: a timeout was hit")
+
+
+# Verifies a date does not reach back over a padded gap and read the word in front of it as a weekday
+def test_a_wide_gap_before_a_date_is_not_read_as_a_weekday():
+    padded = monitor._LONG_DATE_RE.search("A padded column end     07 Feb 26, 00:05:42")
+    weekday = monitor._LONG_DATE_RE.search("Sun 06 Apr 2025, 21:21:46")
+
+    assert padded is not None and padded.group(0) == "07 Feb 26, 00:05:42"
+    assert weekday is not None and weekday.group(0) == "Sun 06 Apr 2025, 21:21:46"

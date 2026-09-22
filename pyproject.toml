@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xbox_monitor"
-version = "2.0"
+version = "2.1"
 description = "Tool implementing real-time tracking of Xbox Live players activities"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -36,7 +36,7 @@ keywords = ["xbox", "xbox-live","monitoring", "tracking", "real-time", "osint", 
 [project.optional-dependencies]
 test = ["pytest>=9.0.3", "pyyaml>=6.0"]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
-lint = ["ruff==0.16.7"]
+lint = ["ruff==0.16.8"]
 
 [project.urls]
 Homepage = "https://github.com/misiektoja/xbox_monitor"

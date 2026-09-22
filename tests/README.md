@@ -60,10 +60,12 @@ and again before anything is published to PyPI.
 | `test_diagnostic_modes.py` | What `--verbose` and `--debug` each report and that neither leaks a secret value |
 | `test_doctor.py` | `--doctor`: the shared report contract, every section, the delivery test approval and the exit code |
 | `test_documentation.py` | The documentation site: guide links, navigation, page structure and the flags and settings it names |
+| `test_email_html.py` | HTML notification bodies: escaping, the Discord markdown form and the plain-text match |
 | `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
 | `test_output_safety.py` | Redaction of secrets and upstream text that cannot drive the terminal, the log, the CSV file or an email |
 | `test_presence_titles.py` | Which presence titles count as a game: Xbox system surfaces are filtered and zero-width characters are stripped |
 | `test_recovery_errors.py` | The recovery taxonomy, which category each failure lands in and the classifier coverage guard |
+| `test_missed_alert_recovery.py` | The recovery alert sent to a channel that never received the failure alert |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |
 | `test_repository_metadata.py` | Citation, funding, line endings, the declared editor style, the pinned linter, release integrity and the version sites |
 | `test_secret_commands.py` | The one-shot commands that write a secret: what each validates, writes and refuses to write |

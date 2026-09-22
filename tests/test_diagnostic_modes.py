@@ -110,7 +110,7 @@ def xbox_loop(monkeypatch):
         monkeypatch.setattr(monitor, "AuthenticationManager", lambda *args, **kwargs: SimpleNamespace())
         monkeypatch.setattr(monitor, "authenticate_and_refresh_tokens", lambda auth_mgr: _completed())
         monkeypatch.setattr(monitor, "get_user_info", lambda *args, **kwargs: _completed())
-        monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", lambda client, xuid: _completed((0, "")))
+        monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", lambda client, xuid, outage=None: _completed((0, "", True)))
         monkeypatch.setattr(monitor, "XboxLiveClient", lambda auth_mgr: SimpleNamespace(profile=SimpleNamespace(get_profile_by_gamertag=lambda tag: _completed(SimpleNamespace(profile_users=[SimpleNamespace(id=str(XUID))]))), presence=SimpleNamespace(get_presence=next_presence)))
         monkeypatch.setattr(monitor.asyncio, "sleep", no_sleep)
     return install
@@ -292,31 +292,77 @@ def test_a_delivery_on_a_quiet_check_ends_with_a_timestamp(xbox_loop, monkeypatc
         assert any(line.startswith("Timestamp:") for line in lines[index + 1:index + 3]), lines[index:index + 3]
 
 
+# Collects the subject of every email the run delivers, so an alert can be told apart from the one that closes it
+def collect_email_subjects(monkeypatch):
+    subjects = []
+    monkeypatch.setattr(monitor, "send_email", lambda subject, *args, **kwargs: subjects.append(subject) or 0)
+    return subjects
+
+
 # Verifies a failure the tool can retry away is alerted only once the outage has lasted the alert delay, so a
-# blip of a check reaches nobody while a real outage still does
+# blip of a check reaches nobody while a real outage still does, and that the alert is closed when it clears
 @pytest.mark.parametrize("failures,expected", [(1, 0), (2, 1)])
 def test_a_retryable_failure_is_alerted_once_the_outage_has_lasted(xbox_loop, monkeypatch, capsys, failures, expected):
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 100 * monitor.XBOX_CHECK_INTERVAL)
-    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    subjects = collect_email_subjects(monkeypatch)
     # Five minute polls put the second failing check at the five minute delay
     xbox_loop([presence_payload(), *[httpx.ConnectError("down") for _ in range(failures)], presence_payload()])
 
     run_monitor()
 
-    assert capsys.readouterr().out.count("Sending email notification") == expected
+    assert len([subject for subject in subjects if subject.startswith("Xbox Monitor error:")]) == expected
+    assert len([subject for subject in subjects if subject.startswith("Xbox Monitor recovered:")]) == expected
 
 
 # Verifies a failure nothing here can retry away is alerted on the first check, since waiting would change nothing
 def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(xbox_loop, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
-    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    subjects = collect_email_subjects(monkeypatch)
     request = httpx.Request("GET", "https://profile.xboxlive.com/users")
     xbox_loop([presence_payload(), httpx.HTTPStatusError("401", request=request, response=httpx.Response(401, request=request)), presence_payload()])
 
     run_monitor()
 
-    assert capsys.readouterr().out.count("Sending email notification") == 1
+    assert len([subject for subject in subjects if subject.startswith("Xbox Monitor error:")]) == 1
+
+
+# Verifies a recovery alert only follows an outage somebody was told about, so a quiet blip stays quiet
+def test_no_recovery_alert_follows_an_outage_nobody_was_told_about(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    subjects = collect_email_subjects(monkeypatch)
+    xbox_loop([presence_payload(), httpx.ConnectError("down"), httpx.ConnectError("down"), presence_payload()])
+
+    run_monitor()
+
+    assert subjects == []
+    assert f"* Monitoring recovered for {GAMERTAG} after " in capsys.readouterr().out
+
+
+# Presence and title history sit on different hosts. A check that read presence while the title history stayed
+# blocked used to clear the alert state, so the same outage sent a second alert and its recovery never arrived
+def test_a_title_history_still_blocked_keeps_the_outage_and_its_single_alert(xbox_loop, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "ERROR_ALERT_AFTER_SECONDS", 0)
+    subjects = collect_email_subjects(monkeypatch)
+    # The startup baseline fetch answers first, then the successful checks that run while the title history stays blocked
+    history = [False, False, False, True]
+
+    def title_history(client, xuid, outage=None):
+        return _completed((0, "", history.pop(0) if history else True))
+
+    xbox_loop([presence_payload(), httpx.ConnectError("down"), presence_payload(), httpx.ConnectError("down"), presence_payload(), presence_payload()])
+    # Installed after the loop fixture, which stubs the same call with one that always answers
+    monkeypatch.setattr(monitor, "xbox_get_latest_title_played_ts", title_history)
+
+    run_monitor()
+
+    output = capsys.readouterr().out
+    failures = [subject for subject in subjects if "error:" in subject]
+    recoveries = [subject for subject in subjects if "recovered:" in subject]
+    assert len(failures) == 1, subjects
+    assert len(recoveries) == 1, subjects
+    assert f"* Monitoring recovered for {GAMERTAG} after " in output
 
 
 # Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often

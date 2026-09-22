@@ -162,6 +162,10 @@ def test_values_line_up_in_one_column(summary_rows):
 
 # Verifies the email rollup names what is switched on instead of printing four separate booleans
 def test_the_notification_row_names_what_is_enabled(monkeypatch):
+    # The rollup reports a channel with no mail server as off, whatever its alert types are
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "michal.k@example.com")
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "GAME_CHANGE_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "STATUS_NOTIFICATION", False)

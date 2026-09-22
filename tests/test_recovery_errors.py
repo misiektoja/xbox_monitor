@@ -278,36 +278,75 @@ def monitoring_loop_tree():
     raise AssertionError("the monitoring loop was not found")
 
 
-# The subject is the whole alert for anyone reading it on a phone, so it has to name what actually failed
-def test_the_alert_subject_names_the_failure_and_the_account():
+# The subject is the whole alert for anyone reading it on a phone, so it has to name the tool and what failed
+def test_the_alert_subject_names_the_tool_the_failure_and_the_account():
     advice = monitor.classify_recovery_error(http_error(401), context="monitor")
 
-    subject = monitor.recovery_email_subject(advice, "SomeTag")
+    subject = monitor.recovery_alert_subject(advice, "SomeTag")
 
-    assert subject.startswith(advice.summary)
-    assert advice.summary in subject
-    assert "(Xbox user: SomeTag)" in subject
+    assert subject == f"Xbox Monitor error: {advice.summary} (user: SomeTag)"
 
 
 # The body repeats the fix, since the operator reading the alert is not looking at the terminal
-def test_the_alert_body_carries_the_fix_and_the_streak(monkeypatch):
+def test_the_alert_body_carries_the_fix_the_streak_and_the_next_retry(monkeypatch):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
-    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer", "Check the connection", True, "detail text")
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True, "detail text")
 
-    body = monitor.recovery_email_body(advice, error_streak=7)
+    body = monitor.recovery_alert_body(advice, 300, failed_checks=7, failing_since=1700000000)
 
-    assert "To fix: Check the connection" in body
-    assert "Failed checks in a row: 7" in body
+    assert body.startswith("Xbox Live did not answer in time\n\nTo fix: Check the connection")
+    assert f"\n\nFailed checks in a row: 7\nFailing since: {monitor.get_date_from_ts(1700000000)}\nNext retry in: {monitor.display_time(300)}\n\n" in body
     assert "Technical detail: detail text" in body
     assert "Timestamp: " in body
 
 
-# A single failed check is not worth an alert, so the streak count only appears once it means something
-def test_a_single_failure_body_omits_the_streak(monkeypatch):
+# A single failed check has no run to count, so the count and its start only appear once they mean something
+def test_a_single_failure_body_omits_the_streak_but_keeps_the_next_retry(monkeypatch):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
-    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer", "Check the connection", True)
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
 
-    assert "Failed checks in a row" not in monitor.recovery_email_body(advice, error_streak=1)
+    body = monitor.recovery_alert_body(advice, 300, failed_checks=1, failing_since=1700000000)
+
+    assert "Failed checks in a row" not in body
+    assert "Failing since" not in body
+    assert f"Next retry in: {monitor.display_time(300)}" in body
+
+
+# The technical detail is a debugging aid, so a default run must not carry the raw cause into somebody's inbox
+def test_the_alert_body_carries_the_technical_detail_only_in_debug_mode(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True, "detail text")
+
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    assert "Technical detail" not in monitor.recovery_alert_body(advice, 300)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    assert "Technical detail: detail text" in monitor.recovery_alert_body(advice, 300)
+
+
+# The webhook service stamps its own arrival time, so only the email body carries one
+def test_only_the_email_body_carries_the_timestamp(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+
+    assert "Timestamp: " in monitor.recovery_alert_body(advice, 300)
+    assert "Timestamp: " not in monitor.recovery_alert_body(advice, 300, timestamp=False)
+    assert "Timestamp: " in monitor.recovery_alert_body_html(advice, 300)
+    assert "Timestamp: " not in monitor.recovery_alert_body_html(advice, 300, timestamp=False)
+
+
+# The HTML body says the same thing as the plain text, with the summary leading it in bold
+def test_the_html_alert_body_matches_the_plain_text(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check <the> connection", True)
+
+    body_html = monitor.recovery_alert_body_html(advice, 300, failed_checks=4, failing_since=1700000000, timestamp=False)
+
+    assert body_html.startswith("<html><head></head><body><b>Xbox Live did not answer in time</b><br><br>")
+    assert "Check &lt;the&gt; connection" in body_html
+    assert "Failed checks in a row: <b>4</b><br>" in body_html
+    assert body_html.endswith("</body></html>")
 
 
 # A blip must not mail anyone and a failure nothing can retry away must not wait for an outage that never lasts
@@ -336,6 +375,31 @@ def test_a_caller_supplied_detail_does_not_hide_the_error(message, expected):
 
     assert advice.code == expected
     assert "Cannot read the Xbox profile" in advice.detail
+
+
+# A link to the wrong page reads as a dead end, so each failure is pinned to the page that covers its cause
+def test_each_failure_links_to_the_page_that_covers_it():
+    cases = (
+        (monitor.classify_recovery_error(monitor.httpx.ReadTimeout("slow"), context="monitor"), monitor.CONNECTION_GUIDE_URL),
+        (monitor.classify_recovery_error(monitor.httpx.ConnectError("no route"), context="monitor"), monitor.CONNECTION_GUIDE_URL),
+        (monitor.classify_recovery_error(http_error(503), context="monitor"), monitor.CONNECTION_GUIDE_URL),
+        (monitor.classify_recovery_error(OSError(24, "Too many open files"), context="monitor"), monitor.DESCRIPTOR_LIMIT_GUIDE_URL),
+        (monitor.classify_recovery_error(PermissionError("denied"), context="file.unreadable"), monitor.CONFIG_GUIDE_URL),
+        (monitor.classify_recovery_error(PermissionError("denied"), context="file.unwritable"), monitor.CONFIG_GUIDE_URL),
+    )
+    for advice, guide_url in cases:
+        assert f"\nGuide: {guide_url}" in advice.fix
+
+
+# A check the tool retries on its own must not send the reader to Doctor or debug output for a passing blip
+@pytest.mark.parametrize("error", [monitor.httpx.ReadTimeout("slow"), monitor.httpx.ConnectError("no route"), http_error(503)])
+def test_a_transient_failure_does_not_prescribe_diagnostics(error):
+    advice = monitor.classify_recovery_error(error, context="monitor")
+
+    assert advice.retryable is True
+    assert "--doctor" not in advice.fix
+    assert "--debug" not in advice.fix
+    assert "#verbose-and-debug-output" not in advice.fix
 
 
 # The only advice that names no page, and the reason no page covers it
@@ -490,6 +554,90 @@ def test_the_unrecognized_failure_fix_follows_the_diagnostic_mode(monkeypatch):
 
     assert "--debug" in plain
     assert "--debug" not in debugging
+
+
+# Returns an alert state that already delivered the failure alert on the named channels
+def delivered_alert_state(advice, email=False, webhook=False):
+    state = monitor.ErrorAlertState()
+    state.note(advice, 1700000000)
+    state.email_sent = email
+    state.webhook_sent = webhook
+    return state
+
+
+@pytest.fixture
+# Records the alerts send_notification_channels was asked to deliver instead of sending them
+def recorded_alerts(monkeypatch):
+    sent = []
+
+    def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, webhook_body="", webhook_body_html=""):
+        sent.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled, "webhook_body": webhook_body, "webhook_body_html": webhook_body_html})
+        if email_enabled:
+            print("Sending email notification to receiver@example.test")
+        if webhook_enabled:
+            print("Sending webhook notification via Discord")
+        return bool(email_enabled), bool(webhook_enabled)
+
+    monkeypatch.setattr(monitor, "send_notification_channels", record)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda name: True)
+    return sent
+
+
+# A failure alert nobody closes leaves the reader waiting, so the recovery alert names the failure that ended
+def test_the_recovery_alert_names_the_failure_it_closes(recorded_alerts):
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+
+    assert monitor.send_outage_recovery_alert("SomeTag", 900, delivered_alert_state(advice, email=True)) is True
+
+    alert = recorded_alerts[0]
+    assert alert["subject"] == f"Xbox Monitor recovered: monitoring SomeTag resumed after {monitor.display_time(900)}"
+    assert alert["body"].startswith(f"Monitoring recovered for SomeTag after {monitor.display_time(900)}.\n\nThe failure was: Xbox Live did not answer in time")
+    assert "Timestamp: " in alert["body"] and "Timestamp: " not in alert["webhook_body"]
+    assert '<b><a href="https://account.xbox.com/en-us/profile?gamertag=SomeTag">SomeTag</a></b>' in alert["body_html"]
+
+
+@pytest.mark.parametrize("email, webhook", [(True, False), (False, True), (True, True)])
+# A channel that never carried the failure would announce a recovery from nothing
+def test_the_recovery_alert_reaches_only_the_channels_that_carried_the_failure(recorded_alerts, email, webhook):
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+
+    monitor.send_outage_recovery_alert("SomeTag", 60, delivered_alert_state(advice, email, webhook))
+
+    assert (recorded_alerts[0]["email"], recorded_alerts[0]["webhook"]) == (email, webhook)
+
+
+# A blip that alerted nobody must stay silent on the way out as well
+def test_no_recovery_alert_follows_a_failure_that_was_never_delivered(recorded_alerts):
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+
+    assert monitor.send_outage_recovery_alert("SomeTag", 60, delivered_alert_state(advice)) is False
+    assert monitor.send_outage_recovery_alert("SomeTag", 60, monitor.ErrorAlertState()) is False
+    assert recorded_alerts == []
+
+
+# Switching the channel off after the failure alert went out has to stop the recovery alert as well
+def test_a_switched_off_channel_sends_no_recovery_alert(recorded_alerts, monkeypatch):
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda name: False)
+
+    assert monitor.send_outage_recovery_alert("SomeTag", 60, delivered_alert_state(advice, email=True, webhook=True)) is False
+    assert recorded_alerts == []
+
+
+# The recovery line and the alert it carries belong to one report, so the timestamp closes below both
+def test_the_recovery_report_closes_below_its_delivery_lines(recorded_alerts, capsys):
+    advice = monitor.make_recovery_advice("network.timeout", "Xbox Live did not answer in time", "Check the connection", True)
+
+    monitor.print_outage_recovery("SomeTag", 900, delivered_alert_state(advice, email=True))
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert lines[0].startswith("* Monitoring recovered for SomeTag after ")
+    assert lines[1].startswith("Sending email notification to ")
+    assert lines[2].startswith("Timestamp:")
+    assert len(recorded_alerts) == 1
 
 
 # A status code is matched as a whole number, so an id or a path that happens to contain the digits is not that status

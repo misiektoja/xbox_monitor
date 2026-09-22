@@ -8,6 +8,9 @@ import sys
 
 import httpx
 import pytest
+import pytz
+
+from datetime import datetime
 
 import xbox_monitor as monitor
 
@@ -230,3 +233,24 @@ def test_configuration_commands_are_read_from_the_parsed_namespace():
     assert monitor.command_reports_configuration(argparse.Namespace(setup=True))
     assert not monitor.command_reports_configuration(argparse.Namespace(doctor=False, setup=False))
     assert not monitor.command_reports_configuration(argparse.Namespace())
+
+
+# Returns the epoch seconds of one local wall-clock time, localized rather than attached, since pytz zones
+# carry a historical offset until a date is bound to them
+def warsaw_ts(year, month, day, hour, minute):
+    return int(pytz.timezone("Europe/Warsaw").localize(datetime(year, month, day, hour, minute)).timestamp())
+
+
+# Confirms a same-day range names its date once, keeping the year the status and game ranges carry
+@pytest.mark.parametrize("always_show_year,expected", [(True, "Mon 21 Sep 26, 18:02 - 23:04"), (False, "Mon 21 Sep 18:02 - 23:04")])
+def test_a_same_day_range_names_its_date_once(monkeypatch, always_show_year, expected):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
+
+    assert monitor.get_range_of_dates_from_tss(warsaw_ts(2026, 9, 21, 18, 2), warsaw_ts(2026, 9, 21, 23, 4), short=True, always_show_year=always_show_year) == expected
+
+
+# Confirms a range spanning two days still names both dates, since one time alone would not say which day it is
+def test_a_cross_day_range_names_both_dates(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Europe/Warsaw")
+
+    assert monitor.get_range_of_dates_from_tss(warsaw_ts(2026, 9, 20, 5, 48), warsaw_ts(2026, 9, 21, 23, 4), short=True, always_show_year=True) == "Sun 20 Sep 26, 05:48 - Mon 21 Sep 26, 23:04"
