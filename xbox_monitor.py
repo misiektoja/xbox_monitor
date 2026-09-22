@@ -508,6 +508,7 @@ if sys.version_info < MINIMUM_PYTHON_VERSION:
 
 import time
 import json
+import base64
 from typing import Any, List, cast
 from dataclasses import dataclass, field
 import importlib.util
@@ -5764,6 +5765,18 @@ def validate_webhook_headers(provider=None):
     return None
 
 
+# Returns one text value as a base64 RFC 2047 UTF-8 encoded word
+def rfc2047_encoded_word(text):
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+
+
+# Encodes one HTTP header value as an RFC 2047 UTF-8 word when it contains non-ASCII text
+def encode_non_ascii_header_value(value):
+    text = str(value)
+    # HTTP clients send header values as Latin-1 or ASCII, which cannot carry emoji or most non-Latin letters
+    return text if text.isascii() else rfc2047_encoded_word(text)
+
+
 # Builds the provider-specific headers, substituting placeholders and adding the private ntfy authentication
 def build_webhook_headers(provider, payload):
     validation_error = validate_webhook_headers(provider)
@@ -5787,7 +5800,9 @@ def build_webhook_headers(provider, payload):
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
-    return headers
+    # Placeholders can expand to emoji or letters a raw header cannot carry. ASCII values stay as written,
+    # so a value already encoded as RFC 2047, as ntfy documents for emoji tags, is not encoded a second time
+    return {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
 
 
 # Reports one webhook configuration or delivery failure through the shared recovery renderer, so it carries a
