@@ -3197,7 +3197,7 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
             continue
         break
     if not state.target:
-        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again to save a target or include the target on each monitoring run.")
         _wizard_apply_target(state)
         return
     state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
@@ -3952,7 +3952,8 @@ def help_examples():
             ("Trace what the tool is doing", f"{prefix} <xbox_gamertag> --debug"),
         )),
     )
-    return render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Prints the commands a newcomer needs next, instead of an argparse usage error nobody can act on
@@ -4239,14 +4240,41 @@ def print_labelled_command(label, command, suffix=""):
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
-# Prints the command that starts monitoring with the files this run checked, so a report read on its own
-# ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(xbox_gamertag=None, saved_target=None, doctor_exit=0):
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("active_interval", "--active-interval"), ("csv_file", "--csv-file"), ("status_file", "--status-file"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("notify_active_inactive", "--notify-active-inactive", True), ("notify_game_change", "--notify-game-change", True), ("notify_status", "--notify-status", True), ("notify_errors", "--no-error-notify", False), ("webhook_enabled", "--webhook", True), ("webhook_enabled", "--no-webhook", False), ("webhook_active_inactive", "--webhook-active-inactive", True), ("webhook_game_change", "--webhook-game-change", True), ("webhook_status", "--webhook-status", True), ("webhook_errors", "--webhook-errors", True), ("webhook_errors", "--no-webhook-error-notify", False), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("verbose_mode", "--verbose", True), ("debug_mode", "--debug", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("ms_app_client_id", "--ms-app-client-id", "MS_APP_CLIENT_ID"), ("ms_app_client_secret", "--ms-app-client-secret", "MS_APP_CLIENT_SECRET"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def print_doctor_next_steps(xbox_gamertag=None, saved_target=None, doctor_exit=0, cli_args=None):
     print("\n" + colorize("header", "Next steps") + "\n")
     label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
     monitor_target = command_targets(xbox_gamertag, saved_target)[1]
-    print_labelled_command(label, render_command([*([monitor_target] if monitor_target else [])]))
-    # No trailing blank line: the command printer already left one and the report must not end on two
+    monitor_arguments = [monitor_target] if monitor_target else []
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    print_labelled_command(label, render_command(monitor_arguments + overrides))
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
 
 
@@ -4913,10 +4941,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return make_recovery_advice("config.invalid", safe_detail or "The configuration file could not be loaded", recovery_fix_with_guide(f"Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted. Correct the reported line, or write a fresh template to a different path with: {render_command(['--generate-config', '<new-file>'], include_paths=False)}", CONFIG_GUIDE_URL), False, safe_detail)
 
     if context == "secret.missing":
-        return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or pass them directly: {render_command(['<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>'])}", CREDENTIALS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("secret.missing", safe_detail or "A required credential is missing", recovery_fix_with_guide(f"Register an application in the Microsoft Entra admin center, then put its client ID and secret in MS_APP_CLIENT_ID and MS_APP_CLIENT_SECRET in your dotenv file, or include both credentials on each run without saving them: {render_command(['<xbox_gamertag>', '-u', '<client_id>', '-w', '<client_secret>'])}", CREDENTIALS_GUIDE_URL), False, safe_detail)
 
     if context == "target.missing":
-        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was provided", recovery_fix_with_guide(f"Pass the account to watch: {render_command(['<xbox_gamertag>'])}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("target.missing", safe_detail or "No Xbox gamertag was provided", recovery_fix_with_guide(f"Save XBOX_GAMERTAG in the configuration file or include the account on each run: {render_command(['<xbox_gamertag>'])}. Use the {XBOX_TARGET_FORMS}", QUICK_START_GUIDE_URL), False, safe_detail)
 
     if context == "secret.entry":
         return make_recovery_advice("secret.entry", safe_detail or "The value was not entered, so nothing was written", recovery_fix_with_guide("Run the command again from an interactive terminal and enter the value when prompted", SECRETS_GUIDE_URL), False, safe_detail)
@@ -8365,7 +8393,7 @@ def main():
     if doctor_mode:
         doctor_exit = run_doctor(args.xbox_gamertag, cfg_path, env_path, config_advice, timezone_advice)
         # A target the config file already carries is left out, so the command stays as short as the wizard's
-        print_doctor_next_steps(args.xbox_gamertag, XBOX_GAMERTAG, doctor_exit)
+        print_doctor_next_steps(args.xbox_gamertag, XBOX_GAMERTAG, doctor_exit, cli_args=args)
         sys.exit(doctor_exit)
 
     if args.setup:
