@@ -1,3 +1,8 @@
+---
+title: "Xbox Live player activity tracker"
+description: "Track Xbox Live players in real time: status, game sessions, gamerscore and achievements, with Appear Offline detection and email or webhook alerts."
+---
+
 # xbox_monitor
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/xbox_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/xbox_monitor/releases)

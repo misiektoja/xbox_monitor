@@ -1,3 +1,7 @@
+---
+description: "Run the offline xbox_monitor test suite with pytest and see what it covers. Xbox Live calls are replaced with test doubles, so no account is needed."
+---
+
 # Testing
 
 The offline test suite covers everything in `xbox_monitor.py` that can run without network access. Xbox Live calls are replaced with test doubles, so the suite needs no Xbox account, no network and no credentials.
