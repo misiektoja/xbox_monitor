@@ -1,3 +1,7 @@
+---
+description: "Reference for the xbox_monitor configuration file: monitored target, time zone, SMTP, webhooks, colours, network timeouts, secrets and TLS."
+---
+
 # Configuration
 
 Examples on this page use the PyPI command `xbox_monitor`. Manual script users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format-by-installation-method).

@@ -1,3 +1,7 @@
+---
+description: "Set up xbox_monitor with the setup wizard. Covers Microsoft Entra application credentials, the first authorization and Xbox privacy settings."
+---
+
 # Setup & First Run
 
 <a id="run-the-setup-wizard"></a>
